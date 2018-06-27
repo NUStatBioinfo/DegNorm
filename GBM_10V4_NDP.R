@@ -22,12 +22,12 @@ cl = makeCluster(12)
 registerDoParallel(cl)
 
 start.time = proc.time()
-ratio = foreach(a = row.names(counts), .combine = "rbind") %dopar% {
+rho = foreach(a = row.names(counts), .combine = "rbind") %dopar% {
   ratioSVD(f = coverage[[a]][,c(1:3,7:9)], norm.factor = norm.factor)
 }
 stopCluster(cl)
 
-norm.factor = colSums(counts[apply(ratio,1,min) > 0.90,])
+norm.factor = colSums(counts[apply(rho,1,min) < 0.10,])
 norm.factor = norm.factor/median(norm.factor)
 
 
@@ -35,20 +35,21 @@ norm.factor = norm.factor/median(norm.factor)
 # Calculating ratios
 for(iter in 1:5){
   
-  ratio = NULL
+  rho = NULL
   cl = makeCluster(12)
   registerDoParallel(cl)
   
-  ratio = foreach(a = row.names(counts), .combine = "rbind", .errorhandling = 'remove') %dopar% {
-    optiNMF(f = coverage[[a]][,c(1:3,7:9)], norm.factor = norm.factor)$ratio
+  rho = foreach(a = row.names(counts), .combine = "rbind", .errorhandling = 'remove') %dopar% {
+    optiNMF(f = coverage[[a]][,c(1:3,7:9)], norm.factor = norm.factor)$rho
   }
   stopCluster(cl)
   
-  row.names(ratio) = row.names(counts)
-  colnames(ratio) = colnames(counts)
+  row.names(rho) = row.names(counts)
+  colnames(rho) = colnames(counts)
   
-  ratio[ratio < 0.1] = 0.1
-  adjusted = counts / ratio
+  rho[rho < 0.9] = 0.9
+  adjusted = counts / (1 - rho)
+  ratio = 1 - rho
   ratio[apply(ratio,1,min)==1,] = 
     matrix(rep(colSums(counts)/colSums(adjusted), sum(apply(ratio,1,min)==1)), byrow = TRUE, ncol = 6)
   adjusted = counts / ratio
@@ -62,7 +63,7 @@ for(iter in 1:5){
 
   write.table(adjusted, file = "~/Output/GBM_10V4_NDP.txt")
   write.table(colSums(adjusted), file = "~/Output/GBM_10V4_NDP_librarysize.txt", append = TRUE)
-  write.table(ratio, file = "~/Output/GBM_10V4_NDP_ratio.txt")
+  write.table(rho, file = "~/Output/GBM_10V4_NDP_rho.txt")
   
 }
 
