@@ -75,7 +75,7 @@ if __name__ == '__main__':
         genes = gene_sub_df['gene'].values
         n_genes = len(genes)
 
-        # TODO: parallelize gene loop
+        # TODO: parallelize gene loop (specific to a particular chromosome)
         for gene_idx in range(len(genes)):
             gene = genes[gene_idx]
 
