@@ -1,5 +1,8 @@
 ####################################################################################
 # NMF functions
+# Non-negative matrix factorization
+# input: coverage matrix (f) with columns representing samples
+# output: truncated SVD (svd), fitted coverage matrix (fitted), residuals (res), Lagrangian multipler (Lambda).
 NMF <- function(f, loop = 100){
   
   Lambda = matrix(0, ncol = dim(f)[2], nrow = dim(f)[1])
@@ -21,15 +24,19 @@ NMF <- function(f, loop = 100){
   return(list(svd = model_svd, fitted = fitted, res = res, Lambda = Lambda))
 }
 
-optiNMF <- function(f, norm.factor, print.plot = FALSE){
+
+# baseline selection process to improve NMF
+# input: coverage matrix (f), normalization factor for sequencing depth (norm.factor)
+# output: DI scores (rho), baseline status (convergence) and abundance level (K).
+optiNMF <- function(f, norm.factor){
   
   f = t(as.matrix(f))
   f = f/norm.factor
   
   filter = (apply(f,2,max) > 0.1 * max(apply(f,2,max))) == 1
   
-  output = list(ratio = NULL, convergence = FALSE, K = NULL)
-  output$ratio = rep(1, dim(f)[1])
+  output = list(rho = NULL, convergence = FALSE, K = NULL)
+  output$rho = rep(0, dim(f)[1])
   
   num.sample = dim(f)[1]
   
@@ -49,6 +56,7 @@ optiNMF <- function(f, norm.factor, print.plot = FALSE){
     lambda = NMF.output$Lambda
     
     ratio = rowSums(f) / (rowSums(fitted) + 1)
+    rho = 1 - ratio
     bin.size = ceiling(dim(f.check)[2]/20)
     bin.num = dim(f.check)[2] %/% bin.size + 1
     bin.label = rep(c(1:bin.num), each = bin.size)
@@ -113,7 +121,7 @@ optiNMF <- function(f, norm.factor, print.plot = FALSE){
     }
     
     output$K = K
-    output$ratio = rowSums(f.check) / (rowSums(fitted)+1)
+    output$rho = 1 - rowSums(f.check) / (rowSums(fitted)+1)
     return(output)
     
   }else{
@@ -124,9 +132,9 @@ optiNMF <- function(f, norm.factor, print.plot = FALSE){
 
 ratioSVD <- function(f, norm.factor){
   f = t(as.matrix(f))
-  nobel = svd(f, nv = 1, nu = 1)
-  fitted = nobel$d[1] * nobel$u %*% t(nobel$v)
+  model_svd = svd(f, nv = 1, nu = 1)
+  fitted = model_svd$d[1] * model_svd$u %*% t(model_svd$v)
   fitted[fitted < f] = f[fitted < f]
-  return(rowSums(f)/(rowSums(fitted)+1))
+  return(1-rowSums(f)/(rowSums(fitted)+1))
 }
 
