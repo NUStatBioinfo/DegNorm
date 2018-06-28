@@ -1,8 +1,34 @@
 import pandas as pd
 
 
-def group_by_genes(df):
-    return df.groupby(['chr', 'gene'])
+def group_by_genes(df, chrom=True):
+    if chrom:
+        return df.groupby(['chr', 'gene'])
+    else:
+        return df.groupby('gene')
+
+
+def remove_multi_chrom_genes(df):
+    """
+    Remove from a gene annotation file the genes that show up in multiple chromosomes.
+
+
+    :param df: pandas.DataFrame version of a gene annotation file that has been converted to .bed format, e.g.
+
+    +----------------+-----------------+-----------------+-----------------+
+    |     chr        |       start     |       end       |       gene      |
+    +================+=================+=================+=================+
+    |     chrI       |      11873      |      12227      |      DDX11L1    |
+    +----------------+-----------------+-----------------+-----------------+
+    |     chr6       |      17232      |      17368      |       WASH7P    |
+    +----------------+-----------------+-----------------+-----------------+
+
+    :return: df, but subsetted to genes that show up in exclusively one chromosome.
+    """
+    per_chrom_gene_cts = group_by_genes(df, chrom=False).chr.nunique()
+    rm_genes = per_chrom_gene_cts[per_chrom_gene_cts > 1].index.tolist()
+
+    return df[~df['gene'].isin(rm_genes)]
 
 
 def group_gene_exons(df):

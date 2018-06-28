@@ -37,6 +37,9 @@ if __name__ == '__main__':
     gene_df = pd.read_table(gene_file, sep='\s+', header=None)
     gene_df.columns = ['chr', 'start', 'end', 'gene']
 
+    # remove genes present in multiple chromosomes
+    gene_df = remove_multi_chrom_genes(gene_df)
+
     # create map of genes within genome
     logging.info('Establishing gene, exon positioning within genome')
     gene_df = get_gene_outline(gene_df)
