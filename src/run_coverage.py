@@ -7,6 +7,7 @@ sys.path.append('/Users/fineiskid/nu/jiping_research/degnorm')
 
 from degnorm.coverage import *
 from degnorm.gene_groupby import *
+from degnorm.genome_preprocessing import *
 from degnorm.utils import *
 
 
@@ -37,22 +38,35 @@ if __name__ == '__main__':
     gene_df = pd.read_table(gene_file, sep='\s+', header=None)
     gene_df.columns = ['chr', 'start', 'end', 'gene']
 
+    # remove genes present in multiple chromosomes
+    logging.info('Removing genes that appear in multiple chromosomes')
+    gene_df = remove_multichrom_genes(gene_df)
+
     # create map of genes within genome
     logging.info('Establishing gene, exon positioning within genome')
     gene_df = get_gene_outline(gene_df)
+    exon_df = get_exon_outline(gene_df)
+
+
+    # cut out exons that overlap with multiple genes.
+    logging.info('Removing exons that overlap with multiple genes')
+    exon_df = remove_multigene_exons(exon_df
+                                     , g_df = gene_df[['chr', 'gene_start', 'gene_end']]
+                                     , n_jobs=max_cpu())
 
     # make list of pd.DataFrames from RNA-seq experiments
     sample_dfs = [r1_df, r2_df]
     n_samples = len(sample_dfs)
 
     # identify sample-union of chromosomes
-    logging.info('Determining union of chromosomes over samples')
+    logging.info('Determining union of chromosomes over samples...')
     chroms = set(sample_dfs[0]['chr'].unique())
     for i in range(1, n_samples):
         chroms = set(sample_dfs[i]['chr'].unique()).intersection(chroms)
 
     chroms = list(chroms)
     n_chroms = len(chroms)
+    logging.info('{0} chromosomes total'.format(n_chroms))
 
     # TODO: make gene coverage matrix storage smarter/what Bin wants
     gene_cov_dict = dict()
@@ -70,9 +84,12 @@ if __name__ == '__main__':
         for sample_idx in range(n_samples):
             chrom_sample_df_dict[sample_idx] = subset_to_chrom(sample_dfs[sample_idx], chrom=chrom)
 
-        # subset genes to chromosome
-        gene_sub_df = subset_to_chrom(gene_df, chrom=chrom)
-        genes = gene_sub_df['gene'].values
+        # subset genes to chromosome, merge processed exon regions with gene-level metadata.
+        exon_sub_df = subset_to_chrom(exon_df, chrom=chrom)
+        gene_sub_df = exon_sub_df.merge(gene_df[['chr', 'gene', 'gene_end', 'gene_start']]
+                                        , on = ['chr', 'gene'])
+
+        genes = gene_sub_df['gene'].unique()
         n_genes = len(genes)
 
         # TODO: parallelize gene loop (specific to a particular chromosome)
@@ -82,19 +99,22 @@ if __name__ == '__main__':
             if gene_idx % 100 == 0 and gene_idx > 0:
                 logging.info('On gene {0} -- {1} / {2}'.format(gene, gene_idx, n_genes))
 
-            rng = gene_sub_df['range'].iloc[gene_idx]
+            # subset chromosome's gene/exon data to a single gene.
+            single_gene_df = gene_sub_df[gene_sub_df.gene == gene]
+
+            rng = (single_gene_df['gene_start'].iloc[0], single_gene_df['gene_end'].iloc[0])
             cov_mat = np.zeros([rng[1] - rng[0], n_samples])
 
             for sample_idx in range(n_samples):
                 cov_mat[:, sample_idx] = relative_sample_coverage(chrom_sample_df_dict[sample_idx]
                                                                   , rng=rng)
 
-            # TODO: clean up slicing of cov_mat based on relative exon positions
-            slices = gene_sub_df['exons'].iloc[gene_idx]
-            slices = [np.arange(sl[0], sl[1]) - rng[0] for sl in slices]
-            slices = np.array([sl for subslice in slices for sl in subslice])
+            # Slice up cov_mat based on relative exon positions within a gene.
+            e_starts, e_ends = single_gene_df['exon_start'].values, single_gene_df['exon_end'].values
+            slices = [np.arange(e_starts[i], e_ends[i]) - rng[0] for i in range(len(e_starts))]
+            slicing = np.unique(np.array([sl for subslice in slices for sl in subslice]))
 
-            gene_cov_dict[gene] = cov_mat[slices, :]
+            gene_cov_dict[gene] = cov_mat[slicing, :]
 
             if gene_idx % 300 == 0 and gene_idx > 0:
                 logging.info('Coverage matrix shape: {0}'.format(cov_mat.shape))
