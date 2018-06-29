@@ -23,7 +23,7 @@ def remove_multichrom_genes(df):
     per_chrom_gene_cts = group_by_genes(df, chrom=False).chr.nunique()
     rm_genes = per_chrom_gene_cts[per_chrom_gene_cts > 1].index.tolist()
 
-    return df[~df['gene'].isin(rm_genes)]
+    return df[~df.gene.isin(rm_genes)]
 
 
 def par_apply_exon_overlap(e_df, g_df, chrom):
@@ -33,9 +33,9 @@ def par_apply_exon_overlap(e_df, g_df, chrom):
     """
 
     # subset range DataFrames to relevant chromosome.
-    e_sub_df = e_df[e_df['chr'] == chrom]
+    e_sub_df = subset_to_chrom(e_df, chrom=chrom)
     e_sub_df.reset_index(inplace=True, drop=True)
-    g_sub_df = g_df[g_df['chr'] == chrom]
+    g_sub_df = subset_to_chrom(g_df, chrom=chrom)
     g_sub_df.reset_index(inplace=True, drop=True)
 
     rm_exon_list = list()
@@ -48,8 +48,8 @@ def par_apply_exon_overlap(e_df, g_df, chrom):
                                e_sub_df.exon_id.iloc[e_idx]
 
         # subset to genes that either start or end between exon start/end
-        gene_match_df = g_sub_df[(g_sub_df['gene_start'].between(e_start, e_end)) |
-                                          (g_sub_df['gene_end'].between(e_start, e_end))]
+        gene_match_df = g_sub_df[(g_sub_df.gene_start.between(e_start, e_end)) |
+                                          (g_sub_df.gene_end.between(e_start, e_end))]
         if gene_match_df.shape[0] > 1:
             rm_exon_list.append(e_id)
 

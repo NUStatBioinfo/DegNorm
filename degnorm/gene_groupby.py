@@ -34,8 +34,8 @@ def group_gene_exons(df):
     for group in groups:
         group_df = gb.get_group(group)
         n = group_df.shape[0]
-        starts.append([group_df['start'].iloc[i] for i in range(n)])
-        ends.append([group_df['end'].iloc[i] for i in range(n)])
+        starts.append([group_df.start.iloc[i] for i in range(n)])
+        ends.append([group_df.end.iloc[i] for i in range(n)])
 
     region_df = pd.DataFrame({'chr': [group[0] for group in groups]
                               , 'gene': [group[1] for group in groups]
@@ -80,7 +80,7 @@ def get_exon_outline(df):
     +----------------+-----------------+---------------------+------------------+
     |     chr        |       gene      |     exon_start      |    exon_end      |
     +================+=================+=====================+==================+
-    |     chr1       |   	RCAN3AS    |      24828837       |     24828850     |
+    |     chr1       |      RCAN3AS    |      24828837       |     24828850     |
     +----------------+-----------------+---------------------+------------------+
     |     chr1       |      RCC1       |      28832454       |     28832596     |
     +----------------+-----------------+---------------------+------------------+
