@@ -1,7 +1,7 @@
 ## DegNorm TODO
 
 ### Frank
-- Some exons are shared by multiple genes. Need to eliminate shared regions. If an exon shows up on multiple genes, eliminate it.
+- Convert bedtools and other CLI functions into python
 - All the other TODO's in run_coverage.py, etc
 - Turn DegNorm into an installable package
 - Add requirements.txt
