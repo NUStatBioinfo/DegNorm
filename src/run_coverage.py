@@ -1,22 +1,17 @@
 import os
 import sys
-import logging
 
 # TODO write setup.py for install
 sys.path.append('/Users/fineiskid/nu/jiping_research/degnorm')
 
-from degnorm.coverage import *
+from degnorm.reads_coverage import *
+from degnorm.gene_coverage import *
 from degnorm.gene_groupby import *
 from degnorm.genome_preprocessing import *
 from degnorm.utils import *
 
 
 if __name__ == '__main__':
-
-    logging.basicConfig(stream=sys.stdout
-                        , level=logging.DEBUG
-                        , format='%(asctime)s ---- %(message)s'
-                        , datefmt='%m/%d/%Y %I:%M:%S')
 
     logging.info('Loading data')
     # LOAD
@@ -106,13 +101,13 @@ if __name__ == '__main__':
             cov_mat = np.zeros([rng[1] - rng[0], n_samples])
 
             for sample_idx in range(n_samples):
-                cov_mat[:, sample_idx] = relative_sample_coverage(chrom_sample_df_dict[sample_idx]
-                                                                  , rng=rng)
+                cov_mat[:, sample_idx] = relative_gene_sample_coverage(chrom_sample_df_dict[sample_idx]
+                                                                       , rng=rng)
 
             # Slice up cov_mat based on relative exon positions within a gene.
             e_starts, e_ends = single_gene_df['exon_start'].values, single_gene_df['exon_end'].values
             slices = [np.arange(e_starts[i], e_ends[i]) - rng[0] for i in range(len(e_starts))]
-            slicing = np.unique(np.array([sl for subslice in slices for sl in subslice]))
+            slicing = np.unique(flatten_2d(slices))
 
             gene_cov_dict[gene] = cov_mat[slicing, :]
 
