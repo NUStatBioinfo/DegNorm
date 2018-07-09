@@ -7,11 +7,13 @@ class ReadsCoverageParser():
 
     def __init__(self, sam_file=None, bam_file=None, n_jobs=max_cpu(), verbose=False):
         """
+        Genome coverage reader for a single RNA-seq experiment.
+        Goal is to assemble a dictionary (chromosome, coverage array) pairs.
 
-
-        :param sam_file:
-        :param bam_file:
-        :param n_jobs:
+        :param sam_file: chr .sam filename (optional if .bam file is specified)
+        :param bam_file: chr .bam filename (option if .sam file is specified)
+        :param n_jobs: int number of CPUs to use for determining genome coverage. Default
+        is number of CPUs on machine - 1
         """
         if bam_file and sam_file:
             raise ValueError('cannot specify both a .sam and a .bam file')
