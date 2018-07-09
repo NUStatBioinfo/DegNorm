@@ -161,11 +161,12 @@ class ReadsCoverageParser():
             logging.info('Determining position coverage for {0} chromosomes...'.format(len(chroms)))
 
         p = mp.Pool(processes=self.n_jobs)
-        coverages = [p.apply(self.chromosome_reads_coverage, args=(df, chrom)) for chrom in chroms]
+        cov_tups = [p.apply_async(self.chromosome_reads_coverage, args=(df, chrom)) for chrom in chroms]
         p.close()
+        cov_tups = [x.get() for x in cov_tups]
 
         chrom_cov_dict = dict()
-        for tup in coverages:
+        for tup in cov_tups:
             chrom_cov_dict[tup[0]] = tup[1]
 
         return chrom_cov_dict

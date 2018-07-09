@@ -1,9 +1,7 @@
 import os
 import sys
-
 # TODO write setup.py for install
-sys.path.append('/Users/fineiskid/nu/jiping_research/degnorm')
-
+# sys.path.append('/Users/fineiskid/nu/jiping_research/degnorm')
 from degnorm.reads_coverage import *
 from degnorm.gene_coverage import *
 from degnorm.gene_groupby import *
@@ -11,25 +9,34 @@ from degnorm.genome_preprocessing import *
 from degnorm.utils import *
 
 
-if __name__ == '__main__':
+def main():
 
-    logging.info('Loading data')
-    # LOAD
-    # TODO: write pybedtools data converters, .gtf file manipulators
+    # TODO: write .gtf file manipulators
     # TODO: write command line argument parsers
-    # TODO: write loaders
-    data_dir = '~/nu/jiping_research/data/rna_seq'
+    data_dir = '/Users/fineiskid/nu/jiping_research/data/rna_seq'
 
-    r1_file = os.path.join(data_dir, 'A01_R01.coverage')
-    r2_file = os.path.join(data_dir, 'A01_R02.coverage')
+    n_jobs = 2
+    rna_dat_dict = dict()
+    sam_files = [os.path.join(data_dir, 'A01_R01_chr1_2.sam')]
+    n_samples = len(sam_files)
+    samples = list(range(n_samples))
+    chroms = list()
+    logging.info('Begin loading RNA-seq data...')
+    for idx in samples:
+        sam_reader = ReadsCoverageParser(sam_file=sam_files[idx]
+                                         , verbose=True
+                                         , n_jobs=n_jobs)
+        rna_dat_dict[idx] = sam_reader.coverage()
+
+        for chrom in rna_dat_dict[idx].keys():
+            if chrom not in chroms:
+                chroms.append(chrom)
+
+    n_chroms= len(chroms)
+    logging.info('{0} total chromosomes'.format(n_chroms))
+
+    logging.info('Loading gene annotation exon file')
     gene_file = os.path.join(data_dir, 'genes_exon.bed')
-
-    r1_df = pd.read_table(r1_file, header=None)
-    r1_df.columns = ['chr', 'start', 'end', 'count']
-
-    r2_df = pd.read_table(r2_file, header=None)
-    r2_df.columns = ['chr', 'start', 'end', 'count']
-
     gene_df = pd.read_table(gene_file, sep='\s+', header=None)
     gene_df.columns = ['chr', 'start', 'end', 'gene']
 
@@ -42,26 +49,11 @@ if __name__ == '__main__':
     gene_df = get_gene_outline(gene_df)
     exon_df = get_exon_outline(gene_df)
 
-
     # cut out exons that overlap with multiple genes.
     logging.info('Removing exons that overlap with multiple genes')
     exon_df = remove_multigene_exons(exon_df
                                      , g_df = gene_df[['chr', 'gene_start', 'gene_end']]
                                      , n_jobs=max_cpu())
-
-    # make list of pd.DataFrames from RNA-seq experiments
-    sample_dfs = [r1_df, r2_df]
-    n_samples = len(sample_dfs)
-
-    # identify sample-union of chromosomes
-    logging.info('Determining union of chromosomes over samples...')
-    chroms = set(sample_dfs[0]['chr'].unique())
-    for i in range(1, n_samples):
-        chroms = set(sample_dfs[i]['chr'].unique()).intersection(chroms)
-
-    chroms = list(chroms)
-    n_chroms = len(chroms)
-    logging.info('{0} chromosomes total'.format(n_chroms))
 
     # TODO: make gene coverage matrix storage smarter/what Bin wants
     gene_cov_dict = dict()
@@ -72,12 +64,6 @@ if __name__ == '__main__':
 
         logging.info('Determining coverage matrices for genes in chromosome {0} -- {1} / {2}'
                      .format(chrom, chrom_idx + 1, n_chroms))
-
-        chrom_sample_df_dict = dict()
-
-        # subset RNA-seq sample data to chromosome
-        for sample_idx in range(n_samples):
-            chrom_sample_df_dict[sample_idx] = subset_to_chrom(sample_dfs[sample_idx], chrom=chrom)
 
         # subset genes to chromosome, merge processed exon regions with gene-level metadata.
         exon_sub_df = subset_to_chrom(exon_df, chrom=chrom)
@@ -95,14 +81,17 @@ if __name__ == '__main__':
                 logging.info('On gene {0} -- {1} / {2}'.format(gene, gene_idx, n_genes))
 
             # subset chromosome's gene/exon data to a single gene.
+            # identify gene's start and end positions.
             single_gene_df = gene_sub_df[gene_sub_df.gene == gene]
-
             rng = (single_gene_df['gene_start'].iloc[0], single_gene_df['gene_end'].iloc[0])
+
+            # initialize coverage matrix.
             cov_mat = np.zeros([rng[1] - rng[0], n_samples])
 
-            for sample_idx in range(n_samples):
-                cov_mat[:, sample_idx] = relative_gene_sample_coverage(chrom_sample_df_dict[sample_idx]
-                                                                       , rng=rng)
+            # iterate over samples, building gene's coverage matrix.
+            for sample_idx in samples:
+                cov_array = rna_dat_dict[sample_idx][chrom][np.arange(rng[0], rng[1])]
+                cov_mat[:, sample_idx] = cov_array
 
             # Slice up cov_mat based on relative exon positions within a gene.
             e_starts, e_ends = single_gene_df['exon_start'].values, single_gene_df['exon_end'].values
