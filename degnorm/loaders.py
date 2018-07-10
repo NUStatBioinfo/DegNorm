@@ -88,43 +88,65 @@ class SamLoader(Loader):
             with open(fname, 'r') as f:
                 lines = f.readlines()
 
-            # identify line number where header lines stop.
+            # identify line number where header lines stop
             header_idx = 0
             is_header_line = lines[header_idx][0] == '@'
+
+            # store header info: chromosome lengths
+            chrom_len_dict = dict()
+
             while is_header_line:
                 header_idx += 1
-                is_header_line = lines[header_idx][0] == '@'
+                line = lines[header_idx]
+                is_header_line = line[0] == '@'
+
+                if line[0:3] == '@SQ':
+
+                    for split in line.split('\t'):
+                        content = split.split(':')[-1]
+
+                        if split[0:2] == 'SN':
+                            chrom = content
+                        elif split[0:2] == 'LN':
+                            chrom_len = int(content)
+
+                    chrom_len_dict[chrom] = chrom_len
+
+            # turn header into a pandas.DataFrame
+            header_df = DataFrame(list(chrom_len_dict.items())
+                                  , columns = ['chr', 'length'])
 
             # extract relevant columns from .sam file lines.
             reads = list()
             for x in lines[header_idx:]:
                 splt = x.split('\t')
-                reads.append([splt[i] for i in [0, 2, 3, 4, 5, 7, 8]])
+                reads.append([splt[i] for i in [0, 2, 3, 5, 6, 7]])
 
             # transform .sam lines into pandas.DataFrame
-            colnames = ['qname', 'chr', 'pos', 'mapq', 'cigar', 'pnext', 'tlen']
+            colnames = ['qname', 'chr', 'pos', 'cigar', 'rnext', 'pnext']
             df = DataFrame(reads
                            , columns=colnames)
 
+            # subset .sam file to paired reads using rnext column.
+            df = df[df['rnext'] == '=']
+
             # typecasting: change int fields from str.
-            int_cols = ['pos', 'pnext', 'tlen']
+            int_cols = ['pos', 'pnext']
             for col in int_cols:
                 df[col] = df[col].astype('int')
-
-            float_cols = ['mapq']
-            for col in float_cols:
-                df[col] = df[col].astype('float')
 
             # preprocessing: un-specify paired reads together so that a pair of alignments
             # share the same un-paired QNAME
             df['qname_unpaired'] = df.qname.apply(lambda x: '.'.join(x.split('.')[:-1]))
 
-            # preprocessing: identify max position of aligned reads. For this, need to identify
-            # length of each alignment from cigar string and add that to read start position.
-            df['end_pos'] = df['pos'] + df.cigar.apply(
-                lambda x: np.sum([int(seg_len) for seg_len in re.findall(r'(\d+)', x)]))
+            # sort the reads so that pairs are grouped together.
+            df.sort_values('qname_unpaired', inplace=True)
 
-            df_dict[fname] = df
+            df_dict[fname] = dict()
+            df_dict[fname]['data'] = df
+
+            if not header_df.empty:
+                df_dict[fname]['header'] = header_df
 
         return df_dict
 
