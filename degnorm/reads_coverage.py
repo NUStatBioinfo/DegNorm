@@ -12,7 +12,6 @@ class ReadsCoverageParser():
         :param sam_file: chr .sam filename (optional if .bam file is specified)
         :param bam_file: chr .bam filename (option if .sam file is specified)
         :param tmp_dir: chr path to directory where cigar parse .txt files will be dumped for Fortran IO.
-        If not specified, create a 'tmp' directory where the .sam or .bam file is located.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
         """
@@ -34,9 +33,6 @@ class ReadsCoverageParser():
 
         else:
             self.tmp_dir = os.path.join(os.path.dirname(self.filename), 'tmp')
-
-        if not os.path.isdir(self.tmp_dir):
-            os.makedirs(self.tmp_dir)
 
         self.n_jobs = n_jobs
         self.verbose = verbose
@@ -60,47 +56,49 @@ class ReadsCoverageParser():
         return df, header_df
 
     @staticmethod
-    def _cigar_segment_strings(cigar, start):
+    def _cigar_segment_bounds(cigar, start):
         """
         Determine the start and end positions on a chromosome of a non-no-matching part of an
-        RNA-seq read based on a read's cigar string. All regions
+        RNA-seq read based on a read's cigar string.
 
         cigar string meaning: http://bioinformatics.cvr.ac.uk/blog/tag/cigar-string/
 
         :param cigar: str a read's cigar string, e.g. "49M165N51M"
         :param start: int a read's start position on a chromosome
         :return: tuple
-            str: a comma-separated string of integers representing cigar match start,end points, e.g.
-            50M25N50M starting from 105 -> '105,156,181,231'. Note that even-indexed integers are not inclusive,
-            so 156 and 231 are indicating that the last match occurs at 155 and 230, respectively.
+            list: a list of integers representing cigar match start,end points, e.g.
+            50M25N50M starting from 100 -> [100, 149, 175, 224]. Note that start and end integers
+            are inclusive, i.e. all positions at or between 100 and 149 and at or between 175 and 224
+            are covered by reads.
             int: number of matching segments found within the cigar string. E.g. "100M" is one matching segment.
         """
-
         if cigar == '100M':
-            return str(start) + ' ' + str(start + 100), 1
+            return [start, start + 99], 1
 
         cigar_split = [(v, int(k)) for k, v in re.findall(r'(\d+)([A-Z]?)', cigar)]
 
-        match_str = ''
-        join_str = ''
         num_match_segs = 0
+        match_idx_list = list()
 
         for idx in range(len(cigar_split)):
             segment = cigar_split[idx]
 
-            if idx == 0:
-                extension = segment[1] + 1
-            else:
-                extension = segment[1]
-
             if segment[0] == 'M':
-                match_str += join_str + str(start) + ' ' + str(start + extension)
-                join_str = ' '
+                extension = segment[1] - 1
+                augment = True
+                match_idx_list += [start, start + extension]
                 num_match_segs += 1
+
+            else:
+                if augment:
+                    extension = segment[1] + 1
+                    augment = False
+                else:
+                    extension = segment[1]
 
             start += extension
 
-        return match_str, num_match_segs
+        return match_idx_list, num_match_segs
 
     def chromosome_cigar_segment_dump(self, df, chrom=None, chrom_len=0):
         """
@@ -130,27 +128,35 @@ class ReadsCoverageParser():
         dat = df_chrom[['cigar', 'pos']].values
         n_reads = dat.shape[0] + 1
 
-        cig_str_list = list()
-        cig_match_list = list()
-
-        # fetch paired cigar segment strings
-        row_ctr = 1
+        cig_bounds_list = list()
         for i in np.arange(1, n_reads, 2):
-            str_1, n_match_1 = self._cigar_segment_strings(dat[i - 1, 0], start=dat[i - 1, 1])
-            str_2, n_match_2 = self._cigar_segment_strings(dat[i, 0], start=dat[i, 1])
-            to_write = 'g' + str(row_ctr) + ' ' + str_1 + ' ' + str_2
+            bounds_1, n_match_1 = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
+            bounds_2, n_match_2 = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
 
-            cig_match_list.append(n_match_1 + n_match_2)
-            cig_str_list.append(to_write)
-            row_ctr += 1
+            # leverage nature of alignments of paired reads to find disjoint coverage ranges.
+            min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
+            min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
+
+            if max_bounds_2 > max_bounds_1:
+                bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
+            else:
+                bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
+                bounds_2.sort()
+
+            cig_bounds_list.append(bounds_1 + bounds_2)
 
         # determine maximum number of cigar match segments per read pair,
         # pad cigar strings with 0's for easing fortran IO
-        max_cig_matches = max(cig_match_list)
-        for i in range(len(cig_str_list)):
-            if cig_match_list[i] < max_cig_matches:
-                n_zeros = 2 * (max_cig_matches - cig_match_list[i])
-                cig_str_list[i] += ' ' + ' '.join(['0'] * n_zeros)
+        max_col_width = max(map(lambda x: len(x), cig_bounds_list))
+        for i in range(len(cig_bounds_list)):
+            bounds = cig_bounds_list[i]
+            n_bounds = len(bounds)
+
+            pad = ''
+            if n_bounds < max_col_width:
+                pad = ' ' + ' '.join(['0'] * (max_col_width - n_bounds))
+
+            cig_bounds_list[i] = 'g' + str(i + 1) + ' ' + ' '.join([str(j) for j in bounds]) + pad
 
         # build output file name.
         file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
@@ -161,7 +167,7 @@ class ReadsCoverageParser():
 
         with open(output_filepath, 'w') as out:
             out.write(chrom + ' ' + str(chrom_len) + '\n')
-            out.write('\n'.join(cig_str_list))
+            out.write('\n'.join(cig_bounds_list))
 
     def dump_cigar_parse(self):
         """
@@ -178,6 +184,9 @@ class ReadsCoverageParser():
 
         chroms = df.chr.unique()
         header_df = header_df[header_df['chr'].isin(chroms)]
+
+        if not os.path.isdir(self.tmp_dir):
+            os.makedirs(self.tmp_dir)
 
         if self.verbose:
             logging.info('Begin writing cigar segment strings for {0} chromosomes...'.format(len(chroms)))
