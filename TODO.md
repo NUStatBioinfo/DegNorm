@@ -1,9 +1,9 @@
 ## DegNorm TODO
 
 ### Frank
-- Convert bedtools and other CLI functions into python
-- All the other TODO's in run_coverage.py, etc
-- Turn DegNorm into an installable package
+- Integrate Fortran code
+- Add CLI flags and docs
+- Write .gtf file converters
 - Add requirements.txt
 
 

@@ -6,7 +6,6 @@ from pandas import DataFrame
 
 
 class Loader():
-
     def __init__(self, filetype):
         """
         Generic file loader class.
@@ -16,35 +15,23 @@ class Loader():
         self.filetype = filetype
         self.files = list()
 
-    def get_files(self, to_load):
+    def get_file(self, to_load):
         """
         Obtain list of str realpaths to files to load.
 
-        :param to_load: str or list; if str, can be path to directory containing `filetype` files or
-        the realpath to a `filetype` file. If list, a list of str realpaths to files ending in `filetype` extension.
-        :return:
+        :param to_load: str the realpath to a `filetype` file.
         """
         if isinstance(to_load, str):
-
-            if os.path.isdir(to_load):
-                dir_files = os.listdir(to_load)
-                for f in dir_files:
-                    if f.endswith(self.filetype):
-                        self.files.append(os.path.join(to_load, f))
-
-            else:
+            if os.path.exists(to_load):
                 if to_load.endswith(self.filetype):
-                    self.files = [to_load]
+                    self.filename = to_load
                 else:
-                    raise ValueError('to_load file does not end with {0}'.format(to_load))
-
-        elif isinstance(to_load, list):
-            for f in dir_files:
-                if f.endswith(self.filetype):
-                    self.files.append(os.path.join(to_load, f))
+                    raise ValueError('to_load file {0} does not end with {0}'.format(to_load, self.filetype))
+            else:
+                raise IOError('to_load file {0} not found'.format(to_load))
 
         else:
-            raise ValueError('to_load type not understood')
+            raise ValueError('to_load data type not understood')
 
     def get_data(self):
         raise NotImplementedError('get_data not yet implemented for {0}'.format(self.__class__.__name__))
@@ -56,11 +43,10 @@ class SamLoader(Loader):
         """
         .sam file loader
 
-        :param to_load: str or list; if str, can be path to directory containing .sam files or
-        the realpath to a .sam file. If list, a list of str .sam filenames.
+        :param to_load: str the realpath to a .sam file.
         """
         Loader.__init__(self, '.sam')
-        self.get_files(to_load)
+        self.get_file(to_load)
 
     def get_data(self):
         """
@@ -83,70 +69,67 @@ class SamLoader(Loader):
         """
         df_dict = dict()
 
-        for fname in self.files:
+        with open(self.filename, 'r') as f:
+            lines = f.readlines()
 
-            with open(fname, 'r') as f:
-                lines = f.readlines()
+        # identify line number where header lines stop
+        header_idx = 0
+        is_header_line = lines[header_idx][0] == '@'
 
-            # identify line number where header lines stop
-            header_idx = 0
-            is_header_line = lines[header_idx][0] == '@'
+        # store header info: chromosome lengths
+        chrom_len_dict = dict()
 
-            # store header info: chromosome lengths
-            chrom_len_dict = dict()
+        while is_header_line:
+            header_idx += 1
+            line = lines[header_idx]
+            is_header_line = line[0] == '@'
 
-            while is_header_line:
-                header_idx += 1
-                line = lines[header_idx]
-                is_header_line = line[0] == '@'
+            if line[0:3] == '@SQ':
 
-                if line[0:3] == '@SQ':
+                for split in line.split('\t'):
+                    content = split.split(':')[-1]
 
-                    for split in line.split('\t'):
-                        content = split.split(':')[-1]
+                    if split[0:2] == 'SN':
+                        chrom = content
+                    elif split[0:2] == 'LN':
+                        chrom_len = int(content)
 
-                        if split[0:2] == 'SN':
-                            chrom = content
-                        elif split[0:2] == 'LN':
-                            chrom_len = int(content)
+                chrom_len_dict[chrom] = chrom_len
 
-                    chrom_len_dict[chrom] = chrom_len
+        # turn header into a pandas.DataFrame
+        header_df = DataFrame(list(chrom_len_dict.items())
+                              , columns = ['chr', 'length'])
 
-            # turn header into a pandas.DataFrame
-            header_df = DataFrame(list(chrom_len_dict.items())
-                                  , columns = ['chr', 'length'])
+        if not header_df.empty:
+            df_dict['header'] = header_df
 
-            # extract relevant columns from .sam file lines.
-            reads = list()
-            for x in lines[header_idx:]:
-                splt = x.split('\t')
-                reads.append([splt[i] for i in [0, 2, 3, 5, 6, 7]])
+        # extract relevant columns from .sam file lines.
+        reads = list()
+        for x in lines[header_idx:]:
+            splt = x.split('\t')
+            reads.append([splt[i] for i in [0, 2, 3, 5, 6]])
 
-            # transform .sam lines into pandas.DataFrame
-            colnames = ['qname', 'chr', 'pos', 'cigar', 'rnext', 'pnext']
-            df = DataFrame(reads
-                           , columns=colnames)
+        # transform .sam lines into pandas.DataFrame
+        colnames = ['qname', 'chr', 'pos', 'cigar', 'rnext']
+        df = DataFrame(reads
+                       , columns=colnames)
 
-            # subset .sam file to paired reads using rnext column.
-            df = df[df['rnext'] == '=']
+        # subset .sam file to paired reads using rnext column.
+        df = df[df['rnext'] == '=']
 
-            # typecasting: change int fields from str.
-            int_cols = ['pos', 'pnext']
-            for col in int_cols:
-                df[col] = df[col].astype('int')
+        # typecasting: change int fields from str.
+        int_cols = ['pos']
+        for col in int_cols:
+            df[col] = df[col].astype('int')
 
-            # preprocessing: un-specify paired reads together so that a pair of alignments
-            # share the same un-paired QNAME
-            df['qname_unpaired'] = df.qname.apply(lambda x: '.'.join(x.split('.')[:-1]))
+        # preprocessing: un-specify paired reads together so that a pair of alignments
+        # share the same un-paired QNAME
+        df['qname_unpaired'] = df.qname.apply(lambda x: '.'.join(x.split('.')[:-1]))
 
-            # sort the reads so that pairs are grouped together.
-            df.sort_values('qname_unpaired', inplace=True)
+        # sort the reads so that pairs are grouped together.
+        df.sort_values('qname_unpaired', inplace=True)
 
-            df_dict[fname] = dict()
-            df_dict[fname]['data'] = df
-
-            if not header_df.empty:
-                df_dict[fname]['header'] = header_df
+        df_dict['data'] = df
 
         return df_dict
 
@@ -157,8 +140,7 @@ class BamLoader(Loader):
         """
         .bam file loader
 
-        :param to_load: str or list; if str, can be path to directory containing .bam files or
-        the realpath to a .bam file. If list, a list of str .bam filenames.
+        :param to_load: str the realpath to a .bam file.
         """
         Loader.__init__(self, '.bam')
-        self.get_files(to_load)
+        self.get_file(to_load)

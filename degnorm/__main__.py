@@ -24,6 +24,7 @@ def main():
         sam_reader = ReadsCoverageParser(sam_file=sam_files[idx]
                                          , verbose=True
                                          , n_jobs=n_jobs)
+        sam_reader.dump_cigar_parse()
 
 
     #     rna_dat_dict[idx] = sam_reader.coverage()
