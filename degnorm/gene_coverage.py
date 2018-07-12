@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def relative_sample_coverage(sample_df, rng):
+def relative_gene_sample_coverage(sample_df, rng):
     """
     Obtain per-base coverage for one gene for one experiment relative to the starting position
     of the gene on a chromosome.
@@ -11,8 +11,7 @@ def relative_sample_coverage(sample_df, rng):
     :param rng: list of two integers denoting start and end positions of a gene on a chromosome
     :return: np.array of read coverage counts
     """
-
-    # outline gene's position on chromosome including noncoding regions.
+    # outline a gene's location on chromosome including noncoding regions.
     gene_start = np.min(rng)
     gene_end = np.max(rng)
 
