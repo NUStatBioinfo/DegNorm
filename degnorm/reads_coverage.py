@@ -11,7 +11,7 @@ class ReadsCoverageParser():
 
         :param sam_file: chr .sam filename (optional if .bam file is specified)
         :param bam_file: chr .bam filename (option if .sam file is specified)
-        :param tmp_dir: chr path to directory where cigar parse .txt files will be dumped for Fortran IO.
+        :param tmp_dir: chr path to directory where coverage array files are saved.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
         """
@@ -28,11 +28,14 @@ class ReadsCoverageParser():
             self.filename = sam_file
 
         # determine where to dump .txt files from cigar string parse.
-        if tmp_dir:
-            self.tmp_dir = tmp_dir
+        if not tmp_dir:
+            tmp_dir = os.path.join(os.path.dirname(self.filename), 'tmp')
 
-        else:
-            self.tmp_dir = os.path.join(os.path.dirname(self.filename), 'tmp')
+        file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
+        self.tmp_dir = os.path.join(tmp_dir, file_basename)
+
+        if os.path.isdir(self.tmp_dir):
+            raise ValueError('Temporary directory {0} already exists! Cannot overwrite.'.format(self.tmp_dir))
 
         self.n_jobs = n_jobs
         self.verbose = verbose
@@ -100,38 +103,31 @@ class ReadsCoverageParser():
 
         return match_idx_list, num_match_segs
 
-    def chromosome_cigar_segment_dump(self, df, chrom=None, chrom_len=0):
+    def chromosome_coverage(self, df, chrom=None, chrom_len=0):
         """
-        Parse cigar strings from a loaded .sam or .bam file using self._cigar_segment_strings
-        and dump them to a .txt file so that they can be parsed into coverage arrays in another application.
+        Determine per-chromosome reads coverage from an RNA-seq experiment. The cigar scores from
+        single and paired reads are parsed according to _cigar_segment_bounds.
 
-        File will [path to .sam or .bam file]/[.sam or .bam filename]_[chromosome]_cigar.txt
-
-        Example structure of file contents:
-
-        chr7 3445092
-        g1 104 204 110 210 5679 5685 0 0 0 0
-        g2 543 3212 9801 9890 10101 10201 0 0
+        Saves compressed coverage array to self.tmp_dir with file name [chrom].npz
 
         :param df: pandas.DataFrame loaded .sam or .bam file for a single chromosome
         :param chrom: str chromosome name. If not supplied, presume df is already a chromosome subset
         :param chrom_len: int length of chromosome from reference genome
-        :param output_path: str path to output directory to dump .txt files. If None, use
         directory where .sam file came from.
-        :return: None (write file to disk)
+        :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
         if chrom:
             df_chrom = subset_to_chrom(df, chrom=chrom)
         else:
             df_chrom = df
 
+        # grab cigar string and read starting position. Initialize coverage array.
         dat = df_chrom[['cigar', 'pos']].values
-        n_reads = dat.shape[0] + 1
+        cov_vec = np.zeros([chrom_len])
 
-        cig_bounds_list = list()
-        for i in np.arange(1, n_reads, 2):
-            bounds_1, n_match_1 = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
-            bounds_2, n_match_2 = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
+        for i in np.arange(1, dat.shape[0], 2):
+            bounds_1, _ = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
+            bounds_2, _ = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
 
             # leverage nature of alignments of paired reads to find disjoint coverage ranges.
             min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
@@ -143,194 +139,158 @@ class ReadsCoverageParser():
                 bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
                 bounds_2.sort()
 
-            cig_bounds_list.append(bounds_1 + bounds_2)
+            bounds = bounds_1 + bounds_2
+            for j in np.arange(1, len(bounds), 2):
+                cov_vec[(bounds[j - 1]) : (bounds[j] + 1)] += 1
 
-        # determine maximum number of cigar match segments per read pair,
-        # pad cigar strings with 0's for easing fortran IO
-        max_col_width = max(map(lambda x: len(x), cig_bounds_list))
-        for i in range(len(cig_bounds_list)):
-            bounds = cig_bounds_list[i]
-            n_bounds = len(bounds)
-
-            pad = ''
-            if n_bounds < max_col_width:
-                pad = ' ' + ' '.join(['0'] * (max_col_width - n_bounds))
-
-            cig_bounds_list[i] = 'g' + str(i + 1) + ' ' + ' '.join([str(j) for j in bounds]) + pad
-
-        # build output file name.
-        file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
-        output_filepath = os.path.join(self.tmp_dir
-                                       , file_basename + '_' + chrom + '_cigar.txt')
         if self.verbose:
-            logging.info('CHROMOSOME {0} ---- writing cigar segment strings to {1}'.format(chrom, output_filepath))
+            logging.info('CHROMOSOME {0} -- length: {1}'.format(chrom, len(cov_vec)))
+            logging.info('CHROMOSOME {0} -- max read coverage: {1}'.format(chrom, str(np.max(cov_vec))))
+            logging.info('CHROMOSOME {0} -- mean read coverage: {1}'.format(chrom, str(np.mean(cov_vec))))
+            logging.info('CHROMOSOME {0} -- % of chromosome covered: {1}'.format(chrom, str(np.mean(cov_vec > 0))))
 
-        with open(output_filepath, 'w') as out:
-            out.write(chrom + ' ' + str(chrom_len) + '\n')
-            out.write('\n'.join(cig_bounds_list))
+        # create output directory if it does not exist, and then make output file name.
+        if not os.path.isdir(self.tmp_dir):
+            os.makedirs(self.tmp_dir)
 
-    def dump_cigar_parse(self):
+        out_file = os.path.join(self.tmp_dir, chrom + '.npz')
+
+        logging.info('CHROMOSOME {0} -- saving coverage array to {1}'.format(chrom, out_file))
+        np.savez_compressed(out_file, cov=cov_vec)
+
+        return out_file
+
+    def coverage(self):
         """
-        Main function for parsing cigar strings into start,end string segments and dumping them to disk.
+        Main function for computing coverage arrays in parallel over chromosomes.
+
+        :return: list of str file paths of compressed .npz files containing coverage arrays.
         """
         if self.verbose:
             logging.info('Loading file {0} into pandas.DataFrame'.format(self.filename))
 
+        # load .sam or .bam file's reads + header.
         df, header_df = self.load()
 
         if self.verbose:
-            logging.info('Successfully loaded {0} file. Total reads: {1}'.format(
+            logging.info('Successfully loaded {0} file. Total reads -- {1}'.format(
                 '.bam' if self.is_bam else '.sam', df.shape[0]))
 
+        # determine chromosomes whose coverage will be computed.
         chroms = df.chr.unique()
         header_df = header_df[header_df['chr'].isin(chroms)]
 
-        if not os.path.isdir(self.tmp_dir):
-            os.makedirs(self.tmp_dir)
-
         if self.verbose:
-            logging.info('Begin writing cigar segment strings for {0} chromosomes...'.format(len(chroms)))
+            logging.info('Determining position coverage for {0} chromosomes...'.format(len(chroms)))
 
+        # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
-        out = [p.apply_async(self.chromosome_cigar_segment_dump
-                             , args=(df, header_df.chr.iloc[i], header_df.length.iloc[i])) for i in
-               range(header_df.shape[0])]
+        cov_filepaths = [p.apply_async(self.chromosome_coverage
+                                       , args=(df, header_df.chr.iloc[i], header_df.length.iloc[i])) for i in
+                         range(header_df.shape[0])]
         p.close()
+        cov_filepaths = [x.get() for x in cov_filepaths]
+
+        return cov_filepaths
 
 
-    # --------------------------------------------------------------------------------------------------- #
-    #                                           DEPRECATED                                                #
-    # --------------------------------------------------------------------------------------------------- #
+# ==================================================================================================================== #
+#                                                  Deprecated                                                          #
+# ==================================================================================================================== #
 
-    # @staticmethod
-    # def _cigar_segments(cigar, start):
+# def chromosome_coverage_fortran(self, df, chrom=None, chrom_len=0):
     #     """
-    #     Determine the start and end positions on a chromosome of a non-no-matching part of an
-    #     RNA-seq read based on a read's cigar string. All regions
+    #     Parse cigar strings from a loaded .sam or .bam file using self._cigar_segment_strings
+    #     and dump them to a .txt file so that they can be parsed into coverage arrays in another application.
     #
-    #     cigar string meaning: http://bioinformatics.cvr.ac.uk/blog/tag/cigar-string/
+    #     File will [path to .sam or .bam file]/[.sam or .bam filename]_[chromosome]_cigar.txt
     #
-    #     :param cigar: str a read's cigar string, e.g. "49M165N51M"
-    #     :param start: int a read's start position on a chromosome
-    #     :return: list of lists; each sub-list has two elements, the start and end position (end of match is inclusive)
-    #     of a matching region of the read.
-    #     """
-    #     if cigar == '100M':
-    #         return [start, start + 101]
+    #     Example structure of file contents:
     #
-    #     cigar_split = [(v, int(k)) for k, v in re.findall(r'(\d+)([A-Z]?)', cigar)]
-    #
-    #     shift_one = True
-    #     segments = list()
-    #     for segment in cigar_split:
-    #
-    #         extension = segment[1] + 1 if shift_one else segment[1]
-    #         shift_one = False
-    #
-    #         if segment[0] == 'M':
-    #             segments.append([start, start + extension])
-    #
-    #         start += extension
-    #
-    #     return segments
-
-    # @staticmethod
-    # def _fill_segments(lst2d):
-    #     """
-    #     For each sub-list in a 2-d list structure (a list of lists), fill in
-    #     the integers between the first and second elements of the sub-list.
-    #
-    #     For example:
-    #     [[4, 7], [9, 13]] -> [(4, 5, 6), (9, 10, 11, 12)]
-    #
-    #     :param lst2d: list of lists; each sub-list should have two integers defining
-    #     a start and an end position, respectively
-    #     :return: list of numpy arrays; each array is a range spanning the integers
-    #     between the first and second integer the sub-lists contained in lst2d
-    #     """
-    #     lst2d_expanded = [np.arange(lst1d[0], lst1d[1]) for lst1d in lst2d]
-    #
-    #     return lst2d_expanded
-
-    # def cigar_segment_processor(self, cigars, starts):
-    #     """
-    #     Determine the locations covered by a single read or set of two paired reads based on the
-    #     cigar score(s) -- use for computing complete reads coverage.
-    #
-    #     For a single read or set of two paired reads, take the unique combined set of
-    #     matched regions of a chromosome.
-    #
-    #     :param cigars: list or numpy array of str cigar strings
-    #     :param starts: list or numpy array of int read start positions. Must have same lengths as `cigars`.
-    #     :return: 1-d numpy array of int positions covered by the
-    #     """
-    #     n = len(cigars)
-    #
-    #     for idx in range(n):
-    #         append_me = flatten_2d(self._fill_segments(self._cigar_segments(cigars[idx]
-    #                                                                         , start=starts[idx])))
-    #         if idx == 0:
-    #             read_idx_arr = append_me
-    #         else:
-    #             read_idx_arr = np.append(read_idx_arr, append_me)
-    #
-    #     return np.unique(read_idx_arr)
-
-    # def chromosome_reads_coverage(self, df, chrom=None):
-    #     """
-    #     Determine per-chromosome reads coverage from an RNA-seq experiment. The cigar scores from
-    #     single and paired reads are parsed according to cigar_processor
+    #     chr7 3445092
+    #     g1 104 204 110 210 5679 5685 0 0 0 0
+    #     g2 543 3212 9801 9890 10101 10201 0 0
     #
     #     :param df: pandas.DataFrame loaded .sam or .bam file for a single chromosome
-    #     :param chrom: str chromosome name. If not supplied, presume df is already chromosome-subsetted.
-    #     :return: tuple (chrom, 1-d numpy array -- entire chromosome's reads coverage)
+    #     :param chrom: str chromosome name. If not supplied, presume df is already a chromosome subset
+    #     :param chrom_len: int length of chromosome from reference genome
+    #     :param output_path: str path to output directory to dump .txt files. If None, use
+    #     directory where .sam file came from.
+    #     :return: None (write file to disk)
     #     """
     #     if chrom:
     #         df_chrom = subset_to_chrom(df, chrom=chrom)
     #     else:
     #         df_chrom = df
     #
-    #     coverage_arr = np.zeros(df_chrom.end_pos.max() + 1)
+    #     dat = df_chrom[['cigar', 'pos']].values
+    #     n_reads = dat.shape[0] + 1
     #
-    #     gb = df_chrom.groupby(['qname_unpaired'])
-    #     for grp in gb:
-    #         covered_idx = self.cigar_segment_processor(grp[1].cigar.values
-    #                                                    , starts=grp[1].pos.values)
-    #         coverage_arr[covered_idx] += 1
+    #     cig_bounds_list = list()
+    #     for i in np.arange(1, n_reads, 2):
+    #         bounds_1, n_match_1 = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
+    #         bounds_2, n_match_2 = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
     #
+    #         # leverage nature of alignments of paired reads to find disjoint coverage ranges.
+    #         min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
+    #         min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
+    #
+    #         if max_bounds_2 > max_bounds_1:
+    #             bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
+    #         else:
+    #             bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
+    #             bounds_2.sort()
+    #
+    #         cig_bounds_list.append(bounds_1 + bounds_2)
+    #
+    #     # determine maximum number of cigar match segments per read pair,
+    #     # pad cigar strings with 0's for easing fortran IO
+    #     max_col_width = max(map(lambda x: len(x), cig_bounds_list))
+    #     for i in range(len(cig_bounds_list)):
+    #         bounds = cig_bounds_list[i]
+    #         n_bounds = len(bounds)
+    #
+    #         pad = ''
+    #         if n_bounds < max_col_width:
+    #             pad = ' ' + ' '.join(['0'] * (max_col_width - n_bounds))
+    #
+    #         cig_bounds_list[i] = 'g' + str(i + 1) + ' ' + ' '.join([str(j) for j in bounds]) + pad
+    #
+    #     # build output file name.
+    #     file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
+    #     output_filepath = os.path.join(self.tmp_dir
+    #                                    , file_basename + '_' + chrom + '_cigar.txt')
     #     if self.verbose:
-    #         logging.info('---- CHROMOSOME {0} ----'.format(chrom))
-    #         logging.info('Max read coverage -- {0}'.format(str(np.max(coverage_arr))))
-    #         logging.info('Mean read coverage -- {0}'.format(str(np.mean(coverage_arr))))
-    #         logging.info('% of chromosome covered -- {0}'.format(str(np.mean(coverage_arr > 0))))
+    #         logging.info('CHROMOSOME {0} ---- writing cigar segment strings to {1}'.format(chrom, output_filepath))
     #
-    #     return (chrom, coverage_arr)
-    #
-    # def coverage(self):
+    #     with open(output_filepath, 'w') as out:
+    #         out.write(chrom + ' ' + str(chrom_len) + '\n')
+    #         out.write('\n'.join(cig_bounds_list))
+
+    # def coverage_fortran(self):
     #     """
-    #     Main function for computing coverage arrays in parallel over chromosomes.
+    #     Main function for parsing cigar strings into start,end string segments and dumping them to disk.
     #     """
     #     if self.verbose:
     #         logging.info('Loading file {0} into pandas.DataFrame'.format(self.filename))
     #
-    #     df, _ = self.load()
+    #     df, header_df = self.load()
     #
     #     if self.verbose:
-    #         logging.info('Successfully loaded {0} file. Total reads -- {1}'.format(
+    #         logging.info('Successfully loaded {0} file. Total reads: {1}'.format(
     #             '.bam' if self.is_bam else '.sam', df.shape[0]))
     #
     #     chroms = df.chr.unique()
+    #     header_df = header_df[header_df['chr'].isin(chroms)]
+    #
+    #     if not os.path.isdir(self.tmp_dir):
+    #         os.makedirs(self.tmp_dir)
     #
     #     if self.verbose:
-    #         logging.info('Determining position coverage for {0} chromosomes...'.format(len(chroms)))
+    #         logging.info('Begin writing cigar segment strings for {0} chromosomes...'.format(len(chroms)))
     #
     #     p = mp.Pool(processes=self.n_jobs)
-    #     cov_tups = [p.apply_async(self.chromosome_reads_coverage, args=(df, chrom)) for chrom in chroms]
+    #     out = [p.apply_async(self.chromosome_coverage_fortran
+    #                          , args=(df, header_df.chr.iloc[i], header_df.length.iloc[i])) for i in
+    #            range(header_df.shape[0])]
     #     p.close()
-    #     cov_tups = [x.get() for x in cov_tups]
-    #
-    #     chrom_cov_dict = dict()
-    #     for tup in cov_tups:
-    #         chrom_cov_dict[tup[0]] = tup[1]
-    #
-    #     return chrom_cov_dict
