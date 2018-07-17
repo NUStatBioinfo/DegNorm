@@ -85,7 +85,6 @@ def get_exon_outline(df):
     |     chr1       |      RCC1       |      28832454       |     28832596     |
     +----------------+-----------------+---------------------+------------------+
     """
-
     exon_df_list = list()
     for row_idx in range(df.shape[0]):
         sub_df = df.iloc[row_idx]
