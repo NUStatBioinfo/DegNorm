@@ -9,8 +9,20 @@ logging.basicConfig(stream=sys.stdout
                     , datefmt='%m/%d/%Y %I:%M:%S')
 
 
-def subset_to_chrom(df, chrom):
-    return df[df['chr'] == chrom]
+def subset_to_chrom(df, chrom, reindex=False):
+    """
+    Subset a pandas.DataFrame with a 'chr' (chromosome) column to a particular
+    chromosome. Reset the index if desired.
+
+    :param df: pandas.DataFrame with a 'chr' column
+    :param chrom: str chromosome name
+    :param reindex: bool indicator reset index? Default False: do not reset index.
+    :return: pandas.DataFrame
+    """
+    if not reindex:
+        return df[df['chr'] == chrom]
+    else:
+        return df[df['chr'] == chrom].reset_index(drop=True)
 
 
 def max_cpu():

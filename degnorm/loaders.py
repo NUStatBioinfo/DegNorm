@@ -228,7 +228,7 @@ class GeneAnnotationLoader(Loader):
         df['gene'] = df.attribute.apply(lambda x: self._attribute_to_gene(x, exprs=find_me))
 
         # subset to the data we'll actually need, turning data into a .bed file format.
-        return df[['chr', 'start', 'end', 'gene']]
+        return df[['chr', 'start', 'end', 'gene']].drop_duplicates()
 
 
 # if __name__ == '__main__':

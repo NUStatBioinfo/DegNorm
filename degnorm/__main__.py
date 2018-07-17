@@ -26,9 +26,9 @@ def main():
     # and save them to .npz files.
     logging.info('Begin loading RNA-seq data...')
     for idx in samples:
-        sam_reader = ReadsCoverageParser(sam_file=sam_files[idx]
-                                         , verbose=True
-                                         , n_jobs=n_jobs)
+        sam_reader = ReadsCoverageProcessor(sam_file=sam_files[idx]
+                                            , verbose=True
+                                            , n_jobs=n_jobs)
         sample_cov_files[idx] = sam_reader.coverage()
         chroms += [os.path.basename(f).split('.npz')[0] for f in sample_cov_files[idx]]
 

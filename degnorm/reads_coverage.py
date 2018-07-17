@@ -1,19 +1,21 @@
 import re
+import os
 from degnorm.utils import *
 from degnorm.loaders import SamLoader, BamLoader
 
 
-class ReadsCoverageParser():
-    def __init__(self, sam_file=None, bam_file=None, n_jobs=max_cpu(), tmp_dir=None, verbose=False):
+class ReadsCoverageProcessor():
+    def __init__(self, sam_file=None, bam_file=None, n_jobs=max_cpu(), tmp_dir=None, verbose=True):
         """
         Genome coverage reader for a single RNA-seq experiment.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
 
-        :param sam_file: chr .sam filename (optional if .bam file is specified)
-        :param bam_file: chr .bam filename (option if .sam file is specified)
-        :param tmp_dir: chr path to directory where coverage array files are saved.
+        :param sam_file: str .sam filename (optional if .bam file is specified)
+        :param bam_file: str .bam filename (option if .sam file is specified)
+        :param tmp_dir: str path to directory where coverage array files are saved.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
+        :param verbose: bool indicator should progress be written to logger?
         """
         if bam_file and sam_file:
             raise ValueError('cannot specify both a .sam and a .bam file')
@@ -39,16 +41,18 @@ class ReadsCoverageParser():
 
         self.n_jobs = n_jobs
         self.verbose = verbose
+        self.loader = None
 
     def load(self):
         """
         Load a .sam or .bam file, obtain reads data and header.
         """
         if self.is_bam:
-            df_dict = BamLoader(self.filename).get_data()
+            self.loader = BamLoader(self.filename)
         else:
-            df_dict = SamLoader(self.filename).get_data()
+            self.loader = SamLoader(self.filename)
 
+        df_dict = self.loader.get_data()
         df = df_dict['data']
         header_df = df_dict['header']
 
