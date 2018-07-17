@@ -144,3 +144,17 @@ class BamLoader(Loader):
         """
         Loader.__init__(self, '.bam')
         self.get_file(to_load)
+
+
+class GtfLoader(Loader):
+
+    def __init__(self, to_load):
+        """
+        .gtf file loader
+
+        :param to_load: str the realpath to a .gtf file.
+        """
+        Loader.__init__(self, '.gtf')
+        self.get_file(to_load)
+
+    def get_data(self):
