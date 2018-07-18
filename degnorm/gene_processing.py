@@ -3,7 +3,7 @@ import pandas as pd
 from degnorm.utils import *
 from degnorm.loaders import GeneAnnotationLoader
 
-# TODO: add logging messages under verbose
+
 class GeneAnnotationProcessor():
 
     def __init__(self, annotation_file, n_jobs=max_cpu(), verbose=True):
@@ -79,7 +79,8 @@ class GeneAnnotationProcessor():
         :return: list of exon identifiers for exons that intersect with > 1 genes
         """
         # subset range DataFrames to relevant chromosome.
-        exon_chrom_df = subset_to_chrom(exon_df, chrom=chrom, reindex=True)['start', 'end', 'exon_id']
+        exon_chrom_df = subset_to_chrom(exon_df, chrom=chrom, reindex=True)
+        exon_chrom_df = exon_chrom_df[['start', 'end', 'exon_id']]
         gene_chrom_df = subset_to_chrom(gene_df, chrom=chrom, reindex=True)
 
         # store list of exons that need to be removed.
@@ -110,7 +111,7 @@ class GeneAnnotationProcessor():
         on a chromosome; there are multiple rows (so, multiple exons) per (chr, gene) combination
         :param gene_df: pandas.DataFrame with fields 'chr', 'gene', 'gene_start', 'gene_end', and 'exon_id'
          outlining the positions of genes on a chromosome
-        :return: pandas.DataFrame subset of exon_range_df corresponding to exons that overlap with exactly a single gene's
+        :return: pandas.DataFrame subset of exon_df corresponding to exons that overlap with exactly a single gene's
         position on the genome
         """
         if 'exon_id' not in exon_df.columns:
@@ -129,7 +130,7 @@ class GeneAnnotationProcessor():
 
         return exon_df[~exon_df.exon_id.isin(rm_exons)]
 
-    def pipeline(self):
+    def run(self):
         """
         Main function for GeneAnnotationProcessor. Runs transcriptome annotation processing pipeline:
 
@@ -140,13 +141,42 @@ class GeneAnnotationProcessor():
         :return: pandas.DataFrame with 'chr', 'gene', 'gene_start', 'gene_end', 'exon_start', 'exon_end' fields
         outlining exons ready to use for reads coverage computations
         """
-        exon_df = self.remove_multichrom_genes(self.load())
-        gene_df = self.get_gene_outline(exon_df)
+        if self.verbose:
+            logging.info('Loading file {0} into pandas.DataFrame'.format(self.filename))
 
-        exon_df = self.remove_multigene_exons(self
-                                              , exon_df=exon_df
+        exon_df = self.load()
+
+        if self.verbose:
+            logging.info('Successfully loaded file {0}. Shape -- {1}'.format(self.filename, exon_df.shape))
+            logging.info('Removing multiple-chromosome genes.')
+
+        exon_df = self.remove_multichrom_genes(exon_df)
+
+        if self.verbose:
+            logging.info('Successfully removed multiple-chromosome genes.')
+            logging.info('Removing exons that occur in multiple genes.')
+
+        gene_df = self.get_gene_outline(exon_df)
+        n_exons = exon_df.shape[0]
+        exon_df = self.remove_multigene_exons(exon_df=exon_df
                                               , gene_df=gene_df)
+
+        if self.verbose:
+            logging.info('Multiple-chromosome genes were removed.')
+            logging.info('Removing exons that occur in multiple genes.')
 
         exon_df = exon_df.merge(gene_df, on=['chr', 'gene']).drop_duplicates()
 
+        if self.verbose:
+            logging.info('{0} multiple-gene exons were removed. Final shape -- {1}'
+                         .format(n_exons - exon_df.shape[0], exon_df.shape))
+            logging.info('Genome annotation file processing pipeline was successful.')
+
         return exon_df
+
+
+# if __name__ == '__main__':
+#     import os
+#     gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
+#     processor = GeneAnnotationProcessor(gtf_file, n_jobs=2)
+#     exon_df = processor.run()

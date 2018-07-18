@@ -1,7 +1,7 @@
 import os
 import sys
 from degnorm.reads_coverage import *
-from degnorm.gene_coverage import *
+from degnorm.gene_processing import *
 from degnorm.gene_groupby import *
 from degnorm.genome_preprocessing import *
 from degnorm.utils import *
@@ -14,6 +14,7 @@ def main():
     data_dir = '/Users/fineiskid/nu/jiping_research/data/rna_seq'
 
     n_jobs = 2
+    gtf_file = os.path.join(data_dir, 'genes.gtf')
     sam_files = [os.path.join(data_dir, 'A01_R01_chr1_2.sam')]
     n_samples = len(sam_files)
     samples = list(range(n_samples))
@@ -27,8 +28,8 @@ def main():
     logging.info('Begin loading RNA-seq data...')
     for idx in samples:
         sam_reader = ReadsCoverageProcessor(sam_file=sam_files[idx]
-                                            , verbose=True
-                                            , n_jobs=n_jobs)
+                                            , n_jobs = n_jobs
+                                            , verbose=True)
         sample_cov_files[idx] = sam_reader.coverage()
         chroms += [os.path.basename(f).split('.npz')[0] for f in sample_cov_files[idx]]
 
@@ -36,26 +37,13 @@ def main():
     n_chroms= len(chroms)
     logging.info('Total chromosomes: {0}'.format(n_chroms))
 
-    logging.info('Loading gene annotation exon file')
-    gene_file = os.path.join(data_dir, 'genes_exon.bed')
-    gene_df = pd.read_table(gene_file, sep='\s+', header=None)
-    gene_df.columns = ['chr', 'start', 'end', 'gene']
+    # load and process gene annotation file
+    gap = GeneAnnotationProcessor(gtf_file
+                                  , n_jobs=n_jobs
+                                  , verbose=True)
+    exon_df = gap.run()
 
-    # remove genes present in multiple chromosomes
-    logging.info('Removing genes that appear in multiple chromosomes')
-    gene_df = remove_multichrom_genes(gene_df)
-
-    # create map of genes within genome
-    logging.info('Establishing gene, exon positioning within genome')
-    gene_df = get_gene_outline(gene_df)
-    exon_df = get_exon_outline(gene_df)
-
-    # cut out exons that overlap with multiple genes.
-    logging.info('Removing exons that overlap with multiple genes')
-    exon_df = remove_multigene_exons(exon_df
-                                     , g_df=gene_df[['chr', 'gene_start', 'gene_end']]
-                                     , n_jobs=n_jobs)
-
+    # subset genes to chromosome, merge processed exon regions with gene-level metadata.
     # outer iteration loop: chromosomes
     for chrom_idx in range(n_chroms):
         chrom = chroms[chrom_idx]
@@ -74,12 +62,8 @@ def main():
 
         logging.info('CHROMOSOME {0} -- coverage matrix shape: {1}'.format(chrom, cov_mat.shape))
 
-        # subset genes to chromosome, merge processed exon regions with gene-level metadata.
-        exon_sub_df = subset_to_chrom(exon_df, chrom=chrom)
-        gene_sub_df = exon_sub_df.merge(gene_df[['chr', 'gene', 'gene_end', 'gene_start']]
-                                        , on=['chr', 'gene'])
-
-        genes = gene_sub_df['gene'].unique()
+        exon_chrom_df = subset_to_chrom(exon_df, chrom=chrom)
+        genes = exon_chrom_df['gene'].unique()
         n_genes = len(genes)
 
         # TODO: parallelize gene loop (specific to a particular chromosome)
@@ -91,7 +75,7 @@ def main():
 
             # subset chromosome's gene/exon data to a single gene.
             # identify gene's start and end positions.
-            single_gene_df = gene_sub_df[gene_sub_df.gene == gene]
+            single_gene_df = exon_chrom_df[exon_chrom_df.gene == gene]
             rng = (single_gene_df['gene_start'].iloc[0], single_gene_df['gene_end'].iloc[0])
 
             # initialize gene's coverage matrix.
