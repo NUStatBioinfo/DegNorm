@@ -2,9 +2,9 @@
 
 ### Frank
 - Add CLI flags and docs
-- Write .gtf file converters
 - Turn .gtf file processing into class
 - Add requirements.txt
+- Write tests!
 
 
 ### Bin

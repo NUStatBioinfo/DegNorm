@@ -1,32 +1,37 @@
 import os
 import re
-import argparse
-import numpy as np
-from pandas import DataFrame
+from pandas import DataFrame, read_table
 
 
 class Loader():
-    def __init__(self, filetype):
+    def __init__(self, filetypes):
         """
         Generic file loader class.
 
-        :param filetype: str file extension, only load files that .endswith(filetype)
+        :param filetypes: str or list of file extensions, only load files that .endswith(filetype). Using a list
+        would be appropriate if there are multiple allowable file formats, e.g. .gtf and .gff files, because
+        they share mostly the same file format.
         """
-        self.filetype = filetype
-        self.files = list()
+        self.filetypes = filetypes if isinstance(filetypes, list) else [filetypes]
+        self.filename = None
 
     def get_file(self, to_load):
         """
         Obtain list of str realpaths to files to load.
 
-        :param to_load: str the realpath to a `filetype` file.
+        :param to_load: str the realpath to a file ending with self.filetype file types.
         """
         if isinstance(to_load, str):
             if os.path.exists(to_load):
-                if to_load.endswith(self.filetype):
-                    self.filename = to_load
-                else:
-                    raise ValueError('to_load file {0} does not end with {0}'.format(to_load, self.filetype))
+
+                loadable = False
+                for ft in self.filetypes:
+                    if to_load.endswith(ft):
+                        self.filename = to_load
+                        loadable = True
+
+                if not loadable:
+                    raise ValueError('to_load file {0} does not end with {0}'.format(to_load, ', '.join(self.filetypes)))
             else:
                 raise IOError('to_load file {0} not found'.format(to_load))
 
@@ -146,15 +151,88 @@ class BamLoader(Loader):
         self.get_file(to_load)
 
 
-class GtfLoader(Loader):
+class GeneAnnotationLoader(Loader):
 
     def __init__(self, to_load):
         """
-        .gtf file loader
+        .gtf or .gff file loader
+
+        More about .gtf or .gff fields: https://useast.ensembl.org/info/website/upload/gff.html
 
         :param to_load: str the realpath to a .gtf file.
         """
-        Loader.__init__(self, '.gtf')
+        Loader.__init__(self, ['.gtf', '.gff'])
         self.get_file(to_load)
 
+    @staticmethod
+    def _attribute_to_gene(attribute, exprs):
+        """
+        Parse a .gtf/.gff attribute string for a gene_id or gene_name.
+
+        For example:
+
+        self._attribute_to_gene('gene_id "DDX11L1"; gene_name "DDX11L1"; transcript_id "NR_046018";'
+                                , exprs = [re.compile('gene_id')])
+        'DDX11L1'
+
+        :param attribute: str attribute string from .gtf/.gff file -- "A semicolon-separated list of tag-value pairs,
+        providing additional information about each feature."
+        :param exprs: list of compiled regex expressions to use to find a gene_id or gene_name
+        :return: str a gene_id or gene_name parsed out of attribute string
+        """
+        splt = attribute.split(';')
+        gene = False
+        expr_idx = 0
+        while not gene:
+            gene_matches = list(filter(exprs[expr_idx].match, splt))
+            if gene_matches:
+                gene = gene_matches[0].replace(exprs[expr_idx].pattern, '').strip(' "')
+
+            expr_idx += 1
+
+        return gene
+
     def get_data(self):
+        """
+        Load a .gtf or .gff file, extract exon regions, and subset to a pandas.DataFrame that looks like this:
+
+        +----------------+-----------------+-----------------+--------------------+
+        |     chr        |       start     |       end       |         gene       |
+        +================+=================+=================+====================+
+        |     chrI       |      11873      |      12227      |     MIR1302-11     |
+        +----------------+-----------------+-----------------+--------------------+
+        |     chr6       |      17232      |      17368      |     LINC00266-3    |
+        +----------------+-----------------+-----------------+--------------------+
+
+        :return: pandas.DataFrame for exon annotated regions with fields 'chr', 'start', 'end', 'gene'
+        """
+        # load file only if there are at least 9 columns.
+        try:
+            df = read_table(self.filename
+                            , sep='\t'
+                            , header=None
+                            , usecols=list(range(9)))
+        except ValueError as e:
+            raise ValueError('file {0} must have the 9 mandatory .gtf/.gff columns.'
+                             'Read more at https://useast.ensembl.org/info/website/upload/gff.html')
+
+        cols = ['chr', 'source', 'feature', 'start',
+                'end', 'score', 'strand', 'frame', 'attribute']
+        df.columns = cols
+
+        # subset annotation to just exons.
+        df = df[df.feature.apply(lambda x: x.lower()) == 'exon']
+
+        # parse out gene identifiers from attribute strings.
+        find_me = [re.compile('gene_id'), re.compile('gene_name')]
+        df['gene'] = df.attribute.apply(lambda x: self._attribute_to_gene(x, exprs=find_me))
+
+        # subset to the data we'll actually need, turning data into a .bed file format.
+        return df[['chr', 'start', 'end', 'gene']].drop_duplicates()
+
+
+# if __name__ == '__main__':
+#     gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
+#     loader = GeneAnnotationLoader(gtf_file)
+#     df = loader.get_data()
+#     print(df.head(20))
