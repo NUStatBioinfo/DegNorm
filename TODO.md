@@ -2,6 +2,7 @@
 
 ### Frank
 - Add CLI flags and docs
+- write logic for .bam files; figure out how to handle them
 - Turn .gtf file processing into class
 - Add requirements.txt
 - Write tests!

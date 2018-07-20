@@ -88,6 +88,13 @@ def parse_args():
                                'A directory for storing DegNorm analyses, visualizations, '
                                'and data will be created. Default to the current working directory.')
     parser.add_argument('-c'
+                        , '--save-coverage'
+                        , type=bool
+                        , default=True
+                        , help='Save coverage matrices flag.'
+                               'If True, save coverage matrices per chromosome to .pkl files.'
+                               'Default to True.')
+    parser.add_argument('-c'
                         , '--cpu'
                         , type=int
                         , default=max_cpu()
@@ -132,7 +139,10 @@ def parse_args():
 
         args.input_files = input_files
 
+    # ensure that input files are uniquely named.
     args.input_files = list(set(args.input_files))
+
+    # ensure that all files can be found.
     for f in args.input_files + [args.genome_annotation]:
         if not os.path.isfile(f):
             raise IOError('File {0} not found.'.format(f))

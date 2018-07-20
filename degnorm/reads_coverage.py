@@ -1,5 +1,4 @@
 import re
-import os
 from degnorm.utils import *
 from degnorm.loaders import SamLoader, BamLoader
 
@@ -37,6 +36,7 @@ class ReadsCoverageProcessor():
         self.tmp_dir = os.path.join(tmp_dir, file_basename)
         self.n_jobs = n_jobs
         self.verbose = verbose
+        self.sample_id = file_basename
         self.loader = None
 
     def load(self):
@@ -108,7 +108,7 @@ class ReadsCoverageProcessor():
         Determine per-chromosome reads coverage from an RNA-seq experiment. The cigar scores from
         single and paired reads are parsed according to _cigar_segment_bounds.
 
-        Saves compressed coverage array to self.tmp_dir with file name [chrom].npz
+        Saves compressed coverage array to self.tmp_dir with file name 'sample_[sample_id]_[chrom].npz'
 
         :param df: pandas.DataFrame loaded .sam or .bam file for a single chromosome
         :param chrom: str chromosome name. If not supplied, presume df is already a chromosome subset
@@ -150,7 +150,7 @@ class ReadsCoverageProcessor():
             logging.info('CHROMOSOME {0} -- % of chromosome covered: {1}'.format(chrom, str(np.mean(cov_vec > 0))))
 
         # create output directory if it does not exist, and then make output file name.
-        out_file = os.path.join(self.tmp_dir, chrom + '.npz')
+        out_file = os.path.join(self.tmp_dir, 'sample_' + self.sample_id + '_' + chrom + '.npz')
         if not os.path.isdir(self.tmp_dir):
             os.makedirs(self.tmp_dir)
 
