@@ -35,10 +35,6 @@ class ReadsCoverageProcessor():
 
         file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
         self.tmp_dir = os.path.join(tmp_dir, file_basename)
-
-        if os.path.isdir(self.tmp_dir):
-            raise ValueError('Temporary directory {0} already exists! Cannot overwrite.'.format(self.tmp_dir))
-
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.loader = None
@@ -154,13 +150,13 @@ class ReadsCoverageProcessor():
             logging.info('CHROMOSOME {0} -- % of chromosome covered: {1}'.format(chrom, str(np.mean(cov_vec > 0))))
 
         # create output directory if it does not exist, and then make output file name.
+        out_file = os.path.join(self.tmp_dir, chrom + '.npz')
         if not os.path.isdir(self.tmp_dir):
             os.makedirs(self.tmp_dir)
 
-        out_file = os.path.join(self.tmp_dir, chrom + '.npz')
-
         logging.info('CHROMOSOME {0} -- saving coverage array to {1}'.format(chrom, out_file))
-        np.savez_compressed(out_file, cov=cov_vec)
+        np.savez_compressed(out_file
+                            , cov=cov_vec)
 
         return out_file
 
@@ -185,7 +181,7 @@ class ReadsCoverageProcessor():
         header_df = header_df[header_df['chr'].isin(chroms)]
 
         if self.verbose:
-            logging.info('Determining position coverage for {0} chromosomes...'.format(len(chroms)))
+            logging.info('Determining coverage for {0} chromosomes...'.format(len(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
