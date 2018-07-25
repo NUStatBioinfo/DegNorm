@@ -1,5 +1,4 @@
 import re
-import os
 from degnorm.utils import *
 from degnorm.loaders import SamLoader, BamLoader
 
@@ -35,12 +34,9 @@ class ReadsCoverageProcessor():
 
         file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
         self.tmp_dir = os.path.join(tmp_dir, file_basename)
-
-        if os.path.isdir(self.tmp_dir):
-            raise ValueError('Temporary directory {0} already exists! Cannot overwrite.'.format(self.tmp_dir))
-
         self.n_jobs = n_jobs
         self.verbose = verbose
+        self.sample_id = file_basename
         self.loader = None
 
     def load(self):
@@ -112,7 +108,7 @@ class ReadsCoverageProcessor():
         Determine per-chromosome reads coverage from an RNA-seq experiment. The cigar scores from
         single and paired reads are parsed according to _cigar_segment_bounds.
 
-        Saves compressed coverage array to self.tmp_dir with file name [chrom].npz
+        Saves compressed coverage array to self.tmp_dir with file name 'sample_[sample_id]_[chrom].npz'
 
         :param df: pandas.DataFrame loaded .sam or .bam file for a single chromosome
         :param chrom: str chromosome name. If not supplied, presume df is already a chromosome subset
@@ -154,13 +150,13 @@ class ReadsCoverageProcessor():
             logging.info('CHROMOSOME {0} -- % of chromosome covered: {1}'.format(chrom, str(np.mean(cov_vec > 0))))
 
         # create output directory if it does not exist, and then make output file name.
+        out_file = os.path.join(self.tmp_dir, 'sample_' + self.sample_id + '_' + chrom + '.npz')
         if not os.path.isdir(self.tmp_dir):
             os.makedirs(self.tmp_dir)
 
-        out_file = os.path.join(self.tmp_dir, chrom + '.npz')
-
         logging.info('CHROMOSOME {0} -- saving coverage array to {1}'.format(chrom, out_file))
-        np.savez_compressed(out_file, cov=cov_vec)
+        np.savez_compressed(out_file
+                            , cov=cov_vec)
 
         return out_file
 
@@ -185,7 +181,8 @@ class ReadsCoverageProcessor():
         header_df = header_df[header_df['chr'].isin(chroms)]
 
         if self.verbose:
-            logging.info('Determining position coverage for {0} chromosomes...'.format(len(chroms)))
+            logging.info('Determining coverage for {0} chromosomes...\n'
+                         '{1}'.format(len(chroms), ', '.join(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
