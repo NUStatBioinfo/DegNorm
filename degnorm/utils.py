@@ -1,9 +1,13 @@
 import multiprocessing as mp
 import logging
 import sys
-import os
 import numpy as np
+import subprocess
+import os
+from datetime import datetime
+import time
 import argparse
+
 
 logging.basicConfig(stream=sys.stdout
                     , level=logging.DEBUG
@@ -17,14 +21,22 @@ def subset_to_chrom(df, chrom, reindex=False):
     chromosome. Reset the index if desired.
 
     :param df: pandas.DataFrame with a 'chr' column
-    :param chrom: str chromosome name
+    :param chrom: str or list; chromosome(s) with which to subset df
     :param reindex: bool indicator reset index? Default False: do not reset index.
     :return: pandas.DataFrame
     """
+    if not isinstance(chrom, list):
+        chrom = [chrom]
+
     if not reindex:
-        return df[df['chr'] == chrom]
+        sub_df = df[df['chr'].isin(chrom)]
     else:
-        return df[df['chr'] == chrom].reset_index(drop=True)
+        sub_df = df[df['chr'].isin(chrom)].reset_index(drop=True)
+
+    if sub_df.empty:
+        raise ValueError('Chromosome subsetting resulted in an empty DataFrame!')
+
+    return sub_df
 
 
 def max_cpu():
@@ -43,6 +55,52 @@ def flatten_2d(lst2d):
     return arr1d
 
 
+def find_samtools():
+    """
+    Determine if samtools is installed. Note that samtools is only available
+    for Linux and Mac OS: https://github.com/samtools/samtools/blob/develop/INSTALL
+
+    :return: True if samtools is installed.
+    """
+    out = subprocess.run(['which samtools']
+                         , shell=True)
+    if out.returncode != 0:
+        raise EnvironmentError('samtools is not installed.'
+                               'samtools is required to convert .bam -> .sam files'
+                               'Either use .sam files or install samtools.')
+
+    return True
+
+
+def bam_to_sam(bam_file):
+    """
+    Convert a .bam file to a .sam file with samtools.
+
+    :param bam_file: str realpath to .bam file to be converted to .sam file format.
+    :return: str realpath to the created .sam file
+    """
+    if not bam_file.endswith('.bam'):
+        raise ValueError('{0} is not a .bam file'.format(bam_file))
+
+    output_dir = os.path.dirname(bam_file)
+    sam = os.path.basename(bam_file).split('.')[:-1][0] + '.sam'
+    sam_file = os.path.join(output_dir, sam)
+
+    # check if a .sam file already exists; if it does, add salt by time.
+    while os.path.isfile(sam_file):
+        time.sleep(2)
+        sam = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.sam'
+        sam_file = os.path.join(output_dir, sam)
+
+    cmd = 'samtools view -h -o {0} {1}'.format(sam_file, bam_file)
+    out = subprocess.run([cmd], shell=True)
+
+    if out.returncode != 0:
+        raise ValueError('{0} was not successfully converted into a .sam file'.format(bam_file))
+
+    return sam_file
+
+
 def parse_args():
     """
     Obtain degnorm CLI parameters.
@@ -50,15 +108,14 @@ def parse_args():
     :return: argparse.ArgumentParser object with runtime parameters required to run DegNorm pipeline.
     """
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('-f'
+    parser.add_argument('-i'
                         , '--input-files'
                         , nargs='+'
                         , default=None
-                        , required=True
+                        , required=False
                         , help='Input data files (an be multiple; separate with space).'
                                'Can be .bam or .sam files containing paired reads from RNA-seq experiments.')
-    parser.add_argument('-d'
-                        , '--input-dir'
+    parser.add_argument('--input-dir'
                         , default=None
                         , required=False
                         , help='Input data directory. Use if not specifying individual .sam or .bam files.'
@@ -87,13 +144,10 @@ def parse_args():
                         , help='Output directory.'
                                'A directory for storing DegNorm analyses, visualizations, '
                                'and data will be created. Default to the current working directory.')
-    parser.add_argument('-c'
-                        , '--save-coverage'
-                        , type=bool
-                        , default=True
-                        , help='Save coverage matrices flag.'
-                               'If True, save coverage matrices per chromosome to .pkl files.'
-                               'Default to True.')
+    parser.add_argument('--disregard-coverage'
+                        , action='store_true'
+                        , help='Option to not save (disregard) coverage array .npz files.'
+                               'NOT RECOMMENDED; only use if interested in running pipeline once.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
@@ -114,6 +168,9 @@ def parse_args():
                                'transcript degradation improves accuracy in RNA-seq analysis."')
 
     args = parser.parse_args()
+
+    if not args.input_files and not args.input_dir:
+        raise ValueError('Must specify one of input-files or input-dir')
 
     # check validity of cores selection.
     avail_cores = max_cpu() + 1
@@ -154,8 +211,16 @@ def parse_args():
                          'Must supply exclusively .sam or .bam files.')
     args.input_type = extensions[0]
 
+    # if .bam files supplied, make sure samtools is installed.
+    if args.input_type == 'bam':
+        samtools_avail = find_samtools()
+
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
         raise IOError('Cannot find output-dir {0}'.format(args.output_dir))
 
     return args
+
+
+if __name__ == '__main__':
+    print(parse_args())

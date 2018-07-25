@@ -1,11 +1,10 @@
 ## DegNorm TODO
 
 ### Frank
-- Add CLI flags and docs
-- write logic for .bam files; figure out how to handle them
-- Turn .gtf file processing into class
 - Add requirements.txt
 - Write tests!
+- Make InputError and other custom error types
+- Write degnorm_test command; add data dir
 
 
 ### Bin

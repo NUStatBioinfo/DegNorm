@@ -181,7 +181,8 @@ class ReadsCoverageProcessor():
         header_df = header_df[header_df['chr'].isin(chroms)]
 
         if self.verbose:
-            logging.info('Determining coverage for {0} chromosomes...'.format(len(chroms)))
+            logging.info('Determining coverage for {0} chromosomes...\n'
+                         '{1}'.format(len(chroms), ', '.join(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)

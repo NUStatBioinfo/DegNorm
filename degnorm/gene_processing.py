@@ -26,8 +26,8 @@ class GeneAnnotationProcessor():
         Loads exons from a .gtf or .gff file.
         """
         self.loader = GeneAnnotationLoader(self.filename)
-
         return self.loader.get_data()
+
 
     @staticmethod
     def remove_multichrom_genes(df):
@@ -130,7 +130,7 @@ class GeneAnnotationProcessor():
 
         return exon_df[~exon_df.exon_id.isin(rm_exons)]
 
-    def run(self):
+    def run(self, chroms=None):
         """
         Main function for GeneAnnotationProcessor. Runs transcriptome annotation processing pipeline:
 
@@ -138,16 +138,28 @@ class GeneAnnotationProcessor():
          2. removes genes that occur in multiple chromosomes
          3. eliminates exons that intersect with > 1 genes on a single chromosome
 
+        :param chroms: list of str chromosomes with which to subset data. Use if
+        only a subset of chromosomes from genome annotation file will be useful.
         :return: pandas.DataFrame with 'chr', 'gene', 'gene_start', 'gene_end', 'exon_start', 'exon_end' fields
         outlining exons ready to use for reads coverage computations
         """
         if self.verbose:
-            logging.info('Loading file {0} into pandas.DataFrame'.format(self.filename))
+            logging.info('Loading genome annotation file {0} into pandas.DataFrame'.format(self.filename))
 
         exon_df = self.load()
+        success = 'Successfully loaded genome annotation file. Shape -- {1}'.format(self.filename, exon_df.shape)
+
+        if chroms:
+            if self.verbose:
+                logging.info('Subsetting exons to {0} chromosomes:\n'
+                             '{1}.'.format(len(chroms), chroms))
+
+            exon_df = subset_to_chrom(exon_df, chrom=chroms)
+            success = 'Successfully loaded and subsetted genome annotation file. Shape -- {1}'\
+                .format(self.filename, exon_df.shape)
 
         if self.verbose:
-            logging.info('Successfully loaded file {0}. Shape -- {1}'.format(self.filename, exon_df.shape))
+            logging.info(success)
             logging.info('Removing multiple-chromosome genes.')
 
         exon_df = self.remove_multichrom_genes(exon_df)
