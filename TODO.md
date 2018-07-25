@@ -5,6 +5,8 @@
 - Write tests!
 - Make InputError and other custom error types
 - Write degnorm_test command; add data dir
+- Visualization code
+- Importable visualization methods
 
 
 ### Bin
