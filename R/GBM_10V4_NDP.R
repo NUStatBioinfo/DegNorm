@@ -27,7 +27,7 @@ rho = foreach(a = row.names(counts), .combine = "rbind") %dopar% {
 }
 stopCluster(cl)
 
-norm.factor = colSums(counts[apply(rho,1,min) < 0.10,])
+norm.factor = colSums(counts[apply(rho,1,max) < 0.10,])
 norm.factor = norm.factor/median(norm.factor)
 
 
