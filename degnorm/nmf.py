@@ -17,6 +17,7 @@ class GeneNMFOA():
         self.n_genes = None
         self.coverage_sums = None
         self.scale_factors = None
+        self.coverage_dat = None
 
         if self.min_bins <= 0:
             raise ValueError('bins is not large enough for baseline selection algorithm. Try setting bins=20.')
@@ -180,21 +181,20 @@ class GeneNMFOA():
         self.x = reads_dat
         self.n_genes = len(coverage_dat)
         self.p = coverage_dat[0].shape[0]
+        self.coverage_dat = coverage_dat
 
-        if not all(np.array(list(map(lambda z: z.shape[0], coverage_dat))) == self.p):
+        if not all(np.array(list(map(lambda z: z.shape[0], self.coverage_dat))) == self.p):
             raise ValueError('Not all coverage matrices contain the same number of samples!')
 
         if not self.x.shape[0] == self.n_genes:
             raise ValueError('Number of genes in read count matrix not equal to number of coverage matrices!')
 
         # assemble n x p matrix of sums over coverage arrays (sum coverage over positions, one sum per sample)
-        self.coverage_sums = np.array(list(map(lambda z: z.sum(axis=1), coverage_dat)))
+        self.coverage_sums = np.array(list(map(lambda z: z.sum(axis=1), self.coverage_dat)))
 
-    def fit_transform(self, coverage_dat, reads_dat):
-        self.fit(coverage_dat, reads_dat)
-
+    def transform(self):
         # initialize NMF-OA estimates of coverage curves
-        estimates = self.par_apply_nmf(coverage_dat)
+        estimates = self.par_apply_nmf(self.coverage_dat)
         norms_t0 = np.array(list(map(np.linalg.norm, estimates)))
 
         # initialize output storage.
@@ -208,7 +208,7 @@ class GeneNMFOA():
             self.compute_scale_factors(estimates)
 
             # scale coverage curves by 1 / adjustment factors
-            coverage_adjusted = self.adjust_coverage_curves(coverage_dat)
+            coverage_adjusted = self.adjust_coverage_curves(self.coverage_dat)
 
             # run NMF-OA + baseline selection; obtain refined estimate of K*Et
             baseline_dat = self.par_apply_baseline_selection(coverage_adjusted)
@@ -230,10 +230,11 @@ class GeneNMFOA():
             if len(non_converged_idx) == 0:
                 break
 
-            # drop the converged genes and update the coverage sums to reflect dropped genes.
+            # drop the converged genes' coverage matrices, coverage sums, and estimates for next iteration.
             else:
-                coverage_dat = [coverage_dat[idx] for idx in non_converged_idx]
+                self.coverage_dat = [self.coverage_dat[idx] for idx in non_converged_idx]
                 self.coverage_sums = self.coverage_sums[non_converged_idx]
+                self.estimates = [estimates[idx] for idx in non_converged_idx]
 
             i += 1
 
@@ -244,3 +245,7 @@ class GeneNMFOA():
                 gene_dict[idx]['converged'] = False
 
         return OrderedDict(sorted(gene_dict.items(), key=lambda z: z[0]))
+
+    def fit_transform(self, coverage_dat, reads_dat):
+        self.fit(coverage_dat, reads_dat)
+        self.transform(coverage_dat, reads_dat)
