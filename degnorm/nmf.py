@@ -1,15 +1,15 @@
-import numpy as np
 from scipy.sparse.linalg import svds
 from degnorm.utils import *
 from collections import OrderedDict
 
 class GeneNMFOA():
 
-    def __init__(self, nmf_iter=100, tol=1e-3,
-                 loop_iter=5, bins=20, n_jobs=max_cpu()):
+    def __init__(self, nmf_iter=100, grid_points=None,
+                 tol=1e-3, loop_iter=5, bins=20, n_jobs=max_cpu()):
         self.nmf_iter = nmf_iter
         self.tol = tol
         self.loop_iter = loop_iter
+        self.n_jobs = n_jobs
         self.bins = bins
         self.min_bins = np.ceil(self.bins * 0.3)
         self.x = None
@@ -18,6 +18,7 @@ class GeneNMFOA():
         self.coverage_sums = None
         self.scale_factors = None
         self.coverage_dat = None
+        self.grid_points = int(grid_points) if grid_points else None
 
         if self.min_bins <= 0:
             raise ValueError('bins is not large enough for baseline selection algorithm. Try setting bins=20.')
@@ -44,12 +45,13 @@ class GeneNMFOA():
             lmbda -= res * (1 / c)
             lmbda[lmbda < 0.] = 0.
             K, E = np.abs(self.rank_one_approx(est + lmbda))
+            est = K.dot(E)
 
         if factors:
             return {'K': K
                     , 'E': E}
 
-        return K.dot(E)
+        return est
 
     def par_apply_nmf(self, dat):
         """
@@ -60,7 +62,7 @@ class GeneNMFOA():
         """
         p = mp.Pool(processes=self.n_jobs)
         nmf_ests = [p.apply_async(self.nmf
-                                  , args=(F)) for F in dat]
+                                  , args=(F, False)) for F in dat]
         p.close()
 
         return [x.get() for x in nmf_ests]
@@ -171,6 +173,25 @@ class GeneNMFOA():
 
         return [x.get() for x in ests]
 
+    def downsample_2d(self, x):
+        """
+        Downsample a coverage matrix at evenly spaced base position indices.
+
+        :param x: 2-d numpy array; a coverage matrix
+        :return: 2-d numpy array with self.grid_points columns
+        """
+        Li = x.shape[1]
+
+        # if downsample rate high enough to cover entire matrix,
+        # just return matrix.
+        if self.grid_points > Li:
+            return x
+
+        # otherwise, evenly sample column indices and return downsampled matrix.
+        downsample_idx = np.linspace(0, Li, num=self.grid_points, dtype=int)
+
+        return x[:, downsample_idx]
+
     def fit(self, coverage_dat, reads_dat):
         """
         Initialize estimates for the DegNorm iteration loop.
@@ -183,11 +204,19 @@ class GeneNMFOA():
         self.p = coverage_dat[0].shape[0]
         self.coverage_dat = coverage_dat
 
+        # run data checks.
+        if not all(map(lambda z: z.ndim == 2, self.coverage_dat)):
+            raise ValueError('Not all coverage matrices are 2-d arrays!')
+
         if not all(np.array(list(map(lambda z: z.shape[0], self.coverage_dat))) == self.p):
             raise ValueError('Not all coverage matrices contain the same number of samples!')
 
         if not self.x.shape[0] == self.n_genes:
             raise ValueError('Number of genes in read count matrix not equal to number of coverage matrices!')
+
+        # downsample coverage matrices if desired.
+        if self.grid_points:
+            self.coverage_dat = list(map(self.downsample_2d, self.coverage_dat))
 
         # assemble n x p matrix of sums over coverage arrays (sum coverage over positions, one sum per sample)
         self.coverage_sums = np.array(list(map(lambda z: z.sum(axis=1), self.coverage_dat)))
@@ -248,4 +277,4 @@ class GeneNMFOA():
 
     def fit_transform(self, coverage_dat, reads_dat):
         self.fit(coverage_dat, reads_dat)
-        self.transform(coverage_dat, reads_dat)
+        self.transform()

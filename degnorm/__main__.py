@@ -63,8 +63,10 @@ def main():
     logging.info('Begin genome annotation file processing...')
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
-                                  , verbose=True)
-    exon_df = gap.run(chroms=chroms)
+                                  , verbose=True
+                                  , chroms=chroms
+                                  , genes=args.genes)
+    exon_df = gap.run()
 
     # ---------------------------------------------------------------------------- #
     # Obtain read count matrix: X, an n (genes) x p (samples) matrix
