@@ -251,6 +251,7 @@ class GeneNMFOA():
         Downsample a coverage matrix at evenly spaced base position indices.
 
         :param x: 2-d numpy array; a coverage matrix
+        :param by_row: bool indicator - downsample by rows or columns?
         :return: 2-d numpy array with self.grid_points columns
         """
         Li = x.shape[0 if by_row else 1]
@@ -301,7 +302,7 @@ class GeneNMFOA():
         if len(mats_t0) != len(mats_t1):
             raise ValueError('len(matsT0) != len(matsT1); cannot find '
                              'relative difference in matrix norms.')
-        return np.array(list(map(lambda x0, x1: self.delta_norm(x0, x1), mats_t0, mats_t1)))
+        return np.array(list(map(self.delta_norm, mats_t0, mats_t1)))
 
     def fit(self, coverage_dat, reads_dat):
         """
