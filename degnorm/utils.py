@@ -101,6 +101,18 @@ def bam_to_sam(bam_file):
     return sam_file
 
 
+def split_into_chunks(x, n):
+    """
+    Split a list into a set of n approximately evenly-sized sublists.
+
+    :param x: iterable - a list, numpy array, tuple, etc. Not a generator.
+    :param n: int number of chunks. If n >= len(x), split x into sublists of size 1.
+    :return: list of lists
+    """
+    csize = int(np.ceil(len(x) / n))
+    return [x[(i * csize):(i * csize + csize)] for i in range(min(len(x), n))]
+
+
 def parse_args():
     """
     Obtain degnorm CLI parameters.

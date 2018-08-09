@@ -3,11 +3,10 @@
 ### Frank
 - Add requirements.txt
 - Write tests!
+- Write a test module
 - Make InputError and other custom error types
-- Write degnorm_test command; add data dir
 - Visualization code
 - Importable visualization methods
-
-
-### Bin
-1. Rewrite NFM R code into python, get it to work for one gene's coverage matrix
+- Pass gene arguments to nmf pipeline
+- Create progress bar for nmf pipeline
+- Figure out order of left/right sing vects from svds fun

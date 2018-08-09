@@ -185,6 +185,7 @@ class GeneAnnotationProcessor():
 
         exon_df = self.load()
         exon_df = self.remove_multichrom_genes(exon_df)
+        exon_df.drop_duplicates(inplace=True)
 
         if self.verbose:
             logging.info('Successfully removed multiple-chromosome genes.')
@@ -199,7 +200,8 @@ class GeneAnnotationProcessor():
             logging.info('Multiple-chromosome genes were removed.')
             logging.info('Removing exons that occur in multiple genes.')
 
-        exon_df = exon_df.merge(gene_df, on=['chr', 'gene']).drop_duplicates()
+        exon_df = exon_df.merge(gene_df, on=['chr', 'gene'])
+        exon_df.drop_duplicates(inplace=True)
 
         if self.verbose:
             logging.info('{0} multiple-gene exons were removed. Final shape -- {1}'

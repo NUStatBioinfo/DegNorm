@@ -2,6 +2,7 @@ from degnorm.reads import *
 from degnorm.coverage_counts import *
 from degnorm.gene_processing import *
 from degnorm.utils import *
+from degnorm.nmf import *
 from datetime import datetime
 import time
 
@@ -108,22 +109,34 @@ def main():
 
     # order gene coverage matrix transposes according to the ordering in X, the read count matrix
     cov_mats = list()
+    cov_genes = list()
+    delete_idx = list()
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
-        cov_mats.append(chrom_gene_dict[chrom][gene].T)
+
+        # Only add genes that had non-entirely-zero coverage for each experiment.
+        if not any(chrom_gene_dict[chrom][gene].sum(axis=0) == 0):
+            cov_mats.append(chrom_gene_dict[chrom][gene].T)
+            cov_genes.append(gene)
+        else:
+            delete_idx.append(i)
+
+    # Drop read counts and genes for genes with non-coverage experiments.
+    X = np.delete(X, delete_idx, axis=0)
+    genes_df = genes_df.drop(delete_idx, axis=0).reset_index()
 
     if len(cov_mats) != X.shape[0]:
         raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
 
     # free up more memory: delete exon / genome annotation data
-    del exon_df, genes_df, chrom_gene_dict, gene_cov_mats
+    del exon_df, chrom_gene_dict, gene_cov_mats
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
-    # Run in parallel over chromosomes.
     # ---------------------------------------------------------------------------- #
-
+    nmfoa = GeneNMFOA(nmf_iter=20, grid_points=2000, n_jobs=n_jobs)
+    cov_ests = nmfoa.fit_transform(cov_mats, reads_dat=X)
 
 
 if __name__ == "__main__":

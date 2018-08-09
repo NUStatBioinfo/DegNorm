@@ -1,6 +1,7 @@
 from degnorm.utils import *
-import re
+from degnorm.utils_io import *
 import pickle as pkl
+import re
 
 
 def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True):
@@ -73,10 +74,11 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
 
-        output_file = os.path.join(output_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
-        with open(output_file, 'wb') as f:
-            if verbose:
-                logging.info('Saving gene coverage matrices to binary pickle file -- {0}'.format(output_file))
+        # save coverage matrices as a ragged array with split index.
+        gene_cov_output_file = os.path.join(output_dir, 'coverage_matrices_{0}.npz'.format(chrom))
+        if verbose:
+            logging.info('Saving {0} coverage matrices to {1}'.format(chrom, gene_cov_output_file))
+        with open(gene_cov_output_file, 'wb') as f:
             pkl.dump(gene_cov_dict, f)
 
     return gene_cov_dict, chrom
