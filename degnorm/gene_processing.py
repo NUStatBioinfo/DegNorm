@@ -6,7 +6,8 @@ from degnorm.loaders import GeneAnnotationLoader
 
 class GeneAnnotationProcessor():
 
-    def __init__(self, annotation_file, n_jobs=max_cpu(), verbose=True):
+    def __init__(self, annotation_file, n_jobs=max_cpu(),
+                 genes=None, chroms=None, verbose=True):
         """
         Genome coverage reader for a single RNA-seq experiment.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
@@ -15,19 +16,55 @@ class GeneAnnotationProcessor():
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
         :param verbose: bool indicator should progress be written to logger?
+        :param genes: str or list of str gene names - subset gene annotation data to specified genes
+        :param chroms: str or list of str chromosome names - subset gene annotation data to
+         specified chromosomes
         """
         self.filename = annotation_file
         self.n_jobs = n_jobs
         self.verbose = verbose
+        self.genes = genes
+        self.chroms = chroms
         self.loader = None
+
+        # cast any supplied chromosomes or genes into a list if not already in lists.
+        if self.chroms:
+            if not isinstance(self.chroms, list):
+                self.chroms = [self.chroms]
+
+        if self.genes:
+            if not isinstance(self.genes, list):
+                self.genes = [self.genes]
 
     def load(self):
         """
         Loads exons from a .gtf or .gff file.
         """
         self.loader = GeneAnnotationLoader(self.filename)
-        return self.loader.get_data()
+        exon_df = self.loader.get_data()
 
+        if self.chroms:
+            if self.verbose:
+                logging.info('Subsetting exon data to {0} chromosomes:\n'
+                             '\t{1}'.format(len(self.chroms), ', '.join(self.chroms)))
+
+            exon_df = subset_to_chrom(exon_df, chrom=self.chroms)
+
+        if self.genes:
+            if self.verbose:
+                logging.info('Subsetting exon data to {0} genes.'
+                             .format(len(self.genes)))
+
+            exon_df = exon_df[exon_df.gene.isin(self.genes)]
+
+        if self.verbose:
+            logging.info('Successfully loaded exon data -- shape: {0}'.format(exon_df.shape))
+
+        if exon_df.empty:
+            raise ValueError('Exon DataFrame is empty! Perhaps your chromosome or gene subsetting'
+                             'is not going according to plan.')
+
+        return exon_df
 
     @staticmethod
     def remove_multichrom_genes(df):
@@ -130,7 +167,7 @@ class GeneAnnotationProcessor():
 
         return exon_df[~exon_df.exon_id.isin(rm_exons)]
 
-    def run(self, chroms=None):
+    def run(self):
         """
         Main function for GeneAnnotationProcessor. Runs transcriptome annotation processing pipeline:
 
@@ -147,22 +184,8 @@ class GeneAnnotationProcessor():
             logging.info('Loading genome annotation file {0} into pandas.DataFrame'.format(self.filename))
 
         exon_df = self.load()
-        success = 'Successfully loaded genome annotation file. Shape -- {1}'.format(self.filename, exon_df.shape)
-
-        if chroms:
-            if self.verbose:
-                logging.info('Subsetting exons to {0} chromosomes:\n'
-                             '{1}.'.format(len(chroms), chroms))
-
-            exon_df = subset_to_chrom(exon_df, chrom=chroms)
-            success = 'Successfully loaded and subsetted genome annotation file. Shape -- {1}'\
-                .format(self.filename, exon_df.shape)
-
-        if self.verbose:
-            logging.info(success)
-            logging.info('Removing multiple-chromosome genes.')
-
         exon_df = self.remove_multichrom_genes(exon_df)
+        exon_df.drop_duplicates(inplace=True)
 
         if self.verbose:
             logging.info('Successfully removed multiple-chromosome genes.')
@@ -177,7 +200,8 @@ class GeneAnnotationProcessor():
             logging.info('Multiple-chromosome genes were removed.')
             logging.info('Removing exons that occur in multiple genes.')
 
-        exon_df = exon_df.merge(gene_df, on=['chr', 'gene']).drop_duplicates()
+        exon_df = exon_df.merge(gene_df, on=['chr', 'gene'])
+        exon_df.drop_duplicates(inplace=True)
 
         if self.verbose:
             logging.info('{0} multiple-gene exons were removed. Final shape -- {1}'
@@ -190,5 +214,5 @@ class GeneAnnotationProcessor():
 # if __name__ == '__main__':
 #     import os
 #     gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
-#     processor = GeneAnnotationProcessor(gtf_file, n_jobs=2)
+#     processor = GeneAnnotationProcessor(gtf_file, n_jobs=2, chroms=['chr1', 'chr2'])
 #     exon_df = processor.run()

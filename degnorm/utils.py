@@ -101,6 +101,18 @@ def bam_to_sam(bam_file):
     return sam_file
 
 
+def split_into_chunks(x, n):
+    """
+    Split a list into a set of n approximately evenly-sized sublists.
+
+    :param x: iterable - a list, numpy array, tuple, etc. Not a generator.
+    :param n: int number of chunks. If n >= len(x), split x into sublists of size 1.
+    :return: list of lists
+    """
+    csize = int(np.ceil(len(x) / n))
+    return [x[(i * csize):(i * csize + csize)] for i in range(min(len(x), n))]
+
+
 def parse_args():
     """
     Obtain degnorm CLI parameters.
@@ -136,6 +148,13 @@ def parse_args():
                                'Must have extension .gtf or .gff.'
                                'All non-exon regions will be removed, along with exons that appear in'
                                'multiple chromosomes and exons that overlap with multiple genes.')
+    parser.add_argument('--genes'
+                        , nargs='+'
+                        , type=str
+                        , default=None
+                        , required=False
+                        , help='List of gene names or a text file (with extension .txt) specifying a subset'
+                               'of genes you would like to send through DegNorm pipeline.')
     parser.add_argument('-o'
                         , '--output-dir'
                         , type=str
@@ -218,6 +237,23 @@ def parse_args():
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
         raise IOError('Cannot find output-dir {0}'.format(args.output_dir))
+
+    # if --genes is specified, parse input in case file(s) are given.
+    if args.genes:
+        genes = list()
+
+        # check for text files that will hold names of genes.
+        gene_files = list(filter(lambda x: x.endswith('.txt'), args.genes))
+        for gene_file in gene_files:
+            with open(gene_file, 'r') as f:
+                genes_in_file = f.readlines()
+                genes += [x.strip() for x in genes_in_file]
+
+        # include any individually-specified genes.
+        genes += list(set(args.genes) - set(gene_files))
+
+        # replace input with parsed list of unique genes.
+        args.genes = list(set(genes))
 
     return args
 
