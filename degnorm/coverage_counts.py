@@ -2,6 +2,7 @@ from degnorm.utils import *
 from degnorm.utils_io import *
 import pickle as pkl
 import re
+import tqdm
 
 
 def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True):
@@ -27,6 +28,9 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     genes = exon_chrom_df['gene'].unique()
     n_genes = len(genes)
 
+    if verbose:
+        logging.info('CHROMOSOME {0} -- begin loading coverage matrix.'.format(chrom))
+
     idx = 0
     for sample_id in coverage_files:
         r = re.compile('sample_{0}_{1}.npz'.format(sample_id, chrom))
@@ -45,11 +49,13 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     # store coverage matrices in a dictionary with gene name keys
     gene_cov_dict = dict()
 
+    # Instantiate progress bar.
+    pbar = tqdm.tqdm(total=n_genes
+                     , leave=False
+                     , desc='CHROMOSOME {0} -- coverage matrix progress'.format(chrom))
+
     for gene_idx in range(n_genes):
         gene = genes[gene_idx]
-
-        if gene_idx % 500 == 0 and gene_idx > 0 and verbose:
-            logging.info('GENE {0} -- {1} / {2}'.format(gene, gene_idx, n_genes))
 
         # subset chromosome's gene/exon data to a single gene and
         # identify gene's start and end positions.
@@ -62,9 +68,9 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
 
         gene_cov_dict[gene] = cov_mat[slicing, :]
 
-        if gene_idx % 500 == 0 and gene_idx > 0 and verbose:
-            logging.info('GENE {0} -- coverage matrix shape: {1}'.format(gene, gene_cov_dict[gene].shape))
-            logging.info('GENE {0} -- mean coverage by sample: {1}'.format(gene, gene_cov_dict[gene].mean(axis=0)))
+        pbar.update()
+
+    pbar.close()
 
     # if a target location is specified, save {gene: coverage matrix} data per chromosome in a
     # new directory named after the chromosome.
@@ -74,10 +80,11 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
 
-        # save coverage matrices as a ragged array with split index.
-        gene_cov_output_file = os.path.join(output_dir, 'coverage_matrices_{0}.npz'.format(chrom))
+        # save per-gene coverage matrices to .pkl files
+        gene_cov_output_file = os.path.join(output_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
         if verbose:
             logging.info('Saving {0} coverage matrices to {1}'.format(chrom, gene_cov_output_file))
+
         with open(gene_cov_output_file, 'wb') as f:
             pkl.dump(gene_cov_dict, f)
 

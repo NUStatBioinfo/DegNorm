@@ -4,6 +4,7 @@ from degnorm.gene_processing import *
 from degnorm.utils import *
 from degnorm.nmf import *
 from datetime import datetime
+from collections import OrderedDict
 import time
 
 
@@ -68,13 +69,13 @@ def main():
                                   , chroms=chroms
                                   , genes=args.genes)
     exon_df = gap.run()
+    genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
     # ---------------------------------------------------------------------------- #
     # Obtain read count matrix: X, an n (genes) x p (samples) matrix
     # Run in parallel over samples.
     # ---------------------------------------------------------------------------- #
     logging.info('Obtaining read count matrix...')
-    genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates()
 
     p = mp.Pool(processes=n_jobs)
     read_count_vecs = [p.apply_async(read_counts
@@ -93,7 +94,7 @@ def main():
     del reads_dict, read_count_vecs, reader
     
     # ---------------------------------------------------------------------------- #
-    # Slice up coverage matrix for each gene according to exon positioning.
+    # Slice up genome coverage matrix for each gene according to exon positioning.
     # Run in parallel over chromosomes.
     # ---------------------------------------------------------------------------- #
     cov_output = None if args.disregard_coverage else output_dir
@@ -103,40 +104,65 @@ def main():
     p.close()
     gene_cov_mats = [x.get() for x in gene_cov_mats]
 
-    # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}} so that
-    # gene coverage matrices can be ordered according to data in genes_df.
-    chrom_gene_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
+    # ---------------------------------------------------------------------------- #
+    # Process gene coverage matrix output prior to running NMF.
+    # ---------------------------------------------------------------------------- #
+
+    # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
+    # initialized an OrderedDict to store
+    gene_cov_dict_unordered = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
+    gene_cov_dict = OrderedDict()
 
     # order gene coverage matrix transposes according to the ordering in X, the read count matrix
-    cov_mats = list()
-    cov_genes = list()
     delete_idx = list()
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
+        cov_mat = gene_cov_dict_unordered[chrom][gene]
 
-        # Only add genes that had non-entirely-zero coverage for each experiment.
-        if not any(chrom_gene_dict[chrom][gene].sum(axis=0) == 0):
-            cov_mats.append(chrom_gene_dict[chrom][gene].T)
-            cov_genes.append(gene)
+        # Only add genes that had non-entirely-zero coverage for each experiment, and
+        # genes that have sufficient number high coverage regions (relative to max coverage) - see supplement.
+        sufficient_coverage = True
+        if not any(cov_mat.sum(axis=0) == 0):
+            cov_mat = cov_mat[np.where(cov_mat.max(axis=1) > 0.1 * cov_mat.max())[0], :]
+
+            if cov_mat.shape[0] >= 50:
+                gene_cov_dict[gene] = cov_mat.T
+            else:
+                sufficient_coverage = False
+
         else:
+            sufficient_coverage = False
+
+        if not sufficient_coverage:
+            logging.info('Dropping GENE {0} -- insufficient coverage regions.'.format(gene))
             delete_idx.append(i)
 
-    # Drop read counts and genes for genes with non-coverage experiments.
+    # Drop read counts and genes for genes with insufficient coverage.
     X = np.delete(X, delete_idx, axis=0)
-    genes_df = genes_df.drop(delete_idx, axis=0).reset_index()
+    genes_df = genes_df.drop(delete_idx, axis=0).reset_index(drop=True)
 
-    if len(cov_mats) != X.shape[0]:
+    if len(gene_cov_dict.keys()) != X.shape[0]:
         raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
 
+    if not genes_df.empty:
+        gene_output_file = os.path.join(output_dir, 'gene_metadata.csv')
+        logging.info('Saving gene metadata to {0}'.format(gene_output_file))
+        genes_df.to_csv(gene_output_file
+                        , index=False)
+    else:
+        raise ValueError('No genes were found with sufficient coverage!')
+
     # free up more memory: delete exon / genome annotation data
-    del exon_df, chrom_gene_dict, gene_cov_mats
+    del exon_df, genes_df, gene_cov_dict_unordered, gene_cov_mats
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
     nmfoa = GeneNMFOA(nmf_iter=20, grid_points=2000, n_jobs=n_jobs)
-    cov_ests = nmfoa.fit_transform(cov_mats, reads_dat=X)
+    cov_ests = nmfoa.fit_transform(gene_cov_dict, reads_dat=X)
+
+    # compute DI scores from estimates.
 
 
 if __name__ == "__main__":
