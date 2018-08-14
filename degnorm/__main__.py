@@ -113,48 +113,57 @@ def main():
     gene_cov_dict_unordered = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
     gene_cov_dict = OrderedDict()
 
-    # order gene coverage matrix transposes according to the ordering in X, the read count matrix
-    delete_idx = list()
+    # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
+    # which transcript regions to filter out prior to running DegNorm.
+    run_degnorm_ctr = 0
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
         cov_mat = gene_cov_dict_unordered[chrom][gene]
 
-        # Only add genes that had non-entirely-zero coverage for each experiment, and
-        # genes that have sufficient number high coverage regions (relative to max coverage) - see supplement.
-        sufficient_coverage = True
-        if not any(cov_mat.sum(axis=0) == 0):
-            cov_mat = cov_mat[np.where(cov_mat.max(axis=1) > 0.1 * cov_mat.max())[0], :]
+        # save raw coverage matrix.
+        gene_cov_dict[gene] = dict()
+        gene_cov_dict[gene]['raw_coverage'] = cov_mat.T
 
-            if cov_mat.shape[0] >= 50:
-                gene_cov_dict[gene] = cov_mat.T
+        # For genes with sufficient coverage, only run DegNorm on transcript regions with
+        # high coverage (relative to max coverage) -- see supplement, section 2.
+        run_degnorm = True
+        if all(cov_mat.sum(axis=0) > 0):
+            hi_cov_idx = np.where(cov_mat.max(axis=1) > 0.1 * cov_mat.max())[0]
+
+            if len(hi_cov_idx) >= 50:
+                gene_cov_dict[gene]['filtered_coverage'] = cov_mat[hi_cov_idx, :].T
+                gene_cov_dict[gene]['filtered_idx'] = hi_cov_idx
+
             else:
-                sufficient_coverage = False
+                run_degnorm = False
 
         else:
-            sufficient_coverage = False
+            run_degnorm = False
 
-        if not sufficient_coverage:
-            logging.info('Dropping GENE {0} -- insufficient coverage regions.'.format(gene))
-            delete_idx.append(i)
+        # capture whether or not we will run DegNorm for this gene.
+        run_degnorm_ctr += 1 if run_degnorm else 0
+        gene_cov_dict[gene]['run_degnorm'] = run_degnorm
 
-    # Drop read counts and genes for genes with insufficient coverage.
-    X = np.delete(X, delete_idx, axis=0)
-    genes_df = genes_df.drop(delete_idx, axis=0).reset_index(drop=True)
-
-    if len(gene_cov_dict.keys()) != X.shape[0]:
-        raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
-
-    if not genes_df.empty:
-        gene_output_file = os.path.join(output_dir, 'gene_metadata.csv')
-        logging.info('Saving gene metadata to {0}'.format(gene_output_file))
-        genes_df.to_csv(gene_output_file
-                        , index=False)
+    # check that we will run DegNorm on at least one gene.
+    if run_degnorm_ctr > 0:
+        logging.info('DegNorm will run on {0} / {1} genes with sufficient coverage.'
+                     .format(run_degnorm_ctr, X.shape[0]))
     else:
         raise ValueError('No genes were found with sufficient coverage!')
 
+    # check that read counts and coverage matrices contain data for same number of genes.
+    if len(gene_cov_dict.keys()) != X.shape[0]:
+        raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
+
+    # save gene annotation metadata.
+    gene_output_file = os.path.join(output_dir, 'gene_metadata.csv')
+    logging.info('Saving gene metadata to {0}'.format(gene_output_file))
+    genes_df.to_csv(gene_output_file
+                    , index=False)
+
     # free up more memory: delete exon / genome annotation data
-    del exon_df, genes_df, gene_cov_dict_unordered, gene_cov_mats
+    del gene_cov_dict_unordered, gene_cov_mats
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.

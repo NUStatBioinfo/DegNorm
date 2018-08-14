@@ -73,7 +73,7 @@ class GeneAnnotationProcessor():
 
         :return: df, but subset to genes that show up in exclusively one chromosome.
         """
-        grp = df.groupby(['chr', 'gene'])
+        grp = df.groupby(['gene'])
         per_chrom_gene_cts = grp.chr.nunique()
         rm_genes = per_chrom_gene_cts[per_chrom_gene_cts > 1].index.tolist()
 
@@ -184,6 +184,8 @@ class GeneAnnotationProcessor():
             logging.info('Loading genome annotation file {0} into pandas.DataFrame'.format(self.filename))
 
         exon_df = self.load()
+
+        logging.info('Removing genes that occur in multiple chromosomes.')
         exon_df = self.remove_multichrom_genes(exon_df)
         exon_df.drop_duplicates(inplace=True)
 
@@ -198,7 +200,6 @@ class GeneAnnotationProcessor():
 
         if self.verbose:
             logging.info('Multiple-chromosome genes were removed.')
-            logging.info('Removing exons that occur in multiple genes.')
 
         exon_df = exon_df.merge(gene_df, on=['chr', 'gene'])
         exon_df.drop_duplicates(inplace=True)
