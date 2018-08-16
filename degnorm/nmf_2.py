@@ -6,7 +6,7 @@ import tqdm
 
 class GeneNMFOA():
 
-    def __init__(self, iter=5, grid_points=None,
+    def __init__(self, iter=5, grid_points=None, min_high_coverage=50,
                  tol=1e-3, nmf_iter=100, bins=20, n_jobs=max_cpu()):
         """
         Initialize an NMF-over-approximator object.
@@ -15,6 +15,9 @@ class GeneNMFOA():
         :param grid_points: int maximum number of base pairs considered per gene coverage matrix; use to
         down-sample coverage matrices at a rate of grid_points/Li. Can also be used to effectively limit
         the maximum size of a coverage matrix considered during NMF computations.
+        :param min_high_coverage: int minimum number of "high coverage" base positions for a gene
+        to be considered for baseline selection algorithm. Refer to Supplement, section 2, for definition
+        of high-enough coverage.
         :param tol: relative difference in Frobenius norms in coverage matrix approximations between
         successive NMF-OA loops before approximation stops for a particular gene.
         :param nmf_iter: int number of iterations to run per NMF-OA approximation per gene's coverage matrix.
@@ -26,18 +29,20 @@ class GeneNMFOA():
         self.tol = np.abs(tol)
         self.n_jobs = np.abs(int(n_jobs))
         self.bins = np.abs(int(bins))
+        self.min_high_coverage = np.abs(int(min_high_coverage))
         self.min_bins = np.ceil(self.bins * 0.3)
         self.grid_points = np.abs(int(grid_points)) if grid_points else None
         self.x = None
+        self.x_adj = None
         self.p = None
-        self.cov_dat = None
-        self.baseline_genes = None
-        self.baseline_cov = list()
-        self.exclude_genes = None
         self.n_genes = None
-        self.degnorm_cov_sums = None
         self.scale_factors = None
         self.rho = None
+        self.genes = list()
+        self.exclude_genes = list()
+        self.estimates = list()
+        self.cov_mats = list()
+        self.cov_mats_adj = list()
 
     def rank_one_approx(self, x):
         """
@@ -49,6 +54,17 @@ class GeneNMFOA():
         u, s, v = svds(x, k=1)
         return u[::-1], s*v[::-1]
         # return u, s*v
+
+    def get_high_coverage_idx(self, x):
+        """
+        Find positions of high coverage in a gene's coverage matrix, defined
+        as positions where the sample-wise maximum coverage is at least 10%
+        the maximum of the entire coverage array.
+
+        :param x: numpy 2-d array: coverage matrix (p x Li)
+        :return: numpy 1-d array of integer base positions
+        """
+        return np.where(x.max(axis=0) > 0.1 * x.max())[0]
 
     def nmf(self, x, factors=False):
         """
@@ -110,34 +126,51 @@ class GeneNMFOA():
 
         :param estimates: list of rank-one approximations of coverage curves
         """
-        # construct block rho matrix: len(self.degnorm_genes) x p matrix of DI scores,
-        # followed by len(self.exclude_genes) x p matrix of sample-average DI score from top block.
-        # From Supplement, section 2: "For [excluded genes], we adjust the read count based on the average DI score
-        # of the corresponding sample."
-
-        # TODO: figure out - do I add back in filtered-out regions to estimates?
-        # TODO: what do we do about grid-sampled versions of filtered estimates?
+        # construct block rho matrix: len(self.degnorm_genes) x p matrix of DI scores
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
-        rho = 1 - self.degnorm_cov_sums / np.vstack(est_sums) # is self.degnorm_cov_sums changing? are est_sums based on unfiltered ests?
-        self.rho = np.vstack([rho, np.repeat(rho.mean(axis=0).reshape([1, -1]), self.n_genes - len(estimates), axis=0)])
+
+        # TODO - figure out if self.cov_sums should be getting updated with f <- f/s iterations.
+        self.rho = 1 - self.cov_sums / np.vstack(est_sums) # should self.cov_sums be getting updated?
 
         # quality control.
         self.rho[self.rho < 0] = 0.
-        self.rho[self.rho >= 1] = 1. - 1e5
+        self.rho[self.rho >= 1] = 1. - 1e-5
 
         # scale read count matrix by DI scores.
         scaled_counts_mat = self.x / (1 - self.rho)
         scaled_counts_sums = scaled_counts_mat.sum(axis=0)
         self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
 
-    def adjust_coverage_curves(self, dat):
+    def adjust_coverage_curves(self):
         """
         Adjust coverage curves by dividing the coverage values by corresponding adjustment factor, s_{j}
-
-        :param: list of coverage arrays, shapes are (Li x p)
-        :return: list of adjusted (scaled) numpy reads coverage arrays, shapes are (Li x p)
         """
-        return [(F.T / self.scale_factors).T for F in dat]
+        self.cov_mats_adj = [(F.T / self.scale_factors).T for F in self.cov_mats]
+
+    def adjust_read_counts(self):
+        """
+        Adjust read counts by scale factors, while being mindful of
+        which genes were run through baseline algorithm and which ones were excluded.
+        """
+
+        # determine which genes will be adjusted by self.scale_factors, and which will
+        # be updated by 1 - average(DI score) per sample.
+        # From Supplement section 2: "For [genes with insufficient coverage], we adjust
+        # the read count based on the average DI score of the corresponding sample.
+        adj_standard = list(map(lambda x: len(self.get_high_coverage_idx(x)) >= self.min_high_coverage
+                                , self.cov_mats_adj))
+        adj_standard = np.array(adj_standard)
+
+        # update the genes that had sufficient coverage by the estimated scale factors.
+        adj_standard_idx = np.where(adj_standard)[0]
+        if len(adj_standard) > 0:
+            self.x_adj[adj_standard_idx, :] = self.x[adj_standard_idx, :] / self.scale_factors
+
+        # update the genes that had insufficient coverage by 1 - sample-average DI score
+        adj_low_idx = np.where(~adj_standard)[0]
+        if len(adj_low_idx) > 0:
+            avg_di_score = self.rho.mean(axis=0)
+            self.x_adj[adj_low_idx, :] = self.x[adj_low_idx, :] / (1 - avg_di_score)
 
     def matrix_sst(self, x, left_idx, right_idx):
         """
@@ -150,28 +183,40 @@ class GeneNMFOA():
         """
         return np.linalg.norm(x[:, left_idx:right_idx])
 
-    def baseline_selection(self, F, KE):
+    def baseline_selection(self, F):
         """
         Find "baseline" region for a gene's coverage curves - a region where it is
         suspected that degradation is minimal, so that the coverage envelope function
         may be estimated more accurately.
 
-        :param F: gene coverage curves, a numpy 2-dimensional array
-        :param KE: gene coverage curve estimate, numpy 2-dimensional array
-        :return:
-        """
-        Li = F.shape[1]
+        This is typically applied once coverage curves have been scaled by 1 / s_{j}.
 
-        # Decide where to bin up regions of the gene.
+        :param F: numpy 2-d array, gene coverage curves, a numpy 2-dimensional array
+        :return: numpy 2-d array, estimate of F post baseline-selection algorithm
+        """
+
+        # determine if gene has sufficient coverage to execute baseline selection.
+        # if not, do not try to estimate coverage matrix.
+        hi_cov_idx = self.get_high_coverage_idx(F)
+        if len(hi_cov_idx) < self.min_high_coverage:
+            return F
+
+        # select high-coverage positions from coverage matrix.
+        F_bin = F[:, hi_cov_idx]
+        Li = F_bin.shape[1]
+
+        # obtain initial coverage curve estimate.
+        KE_bin = self.nmf(F_bin)
+
+        # safely compute degradation index scores: closer to 1 -> more degradation.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), KE_bin.sum(axis=1))
+            rho_vec[~np.isfinite(rho_vec)] = 1. - 1e-5
+
+        # decide where to bin up regions of the gene.
         bin_vec = np.unique(np.linspace(0, Li, num=(self.bins + 1), endpoint=True, dtype=int))
         bin_vec.sort()
         bin_segs = [[bin_vec[i], bin_vec[i + 1]] for i in range(len(bin_vec) - 1)]
-
-        KE_bin = np.copy(KE)
-        F_bin = np.copy(F)
-
-        # compute degradation index scores: closer to 1 -> more degradation.
-        rho_vec = 1 - F_bin.sum(axis=1) / KE_bin.sum(axis=1)
 
         # Run baseline selection algorithm while the degradation index score is still high
         # or while there are still non-baseline regions left to trim.
@@ -203,8 +248,10 @@ class GeneNMFOA():
             # estimate coverage curves from remaining regions.
             KE_bin = self.nmf(F_bin)
 
-            # compute DI scores from remaining regions.
-            rho_vec = 1 - F_bin.sum(axis=1) / KE_bin.sum(axis=1)
+            # safely compute degradation index scores: closer to 1 -> more degradation.
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), KE_bin.sum(axis=1))
+                rho_vec[~np.isfinite(rho_vec)] = 1. - 1e-5
 
             # TODO: determine how to best proceed if there are divide by 0 errors.
             if any(np.isnan(rho_vec)):
@@ -215,14 +262,13 @@ class GeneNMFOA():
 
         # Use refined estimate of K (p x 1 vector) to refine the envelope estimate,
         # return refined estimate of KE^{T}
-        # TODO - should we be using unfiltered F matrix at this point?
         E = (F.T / K.ravel()).max(axis=1).reshape(-1, 1)
 
         # return estimate of F.
         return K.dot(E.T)
 
-    def run_baseline_selection_serial(self, x, y):
-        return list(map(self.baseline_selection, x, y))
+    def run_baseline_selection_serial(self, x):
+        return list(map(self.baseline_selection, x))
 
     def par_apply_baseline_selection(self, dat):
         """
@@ -234,13 +280,12 @@ class GeneNMFOA():
         """
         # Obtain initial coverage estimates. Split estimates
         # and coverage matrices into chunked sublists.
-        estimates = split_into_chunks(self.par_apply_nmf(dat), self.n_jobs)
         dat = split_into_chunks(dat, self.n_jobs)
 
         # Dispatch serial jobs over parallel workers.
         p = mp.Pool(processes=self.n_jobs)
         baseline_ests = [p.apply_async(self.run_baseline_selection_serial
-                                  , args=(dat[i], estimates[i])) for i in range(len(dat))]
+                                  , args=(dat[i],)) for i in range(len(dat))]
         p.close()
 
         # Consolidate worker results.
@@ -315,44 +360,11 @@ class GeneNMFOA():
         :param reads_dat: n (genes) x p (samples) numpy array of gene read counts
         """
         self.n_genes = len(cov_dat)
-        self.genes = list(cov_dat.keys())
-        self.cov_dat = OrderedDict()
         self.p = next(iter(cov_dat.values())).shape[0]
-
-        # Determine genes that are candidates for baseline selection
-        for i in range(len(self.genes)):
-            gene = self.genes[i]
-            cov_mat = cov_dat[gene]
-            self.cov_dat[gene] = dict()
-
-            # Raise exception if any experiment's coverage array is entirely 0.
-            if any(cov_mat.sum(axis=1) == 0):
-                raise ValueError('Coverage matrix for gene {0} -- experiment with entirely-0 coverage found!'
-                                 .format(gene))
-
-            self.cov_dat[gene]['raw_coverage'] = cov_mat
-            self.cov_dat[gene]['baseline_selection'] = False
-
-            hi_cov_idx = np.where(cov_dat[gene].max(axis=0) > 0.1 * cov_dat[gene].max())[0]
-            if len(hi_cov_idx) >= 50:
-                self.cov_dat[gene]['baseline_selection'] = True
-                self.cov_dat[gene]['high_coverage_idx'] = hi_cov_idx
-                self.cov_dat[gene]['baseline_coverage'] = cov_mat[:, hi_cov_idx]
-                self.cov_dat[gene]['estimate'] = None
-
-        # split apart genes to be used in baseline selection in post NMF-OA approximations.
-        baseline_idx = np.where([self.cov_dat[gene]['baseline_selection'] for gene in self.cov_dat])[0]
-        self.baseline_genes = np.array(list(self.cov_dat.keys()))[baseline_idx]
-        self.baseline_cov = [self.cov_dat[gene]['baseline_coverage'] for gene in self.baseline_genes]
-
-        # keep track of genes that will not be included in baseline selection.
-        exclude_idx = np.array([])
-        if len(self.baseline_genes) < self.n_genes:
-            exclude_idx = np.array(list(set(range(self.n_genes)) - set(baseline_idx)))
-            self.exclude_genes = np.array(list(self.cov_dat.keys()))[exclude_idx]
-
-        # order read counts into two blocks: top block for genes to be run in DegNorm.
-        self.x = np.copy(reads_dat[np.concatenate([baseline_idx, exclude_idx]).astype(int), :])
+        self.cov_mats = list(cov_dat.values())
+        self.genes = list(cov_dat.keys())
+        self.x = np.copy(reads_dat)
+        self.x_adj = np.copy(self.x)
 
         # ---------------------------------------------------------------------------- #
         # Run data checks:
@@ -363,26 +375,31 @@ class GeneNMFOA():
         if self.x.shape[0] != self.n_genes:
             raise ValueError('Number of genes in read count matrix not equal to number of coverage matrices!')
 
-        if not all(map(lambda z: z.ndim == 2, list(cov_dat.values()))):
+        if not all(map(lambda z: z.ndim == 2, self.cov_mats)):
             raise ValueError('Not all coverage matrices are 2-d arrays!')
 
-        if np.sum(np.array(list(map(lambda x: x.shape[1], list(cov_dat.values())))) / self.p < 1) > 0:
+        if np.sum(np.array(list(map(lambda x: x.shape[1], self.cov_mats))) / self.p < 1) > 0:
             warnings.warn('At least one coverage matrix slotted for DegNorm is longer than it is wide.'
                           'Ensure that coverage matrices are (p x Li).')
 
-        # assemble len(self.degnorm_genes) x p matrix of sums over coverage arrays
-        # (sum coverage over positions, one sum per sample included in DegNorm iterations).
-        self.degnorm_cov_sums = np.array(list(map(lambda z: z.sum(axis=1),
-                                                  [self.cov_dat[gene]['raw_coverage'] for gene in self.baseline_genes])))
+        # assemble self.n_genes x p matrix of sums over coverage arrays, used for
+        # computing self.scale_factors.
+        self.cov_sums = np.array(list(map(lambda z: z.sum(axis=1), self.cov_mats)))
 
         # downsample coverage matrices if desired.
         if self.grid_points:
-            self.baseline_cov = list(map(lambda z: self.downsample_2d(z, by_row=False), self.baseline_cov))
+            self.cov_mats = list(map(lambda z: self.downsample_2d(z, by_row=False), self.cov_mats))
 
     def transform(self):
         # initialize NMF-OA estimates of coverage curves.
         # Only use on genes that meet baseline selection criteria.
-        estimates = self.par_apply_nmf(self.baseline_cov)
+        self.estimates = self.par_apply_nmf(self.cov_mats)
+
+        # update vector of read count adjustment factors; update rho (DI) matrix.
+        self.compute_scale_factors(self.estimates)
+
+        # scale baseline_cov coverage curves by 1 / (updated adjustment factors).
+        self.adjust_coverage_curves()
 
         # Instantiate progress bar.
         pbar = tqdm.tqdm(total = self.iter
@@ -393,61 +410,51 @@ class GeneNMFOA():
         i = 0
         while i < self.iter:
 
-            # update vector of read count adjustment factors; update rho
-            # as a block matrix of [counts from baseline_cov] [average from baseline_cov] blocks.
-            self.compute_scale_factors(estimates)
-
-            # scale baseline_cov coverage curves by 1 / (updated adjustment factors).
-            baseline_cov_adjusted = self.adjust_coverage_curves(self.baseline_cov)
-
             # run NMF-OA + baseline selection; obtain refined estimate of K*Et.
-            estimates = self.par_apply_baseline_selection(baseline_cov_adjusted)
+            self.estimates = self.par_apply_baseline_selection(self.cov_mats_adj)
+
+            # update scale factors, adjust coverage curves and read counts.
+            self.compute_scale_factors(self.estimates)
+            self.adjust_coverage_curves()
+            self.adjust_read_counts()
 
             i += 1
             pbar.update()
 
         pbar.close()
 
-        for i in range(len(self.baseline_genes)):
-            self.cov_dat[self.baseline_genes[i]]['estimated_coverage'] = estimates[i]
 
     def fit_transform(self, coverage_dat, reads_dat):
         self.fit(coverage_dat, reads_dat)
         return self.transform()
 
 
-if __name__ == '__main__':
-    import pandas as pd
-    import pickle as pkl
-
-    data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
-    X_dat = np.load(os.path.join(data_path, 'read_counts.npz'))
-    X = X_dat['X']
-    genes_df = pd.read_csv(os.path.join(data_path, 'genes_metadata.csv'))
-    with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
-        gene_cov_dict = pkl.load(f)
-
-    print('read counts matrix shape -- {0}'.format(X.shape))
-    print('genes_df shape -- {0}'.format(genes_df.shape))
-    print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
-
-    nmfoa = GeneNMFOA(nmf_iter=50, grid_points=5000, n_jobs=1)
-    nmfoa.fit({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
-              , reads_dat=X[0:100, :])
-    print('Successfully fitted GeneNMFOA object.')
-
-    print('Running GeneNMFOA.transform()')
-    nmfoa.transform()
-
-    import pickle as pkl
-    with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
-        pkl.dump(nmfoa, f)
-
-    estimates = [nmfoa.cov_dat[gene]['estimated_coverage'] for gene in nmfoa.baseline_genes]
-
-    # adjust read counts based on DI scores computed from final coverage estimates.
-    nmfoa.compute_scale_factors(estimates)
-    rho = nmfoa.rho
-    print(rho)
-    X_adj = nmfoa.x / (1 - rho)
-    print(X_adj)
+# if __name__ == '__main__':
+#     import pandas as pd
+#     import pickle as pkl
+# 
+#     data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
+#     X_dat = np.load(os.path.join(data_path, 'read_counts.npz'))
+#     X = X_dat['X']
+#     genes_df = pd.read_csv(os.path.join(data_path, 'genes_metadata.csv'))
+#     with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
+#         gene_cov_dict = pkl.load(f)
+#
+#     print('read counts matrix shape -- {0}'.format(X.shape))
+#     print('genes_df shape -- {0}'.format(genes_df.shape))
+#     print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
+#
+#     nmfoa = GeneNMFOA(nmf_iter=30, grid_points=5000, n_jobs=1)
+#     nmfoa.fit({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
+#               , reads_dat=X[0:100, :])
+#     print('Successfully fitted GeneNMFOA object.')
+#
+#     print('Running GeneNMFOA.transform()')
+#     nmfoa.transform()
+#
+#     import pickle as pkl
+#     with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
+#         pkl.dump(nmfoa, f)
+#
+#     print(nmfoa.rho)
+#     print(nmfoa.x_adj)

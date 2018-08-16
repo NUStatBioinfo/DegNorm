@@ -4,7 +4,6 @@ from degnorm.gene_processing import *
 from degnorm.utils import *
 from degnorm.nmf import *
 from datetime import datetime
-from collections import OrderedDict
 import time
 
 
@@ -110,47 +109,32 @@ def main():
 
     # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
     # initialized an OrderedDict to store
-    gene_cov_dict_unordered = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
-    gene_cov_dict = OrderedDict()
+    chrom_gene_cov_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
+    gene_cov_dict = dict()
 
     # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
     # which transcript regions to filter out prior to running DegNorm.
-    run_degnorm_ctr = 0
+    logging.info('Determining genes include in DegNorm coverage curve approximation.')
+    delete_idx = list()
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
-        cov_mat = gene_cov_dict_unordered[chrom][gene]
+        cov_mat = chrom_gene_cov_dict[chrom][gene]
 
-        # save raw coverage matrix.
-        gene_cov_dict[gene] = dict()
-        gene_cov_dict[gene]['raw_coverage'] = cov_mat.T
-
-        # For genes with sufficient coverage, only run DegNorm on transcript regions with
-        # high coverage (relative to max coverage) -- see supplement, section 2.
-        run_degnorm = True
-        if all(cov_mat.sum(axis=0) > 0):
-            hi_cov_idx = np.where(cov_mat.max(axis=1) > 0.1 * cov_mat.max())[0]
-
-            if len(hi_cov_idx) >= 50:
-                gene_cov_dict[gene]['filtered_coverage'] = cov_mat[hi_cov_idx, :].T
-                gene_cov_dict[gene]['filtered_idx'] = hi_cov_idx
-
-            else:
-                run_degnorm = False
+        if any(cov_mat.sum(axis=0) == 0):
+            delete_idx.append(i)
 
         else:
-            run_degnorm = False
+            gene_cov_dict[gene] = cov_mat.T
 
-        # capture whether or not we will run DegNorm for this gene.
-        run_degnorm_ctr += 1 if run_degnorm else 0
-        gene_cov_dict[gene]['run_degnorm'] = run_degnorm
+    if delete_idx:
+        X = np.delete(X
+                      , obj=delete_idx
+                      , axis=0)
+        genes_df = genes_df.drop(delete_idx
+                                 , axis=0).reset_index(drop=True)
 
-    # check that we will run DegNorm on at least one gene.
-    if run_degnorm_ctr > 0:
-        logging.info('DegNorm will run on {0} / {1} genes with sufficient coverage.'
-                     .format(run_degnorm_ctr, X.shape[0]))
-    else:
-        raise ValueError('No genes were found with sufficient coverage!')
+    logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
 
     # check that read counts and coverage matrices contain data for same number of genes.
     if len(gene_cov_dict.keys()) != X.shape[0]:
@@ -158,20 +142,54 @@ def main():
 
     # save gene annotation metadata.
     gene_output_file = os.path.join(output_dir, 'gene_metadata.csv')
-    logging.info('Saving gene metadata to {0}'.format(gene_output_file))
+    logging.info('Saving gene metadata.')
     genes_df.to_csv(gene_output_file
                     , index=False)
 
+    # save read counts.
+    logging.info('Saving read counts.')
+    np.savetxt(os.path.join(output_dir, 'read_counts.csv')
+               , X=X
+               , delimiter=',')
+
     # free up more memory: delete exon / genome annotation data
-    del gene_cov_dict_unordered, gene_cov_mats
+    del chrom_gene_cov_dict, gene_cov_mats
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
-    nmfoa = GeneNMFOA(nmf_iter=20, grid_points=2000, n_jobs=n_jobs)
-    cov_ests = nmfoa.fit_transform(gene_cov_dict, reads_dat=X)
 
-    # compute DI scores from estimates.
+    logging.info('Executing NMF over-approximation algorithm...')
+    nmfoa = GeneNMFOA(nmf_iter=20, grid_points=2000, n_jobs=n_jobs)
+    nmfoa.fit_transform(gene_cov_dict, reads_dat=X)
+
+    # extract approximated coverage curves.
+    estimates = [nmfoa.cov_dat[gene]['estimated_coverage'] for gene in nmfoa.baseline_genes]
+
+    # ---------------------------------------------------------------------------- #
+    # Save
+    # ---------------------------------------------------------------------------- #
+
+    # adjust read counts based on DI scores computed from final coverage estimates.
+    logging.info('Computing degradation index scores, adjusting read counts.')
+    nmfoa.compute_scale_factors(estimates)
+    X_adj = nmfoa.x / (1 - nmfoa.rho)
+
+    logging.info('Saving degradation index scores, adjusted read counts.')
+    np.savetxt(os.path.join(output_dir, 'degradation_index.csv')
+               , X=nmfoa.rho
+               , delimiter=',')
+
+    np.savetxt(os.path.join(output_dir, 'adjusted_read_counts.csv')
+               , X=X_adj
+               , delimiter=',')
+
+    # ---------------------------------------------------------------------------- #
+    # Generate plots.
+    # ---------------------------------------------------------------------------- #
+
+
+
 
 
 if __name__ == "__main__":
