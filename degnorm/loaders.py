@@ -31,12 +31,12 @@ class Loader():
                         loadable = True
 
                 if not loadable:
-                    raise ValueError('to_load file {0} does not end with {0}'.format(to_load, ', '.join(self.filetypes)))
+                    raise ValueError('file {0} does not end with {0}'.format(to_load, ', '.join(self.filetypes)))
             else:
-                raise IOError('to_load file {0} not found'.format(to_load))
+                raise IOError('file {0} not found'.format(to_load))
 
         else:
-            raise ValueError('to_load data type not understood')
+            raise ValueError('{0} data type not understood'.format(to_load))
 
     def get_data(self):
         raise NotImplementedError('get_data not yet implemented for {0}'.format(self.__class__.__name__))
@@ -134,21 +134,9 @@ class SamLoader(Loader):
         # sort the reads so that pairs are grouped together.
         df.sort_values('qname_unpaired', inplace=True)
 
-        df_dict['data'] = df
+        df_dict['data'] = df.reset_index(drop=True)
 
         return df_dict
-
-
-class BamLoader(Loader):
-
-    def __init__(self, to_load):
-        """
-        .bam file loader
-
-        :param to_load: str the realpath to a .bam file.
-        """
-        Loader.__init__(self, '.bam')
-        self.get_file(to_load)
 
 
 class GeneAnnotationLoader(Loader):

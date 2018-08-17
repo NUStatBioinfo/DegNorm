@@ -4,6 +4,7 @@ from degnorm.gene_processing import *
 from degnorm.utils import *
 from degnorm.nmf import *
 from datetime import datetime
+from collections import OrderedDict
 import time
 
 
@@ -37,7 +38,8 @@ def main():
         logging.info('Loading RNA-seq data file {0} / {1}'.format(idx + 1, n_samples))
         sam_file = args.input_files[idx]
 
-        if args.input_type == 'bam':
+        # if actually working with .bam files, convert them to .sam.
+        if sam_file.endswith('.bam'):
             logging.info('Converting {0} into .sam file format...'
                          .format(sam_file))
             sam_file = bam_to_sam(sam_file)
@@ -110,7 +112,7 @@ def main():
     # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
     # initialized an OrderedDict to store
     chrom_gene_cov_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
-    gene_cov_dict = dict()
+    gene_cov_dict = OrderedDict()
 
     # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
     # which transcript regions to filter out prior to running DegNorm.
