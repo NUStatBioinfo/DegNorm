@@ -66,7 +66,8 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         slices = [np.arange(e_starts[i], e_ends[i]) for i in range(len(e_starts))]
         slicing = np.unique(flatten_2d(slices))
 
-        gene_cov_dict[gene] = cov_mat[slicing, :]
+        # Save transposed coverage matrix so that shape is p x Li.
+        gene_cov_dict[gene] = cov_mat[slicing, :].T
 
         pbar.update()
 

@@ -2,6 +2,7 @@ from degnorm.reads import *
 from degnorm.coverage_counts import *
 from degnorm.gene_processing import *
 from degnorm.utils import *
+from degnorm.visualizations import *
 from degnorm.nmf import *
 from datetime import datetime
 from collections import OrderedDict
@@ -67,8 +68,7 @@ def main():
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
                                   , verbose=True
-                                  , chroms=chroms
-                                  , genes=args.genes)
+                                  , chroms=chroms)
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
@@ -98,17 +98,16 @@ def main():
     # Slice up genome coverage matrix for each gene according to exon positioning.
     # Run in parallel over chromosomes.
     # ---------------------------------------------------------------------------- #
-    cov_output = None if args.disregard_coverage else output_dir
+    # cov_output_dir = None if args.disregard_coverage else output_dir
     p = mp.Pool(processes=n_jobs)
     gene_cov_mats = [p.apply_async(gene_coverage
-                                   , args=(exon_df, chrom, cov_files, cov_output, True)) for chrom in chroms]
+                                   , args=(exon_df, chrom, cov_files, output_dir, True)) for chrom in chroms]
     p.close()
     gene_cov_mats = [x.get() for x in gene_cov_mats]
 
     # ---------------------------------------------------------------------------- #
     # Process gene coverage matrix output prior to running NMF.
     # ---------------------------------------------------------------------------- #
-
     # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
     # initialized an OrderedDict to store
     chrom_gene_cov_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
@@ -121,13 +120,21 @@ def main():
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
+
+        # if user-defined gene subset is specified, only add gene if in subset.
+        if args.genes:
+            if gene not in args.genes:
+                delete_idx.append(i)
+                continue
+
         cov_mat = chrom_gene_cov_dict[chrom][gene]
 
+        # do not add gene if there are any 100%-zero coverage samples.
         if any(cov_mat.sum(axis=0) == 0):
             delete_idx.append(i)
 
         else:
-            gene_cov_dict[gene] = cov_mat.T
+            gene_cov_dict[gene] = cov_mat
 
     if delete_idx:
         X = np.delete(X
@@ -143,15 +150,17 @@ def main():
         raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
 
     # save gene annotation metadata.
-    gene_output_file = os.path.join(output_dir, 'gene_metadata.csv')
-    logging.info('Saving gene metadata.')
-    genes_df.to_csv(gene_output_file
+    exon_output_file = os.path.join(output_dir, 'gene_exon_metadata.csv')
+    logging.info('Saving gene-exon metadata.')
+    exon_df.to_csv(exon_output_file
                     , index=False)
 
     # save read counts.
     logging.info('Saving read counts.')
     np.savetxt(os.path.join(output_dir, 'read_counts.csv')
                , X=X
+               , header=sample_ids
+               , comments=''
                , delimiter=',')
 
     # free up more memory: delete exon / genome annotation data
@@ -160,36 +169,48 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
-
-    logging.info('Executing NMF over-approximation algorithm...')
-    nmfoa = GeneNMFOA(nmf_iter=20, grid_points=2000, n_jobs=n_jobs)
-    nmfoa.fit_transform(gene_cov_dict, reads_dat=X)
-
-    # extract approximated coverage curves.
-    estimates = [nmfoa.cov_dat[gene]['estimated_coverage'] for gene in nmfoa.baseline_genes]
-
-    # ---------------------------------------------------------------------------- #
-    # Save
-    # ---------------------------------------------------------------------------- #
-
-    # adjust read counts based on DI scores computed from final coverage estimates.
-    logging.info('Computing degradation index scores, adjusting read counts.')
-    nmfoa.compute_scale_factors(estimates)
-    X_adj = nmfoa.x / (1 - nmfoa.rho)
-
-    logging.info('Saving degradation index scores, adjusted read counts.')
-    np.savetxt(os.path.join(output_dir, 'degradation_index.csv')
-               , X=nmfoa.rho
-               , delimiter=',')
-
-    np.savetxt(os.path.join(output_dir, 'adjusted_read_counts.csv')
-               , X=X_adj
-               , delimiter=',')
+    logging.info('Executing NMF-OA over-approximation algorithm...')
+    nmfoa = GeneNMFOA(nmf_iter=20
+                      , grid_points=2000
+                      , genes=args.genes
+                      , n_jobs=n_jobs)
+    nmfoa.fit_transform(gene_cov_dict
+                        , reads_dat=X)
 
     # ---------------------------------------------------------------------------- #
-    # Generate plots.
+    # Save results.
     # ---------------------------------------------------------------------------- #
+    logging.info('Saving NMF-OA output:'
+                 '-- degradation index scores -- '
+                 '-- adjusted read counts --'
+                 '-- coverage curve estimates --')
+    nmfoa.save_results(genes_df
+                       , output_dir=output_dir
+                       , sample_ids=sample_ids
+                       , ignore_missing_genes=False)
 
+    # ---------------------------------------------------------------------------- #
+    # Generate coverage curve plots.
+    # ---------------------------------------------------------------------------- #
+    p = mp.Pool(processes=n_jobs)
+    out = [p.apply_async(save_chrom_coverage
+                         , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
+                                 , os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
+                                 , exon_df[exon_df.chr == chrom]
+                                 , sample_ids
+                                 , [10, 6]
+                                 , os.path.join(output_dir, chrom))) for chrom in chroms]
+    p.close()
+
+    # Execute parallel work.
+    out = [x.get() for x in out]
+
+    # ---------------------------------------------------------------------------- #
+    # Generate report.
+    # ---------------------------------------------------------------------------- #
+    generate_report(nmfoa
+                    , sample_ids=sample_ids
+                    , output_dir=output_dir)
 
 
 

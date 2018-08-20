@@ -163,10 +163,10 @@ def parse_args():
                         , help='Output directory.'
                                'A directory for storing DegNorm analyses, visualizations, '
                                'and data will be created. Default to the current working directory.')
-    parser.add_argument('--disregard-coverage'
-                        , action='store_true'
-                        , help='Option to not save (disregard) coverage array .npz files.'
-                               'NOT RECOMMENDED; only use if interested in running pipeline once.')
+    # parser.add_argument('--disregard-coverage'
+    #                     , action='store_true'
+    #                     , help='Option to not save (disregard) coverage array .npz files.'
+    #                            'NOT RECOMMENDED; only use if interested in running pipeline once.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int

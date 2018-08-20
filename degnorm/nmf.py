@@ -1,5 +1,6 @@
 from scipy.sparse.linalg import svds
 from degnorm.utils import *
+from sklearn.exceptions import NotFittedError
 import warnings
 import tqdm
 
@@ -37,9 +38,11 @@ class GeneNMFOA():
         self.n_genes = None
         self.scale_factors = None
         self.rho = None
-        self.genes = list()
         self.estimates = list()
+        self.cov_mats = list()
         self.cov_mats_adj = list()
+        self.fitted = False
+        self.transformed = False
 
     def rank_one_approx(self, x):
         """
@@ -128,8 +131,7 @@ class GeneNMFOA():
         """
         # construct block rho matrix: len(self.degnorm_genes) x p matrix of DI scores
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
-        cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats_adj))
-        self.rho = 1 - cov_sums / np.vstack(est_sums)
+        self.rho = 1 - self.cov_sums / np.vstack(est_sums)
 
         # quality control.
         self.rho[self.rho < 0] = 0.
@@ -144,7 +146,7 @@ class GeneNMFOA():
         """
         Adjust coverage curves by dividing the coverage values by corresponding adjustment factor, s_{j}
         """
-        self.cov_mats_adj = [(F.T / self.scale_factors).T for F in self.cov_mats_adj]
+        self.cov_mats_adj = [(F.T / self.scale_factors).T for F in self.cov_mats]
 
     def adjust_read_counts(self):
         """
@@ -360,9 +362,9 @@ class GeneNMFOA():
         :param reads_dat: n (genes) x p (samples) numpy array of gene read counts
         """
         self.n_genes = len(cov_dat)
-        self.p = next(iter(cov_dat.values())).shape[0]
-        self.cov_mats_adj = list(cov_dat.values())
         self.genes = list(cov_dat.keys())
+        self.p = next(iter(cov_dat.values())).shape[0]
+        self.cov_mats = list(cov_dat.values())
         self.x = np.copy(reads_dat)
         self.x_adj = np.copy(self.x)
 
@@ -375,21 +377,29 @@ class GeneNMFOA():
         if self.x.shape[0] != self.n_genes:
             raise ValueError('Number of genes in read count matrix not equal to number of coverage matrices!')
 
-        if not all(map(lambda z: z.ndim == 2, self.cov_mats_adj)):
+        if not all(map(lambda z: z.ndim == 2, self.cov_mats)):
             raise ValueError('Not all coverage matrices are 2-d arrays!')
 
-        if np.sum(np.array(list(map(lambda x: x.shape[1], self.cov_mats_adj))) / self.p < 1) > 0:
+        if np.sum(np.array(list(map(lambda x: x.shape[1], self.cov_mats))) / self.p < 1) > 0:
             warnings.warn('At least one coverage matrix slotted for DegNorm is longer than it is wide.'
                           'Ensure that coverage matrices are (p x Li).')
 
         # downsample coverage matrices if desired.
         if self.grid_points:
-            self.cov_mats_adj = list(map(lambda z: self.downsample_2d(z, by_row=False), self.cov_mats_adj))
+            self.cov_mats = list(map(lambda z: self.downsample_2d(z, by_row=False), self.cov_mats))
+
+        # sum coverage per sample, for later.
+        self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
+
+        self.fitted = True
 
     def transform(self):
+        if not self.fitted:
+            raise NotFittedError('self.fit not yet executed.')
+
         # initialize NMF-OA estimates of coverage curves.
         # Only use on genes that meet baseline selection criteria.
-        self.estimates = self.par_apply_nmf(self.cov_mats_adj)
+        self.estimates = self.par_apply_nmf(self.cov_mats)
 
         # update vector of read count adjustment factors; update rho (DI) matrix.
         self.compute_scale_factors(self.estimates)
@@ -421,39 +431,127 @@ class GeneNMFOA():
             pbar.update()
 
         pbar.close()
-
+        self.transformed = True
 
     def fit_transform(self, coverage_dat, reads_dat):
         self.fit(coverage_dat, reads_dat)
-        return self.transform()
+        self.transform()
+
+    def save_results(self, gene_manifest_df, output_dir='.',
+                     sample_ids=None, ignore_missing_genes=False):
+        """
+        Save GeneNMFOA output to disk:
+            - self.estimates: for each gene's estimated coverage matrix, find the chromosome to which the
+            gene belongs. Per chromosome, assemble dictionary of {gene: estimated coverage matrix} pairs,
+            and save that dictionary in a directory labeled by the chromosome in the output_dir directory,
+            in a file "estimated_coverage_matrices_<chromosome name>.pkl"
+            - self.rho: save degradation index scores to "degradation_index_scores.csv" using sample_ids
+            as the header.
+            - self.x_adj: save adjusted read counts to "adjusted_read_counts.csv" using sample_ids as the header.
+
+        :param gene_manifest_df: pandas.DataFrame establishing chromosome-gene map. Must contain,
+        at a minimum, the columns `chr` (str, chromosome) and `gene` (str, gene name).
+        :param output_dir: str output directory to save GeneNMFOA output.
+        :param sample_ids: (optional) list of str names of RNA_seq experiments, to be used
+         as headers for adjusted read counts matrix and degradation index score matrix.
+        :param ignore_missing_genes: Boolean (default False) - if a gene is in self.genes (and therefore
+        has an estimated coverage curve), but gene is not found in gene_manifest_df, should save_results
+        skip gene?
+        :return: None
+        """
+        # quality control.
+        if not self.transformed:
+            raise NotFittedError('Model not fitted, not transformed -- NMF-OA has not been run.')
+
+        if not os.path.isdir(output_dir):
+            raise IOError('Directory {0} not found.'.format(output_dir))
+
+        # ensure that gene_manifest_df has `chr` and `gene` columns to establish chromosome-gene map.
+        if not all([col in gene_manifest_df.columns.tolist() for col in ['chr', 'gene']]):
+            raise ValueError('gene_manifest_df must have columns `chr` and `gene`.')
+
+        if sample_ids:
+            if not len(sample_ids) == self.p:
+                raise ValueError('Number of supplied sample IDs does not match number'
+                                 'of samples used to fit GeneNMFOA object.')
+        else:
+            sample_ids = ['sample_{0}'.format(i + 1) for i in range(self.p)]
+
+        # assemble chromosome-gene:estimates partitions.
+        chrom_gene_dict = {chrom: dict() for chrom in gene_manifest_df.chr.unique().tolist()}
+        manifest_genes = gene_manifest_df.gene.unique().tolist()
+        for gene in self.genes:
+            if not gene in manifest_genes:
+                if not ignore_missing_genes:
+                    raise ValueError('Gene {0} not found in gene manifest data.'.format(gene))
+                else:
+                    continue
+
+            else:
+                chrom = gene_manifest_df[gene_manifest_df.gene == gene].chr.iloc[0]
+                if not chrom in chrom_gene_dict:
+                    chrom_gene_dict[chrom] = dict()
+
+                gene_idx = np.where(np.array(self.genes) == gene)[0][0]
+                chrom_gene_dict[chrom][gene] = self.estimates[gene_idx]
+
+        # Instantiate results-save progress bar.
+        pbar = tqdm.tqdm(total=(self.n_genes + 2)
+                         , leave=False
+                         , desc='GeneNMFOA save progress')
+
+        for chrom in chrom_gene_dict:
+            chrom_dir = os.path.join(output_dir, chrom)
+            if not os.path.isdir(chrom_dir):
+                os.makedirs(chrom_dir)
+
+            with open(os.path.join(chrom_dir, 'estimated_coverage_matrices_{0}.pkl'.format(chrom)), 'wb') as f:
+                pkl.dump(chrom_gene_dict[chrom], f)
+
+            pbar.update()
+
+        np.savetxt(os.path.join(output_dir, 'degradation_index_scores.csv')
+                   , X=self.rho
+                   , header=','.join(sample_ids)
+                   , comments=''
+                   , delimiter=',')
+        pbar.update()
+
+        np.savetxt(os.path.join(output_dir, 'adjusted_read_counts.csv')
+                   , X=self.x_adj
+                   , header=','.join(sample_ids)
+                   , comments=''
+                   , delimiter=',')
+        pbar.update()
+        pbar.close()
 
 
-# if __name__ == '__main__':
-#     import pandas as pd
-#     import pickle as pkl
-#
-#     data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
-#     X_dat = np.load(os.path.join(data_path, 'read_counts.npz'))
-#     X = X_dat['X']
-#     genes_df = pd.read_csv(os.path.join(data_path, 'genes_metadata.csv'))
-#     with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
-#         gene_cov_dict = pkl.load(f)
-#
-#     print('read counts matrix shape -- {0}'.format(X.shape))
-#     print('genes_df shape -- {0}'.format(genes_df.shape))
-#     print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
-#
-#     nmfoa = GeneNMFOA(nmf_iter=100, grid_points=5000, n_jobs=1)
-#     nmfoa.fit({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
-#               , reads_dat=X[0:100, :])
-#     print('Successfully fitted GeneNMFOA object.')
-#
-#     print('Running GeneNMFOA.transform()')
-#     nmfoa.transform()
-#
-#     import pickle as pkl
-#     with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
-#         pkl.dump(nmfoa, f)
-#
-#     print(nmfoa.rho)
-#     print(nmfoa.x_adj)
+if __name__ == '__main__':
+    import pandas as pd
+    import pickle as pkl
+
+    data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
+    X_dat = np.load(os.path.join(data_path, 'read_counts.npz'))
+    X = X_dat['X']
+    genes_df = pd.read_csv(os.path.join(data_path, 'genes_metadata.csv'))
+    with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
+        gene_cov_dict = pkl.load(f)
+
+    print('read counts matrix shape -- {0}'.format(X.shape))
+    print('genes_df shape -- {0}'.format(genes_df.shape))
+    print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
+
+    print('Executing GeneNMFOA.fit_transform')
+    nmfoa = GeneNMFOA(nmf_iter=3, grid_points=5000, n_jobs=1)
+    nmfoa.fit_transform({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
+              , reads_dat=X[0:100, :])
+
+    with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
+        pkl.dump(nmfoa, f)
+
+    print('Saving NMF-OA results.')
+    nmfoa.save_results(gene_manifest_df=genes_df
+                       , output_dir=data_path)
+
+    print(nmfoa.rho)
+    print(nmfoa.x_adj)

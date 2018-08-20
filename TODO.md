@@ -2,9 +2,11 @@
 
 ### Frank
 - Add requirements.txt
-- Write tests!
-- Write a test module
-- Add test module data
-- Visualization code
-- Importable visualization methods
-- Pass gene arguments to nmf pipeline
+- Test modules:
+    - finish test_reads.py
+    - nmf tests
+    - gene processing tests
+    - utils tests
+- Jinja2 report template + renderer
+- Visualization method for user:
+    - Given an output directory and a gene name, render a coverage plot (if data available in output dir)
