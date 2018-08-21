@@ -4,8 +4,8 @@ from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
 
 
-def generate_report(data_dir, genenmfoa, gene_manifest_df,
-                    input_files, sample_ids, top_n_genes=5, output_dir='.'):
+def render_report(data_dir, genenmfoa, gene_manifest_df,
+                  input_files, sample_ids, top_n_genes=5, output_dir='.'):
     """
     Render an .html summary report regarding DegNorm output and save it.
 

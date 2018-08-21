@@ -4,6 +4,7 @@ from degnorm.gene_processing import *
 from degnorm.utils import *
 from degnorm.visualizations import *
 from degnorm.nmf import *
+from degnorm.report import render_report
 from datetime import datetime
 from collections import OrderedDict
 import time
@@ -211,13 +212,15 @@ def main():
     out = [x.get() for x in out]
 
     # ---------------------------------------------------------------------------- #
-    # Generate report.
+    # Run summary report.
     # ---------------------------------------------------------------------------- #
-    generate_report(nmfoa
-                    , sample_ids=sample_ids
-                    , output_dir=output_dir)
-
-
+    render_report(data_dir=output_dir
+                  , genenmfoa=nmfoa
+                  , gene_manifest_df=genes_df
+                  , input_files=args.input_files
+                  , sample_ids=sample_ids
+                  , top_n_genes=5
+                  , output_dir=output_dir)
 
 
 if __name__ == "__main__":
