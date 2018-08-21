@@ -67,12 +67,10 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
     gs = gridspec.GridSpec(2, 1)
     with sns.axes_style('darkgrid'):
 
-        # upper-left subplot: estimated coverage curves
         ax1 = plt.subplot(gs[0])
         sns.boxplot(data=di_sample_means, orient='h')
         ax1.set_title('Samples')
 
-        # upper-right subplot: estimated coverage curves
         ax2 = plt.subplot(gs[1])
         sns.boxplot(data=di_gene_means, orient='h')
         ax2.set_title('Genes')
