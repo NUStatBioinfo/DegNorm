@@ -1,8 +1,8 @@
 from platform import platform
 from re import search
 import matplotlib
-if search('Linux', platform()):
-    matplotlib.use('agg')
+# if search('Linux', platform()):
+matplotlib.use('agg')
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Rectangle
 import matplotlib.pylab as plt

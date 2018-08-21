@@ -32,12 +32,14 @@ class GeneNMFOA():
         self.min_high_coverage = np.abs(int(min_high_coverage))
         self.min_bins = np.ceil(self.bins * 0.3)
         self.grid_points = np.abs(int(grid_points)) if grid_points else None
+        self.downsample_idx = list()
         self.x = None
         self.x_adj = None
         self.p = None
         self.n_genes = None
         self.scale_factors = None
         self.rho = None
+        self.Lis = None
         self.estimates = list()
         self.cov_mats = list()
         self.cov_mats_adj = list()
@@ -305,17 +307,50 @@ class GeneNMFOA():
         Li = x.shape[0 if by_row else 1]
 
         # if downsample rate high enough to cover entire matrix,
-        # just return matrix.
+        # return input matrix and consider everything sampled.
         if self.grid_points >= Li:
-            return x
+            return x, np.arange(0, Li)
 
         # otherwise, evenly sample column indices and return downsampled matrix.
         downsample_idx = np.sort(np.unique(np.linspace(0, Li, num=self.grid_points, endpoint=False, dtype=int)))
 
         if by_row:
-            return x[downsample_idx, :]
+            return x[downsample_idx, :], downsample_idx
 
-        return x[:, downsample_idx]
+        return x[:, downsample_idx], downsample_idx
+
+    @staticmethod
+    def restore_from_downsample(x, Li, xp, by_row=True):
+        """
+        Restore a coverage matrix from a downsampled version to its
+        original transcript size.
+
+        :param x: 2-d numpy.array, downsampled coverage matrix.
+        :param Li: int target length of
+        :param xp:
+        :return:
+        """
+        ax = 1 if not by_row else 0
+
+        # quality control.
+        if len(xp) != x.shape[ax]:
+            raise ValueError('x.shape == {0} is incompatible with downsampled'
+                             'indices of length {1}'.format(x.shape, len(xp)))
+
+        # if x has not been downsampled (shape of x is <= target length, Li), exit.
+        if Li <= x.shape[ax]:
+            return x
+
+        # restore (expand-interpolate) each column or row of x at points xp with values
+        # fp coming from the column or row of x.
+        z = np.arange(0, Li)
+        x_restored = np.apply_along_axis(lambda fp: np.interp(z
+                                                              , xp=xp
+                                                              , fp=fp)
+                                         , axis=ax
+                                         , arr=x)
+        return x_restored
+
 
     def delta_norm(self, mat_t0, mat_t1):
         """
@@ -384,9 +419,17 @@ class GeneNMFOA():
             warnings.warn('At least one coverage matrix slotted for DegNorm is longer than it is wide.'
                           'Ensure that coverage matrices are (p x Li).')
 
-        # downsample coverage matrices if desired.
+        # Store array of gene transcript lengths.
+        self.Lis = np.array(list(map(lambda x: x.shape[1], self.cov_mats)))
+
+        # downsample coverage matrices (if desired), saving the indices
+        # at which each matrix was sampled, so they can be restored to original size later.
         if self.grid_points:
-            self.cov_mats = list(map(lambda z: self.downsample_2d(z, by_row=False), self.cov_mats))
+            for i in range(self.n_genes):
+                cov_mat = self.cov_mats[i]
+                cov_mat, down_idx = self.downsample_2d(cov_mat, by_row=False)
+                self.cov_mats[i] = cov_mat
+                self.downsample_idx.append(down_idx)
 
         # sum coverage per sample, for later.
         self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
@@ -431,6 +474,14 @@ class GeneNMFOA():
             pbar.update()
 
         pbar.close()
+
+        # restore grid-sampled gene coverage curve estimates to original gene transcript sizes.
+        if self.downsample_idx:
+            self.estimates = list(map(lambda i: self.restore_from_downsample(self.estimates[i]
+                                                                             , Li=self.Lis[i]
+                                                                             , xp=self.downsample_idx[i]
+                                                                             , by_row=False), range(self.n_genes)))
+
         self.transformed = True
 
     def fit_transform(self, coverage_dat, reads_dat):

@@ -143,6 +143,11 @@ def main():
         genes_df = genes_df.drop(delete_idx
                                  , axis=0).reset_index(drop=True)
 
+    # quality control.
+    if (X.shape[0] == 0) or (genes_df.empty) or (len(gene_cov_dict) == 0):
+        raise ValueError('No genes available to run through DegNorm!'
+                         'Check that your requested genes are in genome annotation file.')
+
     logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
 
     # check that read counts and coverage matrices contain data for same number of genes.

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+ <link rel="stylesheet" href="degnorm_report.css">
+ <meta charset="UTF-8">
+ <title>DegNorm run summary</title>
+</head>
+
+<body>
+
+<h1>DegNorm run summary</h1>
+<h4>Output location: {{ output_dir }} </h4>
+
+<h2>File summary </h2>
+{{ file_info_table }}
+
+<h2>DegNorm model parameterization </h2>
+{{ degnorm_info_table }}
+
+<h2>Degredation Index score distributions by sample </h2>
+<img src="{{ sample_di_dist_plot }}">
+
+<h2>Mean Degredation Index score distributions </h2>
+<img src="{{ mean_di_dist_plot }}">
+
+<h2>Top {{ top_n_genes }} genes with highest mean DI score </h2>
+{% for img in hi_di_plots %}
+    <img src="{{ img }}">
+{% endfor %}
+
+<h2>Top {{ top_n_genes }} genes with lowest mean DI score </h2>
+{% for img in lo_di_plots %}
+    <img src="{{ img }}">
+{% endfor %}
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+body { width: 1400px; margin: 0 auto; }
+h1 {
+    color: #4C4D4C;
+    font-family: forza;
+    font-size: 300%;
+}
+h2 {
+    color: #4C4D4C;
+    font-family: forza;
+    font-size: 200%;
+}
+
+h4 {
+    color: #4C4D4C;
+    font-family: forza;
+    font-size: 130%;
+}
+
+img {
+   position: absolute;
+   top: 50%;
+   left: 50%;
+   margin-top: -250px; /* Half the height */
+   margin-left: -250px; /* Half the width */
+}
