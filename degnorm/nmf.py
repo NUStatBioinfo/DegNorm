@@ -3,6 +3,7 @@ from degnorm.utils import *
 from sklearn.exceptions import NotFittedError
 import warnings
 import tqdm
+import pickle as pkl
 
 class GeneNMFOA():
 
@@ -577,32 +578,32 @@ class GeneNMFOA():
         pbar.close()
 
 
-if __name__ == '__main__':
-    import pandas as pd
-    import pickle as pkl
-
-    data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
-    X_dat = np.load(os.path.join(data_path, 'read_counts.npz'))
-    X = X_dat['X']
-    genes_df = pd.read_csv(os.path.join(data_path, 'genes_metadata.csv'))
-    with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
-        gene_cov_dict = pkl.load(f)
-
-    print('read counts matrix shape -- {0}'.format(X.shape))
-    print('genes_df shape -- {0}'.format(genes_df.shape))
-    print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
-
-    print('Executing GeneNMFOA.fit_transform')
-    nmfoa = GeneNMFOA(nmf_iter=3, grid_points=5000, n_jobs=1)
-    nmfoa.fit_transform({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
-              , reads_dat=X[0:100, :])
-
-    with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
-        pkl.dump(nmfoa, f)
-
-    print('Saving NMF-OA results.')
-    nmfoa.save_results(gene_manifest_df=genes_df
-                       , output_dir=data_path)
-
-    print(nmfoa.rho)
-    print(nmfoa.x_adj)
+# if __name__ == '__main__':
+#     import pandas as pd
+#     import pickle as pkl
+#
+#     data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
+#     X_dat = np.load(os.path.join(data_path, 'read_counts.npz'))
+#     X = X_dat['X']
+#     genes_df = pd.read_csv(os.path.join(data_path, 'genes_metadata.csv'))
+#     with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
+#         gene_cov_dict = pkl.load(f)
+#
+#     print('read counts matrix shape -- {0}'.format(X.shape))
+#     print('genes_df shape -- {0}'.format(genes_df.shape))
+#     print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
+#
+#     print('Executing GeneNMFOA.fit_transform')
+#     nmfoa = GeneNMFOA(nmf_iter=3, grid_points=5000, n_jobs=1)
+#     nmfoa.fit_transform({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
+#               , reads_dat=X[0:100, :])
+#
+#     with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
+#         pkl.dump(nmfoa, f)
+#
+#     print('Saving NMF-OA results.')
+#     nmfoa.save_results(gene_manifest_df=genes_df
+#                        , output_dir=data_path)
+#
+#     print(nmfoa.rho)
+#     print(nmfoa.x_adj)

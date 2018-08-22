@@ -1,13 +1,13 @@
 from degnorm.reads import *
 from degnorm.coverage_counts import *
 from degnorm.gene_processing import *
-from degnorm.utils import *
 from degnorm.visualizations import *
 from degnorm.nmf import *
 from degnorm.report import render_report
 from datetime import datetime
 from collections import OrderedDict
 import time
+import sys
 
 
 def main():
@@ -156,16 +156,16 @@ def main():
         raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
 
     # save gene annotation metadata.
-    exon_output_file = os.path.join(output_dir, 'gene_exon_metadata.csv')
     logging.info('Saving gene-exon metadata.')
+    exon_output_file = os.path.join(output_dir, 'gene_exon_metadata.csv')
     exon_df.to_csv(exon_output_file
                     , index=False)
 
     # save read counts.
-    logging.info('Saving read counts.')
+    logging.info('Saving original read counts.')
     np.savetxt(os.path.join(output_dir, 'read_counts.csv')
                , X=X
-               , header=sample_ids
+               , header=','.join(sample_ids)
                , comments=''
                , delimiter=',')
 
@@ -178,7 +178,6 @@ def main():
     logging.info('Executing NMF-OA over-approximation algorithm...')
     nmfoa = GeneNMFOA(nmf_iter=20
                       , grid_points=2000
-                      , genes=args.genes
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
                         , reads_dat=X)
@@ -198,6 +197,7 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Generate coverage curve plots.
     # ---------------------------------------------------------------------------- #
+    logging.info('Generating coverage curve plots.')
     p = mp.Pool(processes=n_jobs)
     out = [p.apply_async(save_chrom_coverage
                          , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
@@ -212,8 +212,9 @@ def main():
     out = [x.get() for x in out]
 
     # ---------------------------------------------------------------------------- #
-    # Run summary report.
+    # Run summary report and exit.
     # ---------------------------------------------------------------------------- #
+    logging.info('Rendering summary report.')
     render_report(data_dir=output_dir
                   , genenmfoa=nmfoa
                   , gene_manifest_df=genes_df
@@ -221,6 +222,9 @@ def main():
                   , sample_ids=sample_ids
                   , top_n_genes=5
                   , output_dir=output_dir)
+
+    logging.info('DegNorm pipeline complete! Exiting...')
+    sys.exit()
 
 
 if __name__ == "__main__":

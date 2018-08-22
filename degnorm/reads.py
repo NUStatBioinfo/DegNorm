@@ -155,21 +155,21 @@ class ReadsCoverageProcessor():
         :return: list of str file paths of compressed .npz files containing coverage arrays.
         """
         if self.verbose:
-            logging.info('Loading file {0} into pandas.DataFrame'.format(self.filename))
+            logging.info('Begin loading file {0}...'.format(self.filename))
 
         # load .sam file's reads + header.
         self.load()
 
         if self.verbose:
-            logging.info('Successfully loaded .sam file. Total reads -- {0}'.format( self.data.shape[0]))
+            logging.info('Load successful. Total reads -- {0}'.format( self.data.shape[0]))
 
         # determine chromosomes whose coverage will be computed.
         chroms = self.data.chr.unique()
         header_df = self.header[self.header.chr.isin(chroms)]
 
         if self.verbose:
-            logging.info('Determining coverage for {0} chromosomes...\n'
-                         '{1}'.format(len(chroms), ', '.join(chroms)))
+            logging.info('Determining coverage for {0} chromosomes:\n'
+                         '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
