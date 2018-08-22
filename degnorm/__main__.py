@@ -1,11 +1,13 @@
 from degnorm.reads import *
 from degnorm.coverage_counts import *
 from degnorm.gene_processing import *
-from degnorm.utils import *
+from degnorm.visualizations import *
 from degnorm.nmf import *
+from degnorm.report import render_report
 from datetime import datetime
 from collections import OrderedDict
 import time
+import sys
 
 
 def main():
@@ -38,7 +40,8 @@ def main():
         logging.info('Loading RNA-seq data file {0} / {1}'.format(idx + 1, n_samples))
         sam_file = args.input_files[idx]
 
-        if args.input_type == 'bam':
+        # if actually working with .bam files, convert them to .sam.
+        if sam_file.endswith('.bam'):
             logging.info('Converting {0} into .sam file format...'
                          .format(sam_file))
             sam_file = bam_to_sam(sam_file)
@@ -66,8 +69,7 @@ def main():
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
                                   , verbose=True
-                                  , chroms=chroms
-                                  , genes=args.genes)
+                                  , chroms=chroms)
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
@@ -97,81 +99,132 @@ def main():
     # Slice up genome coverage matrix for each gene according to exon positioning.
     # Run in parallel over chromosomes.
     # ---------------------------------------------------------------------------- #
-    cov_output = None if args.disregard_coverage else output_dir
+    # cov_output_dir = None if args.disregard_coverage else output_dir
     p = mp.Pool(processes=n_jobs)
     gene_cov_mats = [p.apply_async(gene_coverage
-                                   , args=(exon_df, chrom, cov_files, cov_output, True)) for chrom in chroms]
+                                   , args=(exon_df, chrom, cov_files, output_dir, True)) for chrom in chroms]
     p.close()
     gene_cov_mats = [x.get() for x in gene_cov_mats]
 
     # ---------------------------------------------------------------------------- #
     # Process gene coverage matrix output prior to running NMF.
     # ---------------------------------------------------------------------------- #
-
     # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
     # initialized an OrderedDict to store
-    gene_cov_dict_unordered = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
+    chrom_gene_cov_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
     gene_cov_dict = OrderedDict()
 
     # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
     # which transcript regions to filter out prior to running DegNorm.
-    run_degnorm_ctr = 0
+    logging.info('Determining genes include in DegNorm coverage curve approximation.')
+    delete_idx = list()
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
-        cov_mat = gene_cov_dict_unordered[chrom][gene]
 
-        # save raw coverage matrix.
-        gene_cov_dict[gene] = dict()
-        gene_cov_dict[gene]['raw_coverage'] = cov_mat.T
+        # if user-defined gene subset is specified, only add gene if in subset.
+        if args.genes:
+            if gene not in args.genes:
+                delete_idx.append(i)
+                continue
 
-        # For genes with sufficient coverage, only run DegNorm on transcript regions with
-        # high coverage (relative to max coverage) -- see supplement, section 2.
-        run_degnorm = True
-        if all(cov_mat.sum(axis=0) > 0):
-            hi_cov_idx = np.where(cov_mat.max(axis=1) > 0.1 * cov_mat.max())[0]
+        cov_mat = chrom_gene_cov_dict[chrom][gene]
 
-            if len(hi_cov_idx) >= 50:
-                gene_cov_dict[gene]['filtered_coverage'] = cov_mat[hi_cov_idx, :].T
-                gene_cov_dict[gene]['filtered_idx'] = hi_cov_idx
-
-            else:
-                run_degnorm = False
+        # do not add gene if there are any 100%-zero coverage samples.
+        if any(cov_mat.sum(axis=0) == 0):
+            delete_idx.append(i)
 
         else:
-            run_degnorm = False
+            gene_cov_dict[gene] = cov_mat
 
-        # capture whether or not we will run DegNorm for this gene.
-        run_degnorm_ctr += 1 if run_degnorm else 0
-        gene_cov_dict[gene]['run_degnorm'] = run_degnorm
+    if delete_idx:
+        X = np.delete(X
+                      , obj=delete_idx
+                      , axis=0)
+        genes_df = genes_df.drop(delete_idx
+                                 , axis=0).reset_index(drop=True)
 
-    # check that we will run DegNorm on at least one gene.
-    if run_degnorm_ctr > 0:
-        logging.info('DegNorm will run on {0} / {1} genes with sufficient coverage.'
-                     .format(run_degnorm_ctr, X.shape[0]))
-    else:
-        raise ValueError('No genes were found with sufficient coverage!')
+    # quality control.
+    if (X.shape[0] == 0) or (genes_df.empty) or (len(gene_cov_dict) == 0):
+        raise ValueError('No genes available to run through DegNorm!'
+                         'Check that your requested genes are in genome annotation file.')
+
+    logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
 
     # check that read counts and coverage matrices contain data for same number of genes.
     if len(gene_cov_dict.keys()) != X.shape[0]:
         raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
 
     # save gene annotation metadata.
-    gene_output_file = os.path.join(output_dir, 'gene_metadata.csv')
-    logging.info('Saving gene metadata to {0}'.format(gene_output_file))
-    genes_df.to_csv(gene_output_file
+    logging.info('Saving gene-exon metadata.')
+    exon_output_file = os.path.join(output_dir, 'gene_exon_metadata.csv')
+    exon_df.to_csv(exon_output_file
                     , index=False)
 
+    # save read counts.
+    logging.info('Saving original read counts.')
+    np.savetxt(os.path.join(output_dir, 'read_counts.csv')
+               , X=X
+               , header=','.join(sample_ids)
+               , comments=''
+               , delimiter=',')
+
     # free up more memory: delete exon / genome annotation data
-    del gene_cov_dict_unordered, gene_cov_mats
+    del chrom_gene_cov_dict, gene_cov_mats
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
-    nmfoa = GeneNMFOA(nmf_iter=20, grid_points=2000, n_jobs=n_jobs)
-    cov_ests = nmfoa.fit_transform(gene_cov_dict, reads_dat=X)
+    logging.info('Executing NMF-OA over-approximation algorithm...')
+    nmfoa = GeneNMFOA(nmf_iter=20
+                      , grid_points=2000
+                      , n_jobs=n_jobs)
+    nmfoa.fit_transform(gene_cov_dict
+                        , reads_dat=X)
 
-    # compute DI scores from estimates.
+    # ---------------------------------------------------------------------------- #
+    # Save results.
+    # ---------------------------------------------------------------------------- #
+    logging.info('Saving NMF-OA output:'
+                 '-- degradation index scores -- '
+                 '-- adjusted read counts --'
+                 '-- coverage curve estimates --')
+    nmfoa.save_results(genes_df
+                       , output_dir=output_dir
+                       , sample_ids=sample_ids
+                       , ignore_missing_genes=False)
+
+    # ---------------------------------------------------------------------------- #
+    # Generate coverage curve plots.
+    # ---------------------------------------------------------------------------- #
+    logging.info('Generating coverage curve plots.')
+    p = mp.Pool(processes=n_jobs)
+    out = [p.apply_async(save_chrom_coverage
+                         , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
+                                 , os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
+                                 , exon_df[exon_df.chr == chrom]
+                                 , sample_ids
+                                 , [10, 6]
+                                 , os.path.join(output_dir, chrom))) for chrom in chroms]
+    p.close()
+
+    # Execute parallel work.
+    out = [x.get() for x in out]
+
+    # ---------------------------------------------------------------------------- #
+    # Run summary report and exit.
+    # ---------------------------------------------------------------------------- #
+    logging.info('Rendering summary report.')
+    render_report(data_dir=output_dir
+                  , genenmfoa=nmfoa
+                  , gene_manifest_df=genes_df
+                  , input_files=args.input_files
+                  , sample_ids=sample_ids
+                  , top_n_genes=5
+                  , output_dir=output_dir)
+
+    logging.info('DegNorm pipeline complete! Exiting...')
+    sys.exit()
 
 
 if __name__ == "__main__":

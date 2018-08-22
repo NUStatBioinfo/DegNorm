@@ -7,12 +7,21 @@ import os
 from datetime import datetime
 import time
 import argparse
+import pkg_resources
 
 
 logging.basicConfig(stream=sys.stdout
                     , level=logging.DEBUG
-                    , format='%(asctime)s ---- %(message)s'
+                    , format='DegNorm (%(asctime)s) ---- %(message)s'
                     , datefmt='%m/%d/%Y %I:%M:%S')
+
+# welcome our user.
+def welcome():
+    resources_dir = pkg_resources.resource_filename('degnorm', 'resources')
+    with open(os.path.join(resources_dir, 'welcome.txt'), 'r') as f:
+        welcome = f.readlines()
+
+    sys.stdout.write(''.join(welcome) + '\n'*4)
 
 
 def subset_to_chrom(df, chrom, reindex=False):
@@ -132,13 +141,6 @@ def parse_args():
                         , required=False
                         , help='Input data directory. Use if not specifying individual .sam or .bam files.'
                                'Must be used in coordination with --input-type flag to specify .sam or .bam file type.')
-    parser.add_argument('-t'
-                        , '--input-type'
-                        , default=None
-                        , required=False
-                        , choices=['bam', 'sam']
-                        , help='Input RNA-seq experiment file type. Can be one of "bam" or "sam".'
-                               'Only in coordination with --input-dir, i.e. when specifying an input data directory.')
     parser.add_argument('-g'
                         , '--genome-annotation'
                         , type=str
@@ -148,13 +150,6 @@ def parse_args():
                                'Must have extension .gtf or .gff.'
                                'All non-exon regions will be removed, along with exons that appear in'
                                'multiple chromosomes and exons that overlap with multiple genes.')
-    parser.add_argument('--genes'
-                        , nargs='+'
-                        , type=str
-                        , default=None
-                        , required=False
-                        , help='List of gene names or a text file (with extension .txt) specifying a subset'
-                               'of genes you would like to send through DegNorm pipeline.')
     parser.add_argument('-o'
                         , '--output-dir'
                         , type=str
@@ -163,16 +158,26 @@ def parse_args():
                         , help='Output directory.'
                                'A directory for storing DegNorm analyses, visualizations, '
                                'and data will be created. Default to the current working directory.')
-    parser.add_argument('--disregard-coverage'
-                        , action='store_true'
-                        , help='Option to not save (disregard) coverage array .npz files.'
-                               'NOT RECOMMENDED; only use if interested in running pipeline once.')
+    parser.add_argument('--genes'
+                        , nargs='+'
+                        , type=str
+                        , default=None
+                        , required=False
+                        , help='List of gene names or a text file (with extension .txt) specifying a subset'
+                               'of genes you would like to send through DegNorm pipeline.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
                         , default=max_cpu()
                         , help='Number of cores for running DegNorm pipeline in parallel.'
                                'Defaults to the number of available cores - 1.')
+    parser.add_argument('-t'
+                        , '--input-type'
+                        , default='sam'
+                        , required=False
+                        , choices=['bam', 'sam']
+                        , help='Input RNA-seq experiment file type. Can be one of "bam" or "sam".'
+                               'Only in coordination with --input-dir, i.e. when specifying an input data directory.')
     parser.add_argument('-v'
                         , '--version'
                         , action='version'
@@ -254,6 +259,8 @@ def parse_args():
 
         # replace input with parsed list of unique genes.
         args.genes = list(set(genes))
+
+    welcome()
 
     return args
 

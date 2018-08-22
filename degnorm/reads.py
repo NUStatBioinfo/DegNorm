@@ -1,32 +1,21 @@
 import re
 from degnorm.utils import *
-from degnorm.loaders import SamLoader, BamLoader
+from degnorm.loaders import SamLoader
 
 
 class ReadsCoverageProcessor():
-    def __init__(self, sam_file=None, bam_file=None, n_jobs=max_cpu(), tmp_dir=None, verbose=True):
+    def __init__(self, sam_file=None, n_jobs=max_cpu(), tmp_dir=None, verbose=True):
         """
-        Genome coverage reader for a single RNA-seq experiment.
+        Genome coverage reader for a single RNA-seq experiment, contained in a .sam file.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
 
-        :param sam_file: str .sam filename (optional if .bam file is specified)
-        :param bam_file: str .bam filename (option if .sam file is specified)
+        :param sam_file: str .sam filename
         :param tmp_dir: str path to directory where coverage array files are saved.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
         :param verbose: bool indicator should progress be written to logger?
         """
-        if bam_file and sam_file:
-            raise ValueError('cannot specify both a .sam and a .bam file')
-
-        # determine if .sam or .bam file
-        self.is_bam = False
-        if bam_file:
-            self.is_bam = True
-            self.filename = bam_file
-
-        else:
-            self.filename = sam_file
+        self.filename = sam_file
 
         # determine where to dump .txt files from cigar string parse.
         if not tmp_dir:
@@ -43,12 +32,9 @@ class ReadsCoverageProcessor():
 
     def load(self):
         """
-        Load a .sam or .bam file, obtain reads data and header.
+        Load a .sam, obtain reads data and header.
         """
-        if self.is_bam:
-            self.loader = BamLoader(self.filename)
-        else:
-            self.loader = SamLoader(self.filename)
+        self.loader = SamLoader(self.filename)
 
         df_dict = self.loader.get_data()
         df = df_dict['data']
@@ -169,22 +155,21 @@ class ReadsCoverageProcessor():
         :return: list of str file paths of compressed .npz files containing coverage arrays.
         """
         if self.verbose:
-            logging.info('Loading file {0} into pandas.DataFrame'.format(self.filename))
+            logging.info('Begin loading file {0}...'.format(self.filename))
 
-        # load .sam or .bam file's reads + header.
+        # load .sam file's reads + header.
         self.load()
 
         if self.verbose:
-            logging.info('Successfully loaded {0} file. Total reads -- {1}'.format(
-                '.bam' if self.is_bam else '.sam', self.data.shape[0]))
+            logging.info('Load successful. Total reads -- {0}'.format( self.data.shape[0]))
 
         # determine chromosomes whose coverage will be computed.
         chroms = self.data.chr.unique()
         header_df = self.header[self.header.chr.isin(chroms)]
 
         if self.verbose:
-            logging.info('Determining coverage for {0} chromosomes...\n'
-                         '{1}'.format(len(chroms), ', '.join(chroms)))
+            logging.info('Determining coverage for {0} chromosomes:\n'
+                         '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
