@@ -1,5 +1,4 @@
 from degnorm.utils import *
-from degnorm.utils_io import *
 import pickle as pkl
 import re
 import tqdm

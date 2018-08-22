@@ -1,4 +1,4 @@
-import degnorm
+import pkg_resources
 from degnorm.visualizations import *
 from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
@@ -89,34 +89,38 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
     # with top_n_genes highest and lowest average DI scores over samples.
     # ---------------------------------------------------------------------------- #
     avg_dis = genenmfoa.rho.mean(axis=1)
-    hi_di_idx = avg_dis.argsort()[::-1][0:top_n_genes]
-    lo_di_idx = avg_dis.argsort()[0:top_n_genes]
+    n_genes = min(top_n_genes, genenmfoa.n_genes)
+    hi_di_idx = avg_dis.argsort()[::-1][0:n_genes]
+    lo_di_idx = avg_dis.argsort()[0:n_genes]
     hi_di_imgs = list()
     lo_di_imgs = list()
 
     # Gather those top_n_genes' coverage plots saved to data_dir.
-    for i in range(min(len(top_n_genes), genenmfoa.n_genes)):
+    for i in range(n_genes):
         hi_di_gene = genenmfoa.genes[hi_di_idx[i]]
         lo_di_gene = genenmfoa.genes[lo_di_idx[i]]
 
         hi_di_gene_chrom = gene_manifest_df[gene_manifest_df.gene == hi_di_gene].chr.iloc[0]
         lo_di_gene_chrom = gene_manifest_df[gene_manifest_df.gene == lo_di_gene].chr.iloc[0]
 
-        hi_di_imgs.append(os.path.join(data_dir, hi_di_gene_chrom, '{0}_coverage.png'))
-        lo_di_imgs.append(os.path.join(data_dir, lo_di_gene_chrom, '{0}_coverage.png'))
+        hi_di_imgs.append(os.path.join(data_dir, hi_di_gene_chrom, '{0}_coverage.png'.format(hi_di_gene)))
+        lo_di_imgs.append(os.path.join(data_dir, lo_di_gene_chrom, '{0}_coverage.png'.format(lo_di_gene)))
 
     # ---------------------------------------------------------------------------- #
     # Find report template and render.
     # ---------------------------------------------------------------------------- #
-    # load report template.
-    template_dir = os.path.join(os.path.dirname(degnorm.__file__), 'report')
-    env = Environment(loader=FileSystemLoader(template_dir))
+    # load report template from degnorm package resources.
+    resources_dir = pkg_resources.resource_filename('degnorm', 'resources')
+    env = Environment(loader=FileSystemLoader(resources_dir))
     template = env.get_template('degnorm_report.html')
 
     # organize template variables.
-    template_vars = {'file_info_table': files_df.to_html()
-                     , 'output_dir': output_dir
-                     , 'degnorm_info_table': degnorm_info_df.to_html()
+    template_vars = {'css_file': os.path.join(resources_dir, 'styles.css')
+                     , 'file_info_table': files_df.to_html(index=False
+                                                           , bold_rows=False)
+                     , 'output_dir': os.path.abspath(output_dir)
+                     , 'degnorm_info_table': degnorm_info_df.to_html(index=False
+                                                                     , bold_rows=False)
                      , 'sample_di_dist_plot': sample_di_dist_plot
                      , 'mean_di_dist_plot': mean_di_dist_plot
                      , 'top_n_genes': top_n_genes
@@ -125,5 +129,5 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
 
     # render report and save.
     html_out = template.render(template_vars)
-    with open(os.path.join(report_dir, 'degnorm_summary.html'), 'w') as f:
+    with open(os.path.join(output_dir, 'degnorm_summary.html'), 'w') as f:
         f.write(html_out)

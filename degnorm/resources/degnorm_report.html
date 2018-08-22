@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <link rel="stylesheet" type="text/css" href="{{ css_file }}">
+    <meta charset="UTF-8">
+    <title>DegNorm summary</title>
+</head>
+
+<body>
+
+<h1 class="header">DegNorm summary</h1>
+<h4>Output -- {{ output_dir }} </h4>
+<br>
+
+<h2>Input samples</h2>
+<br>
+<center>{{ file_info_table }}</center>
+
+<br>
+<h2>DegNorm model parameterization </h2>
+<br>
+<center>{{ degnorm_info_table }}</center>
+
+<br>
+<h2>Degradation Index score distributions </h2>
+<br>
+<img src="{{ sample_di_dist_plot }}" class="center">
+<br>
+<img src="{{ mean_di_dist_plot }}" class="center">
+
+<br>
+<h2>Genes: highest mean DI scores </h2>
+<br>
+{% for img in hi_di_plots %}
+    <img src="{{ img }}" class="center">
+    <br>
+{% endfor %}
+
+<br>
+<h2>Genes: lowest mean DI scores </h2>
+<br>
+{% for img in lo_di_plots %}
+    <img src="{{ img }}" class="center">
+    <br>
+{% endfor %}
+
+</body>
+</html>

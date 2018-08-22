@@ -7,5 +7,8 @@ setup(
     entry_points = {
         'console_scripts': ['degnorm=degnorm.__main__:main'],
     },
+    package_data = {
+        'degnorm': ['resources/*'],
+    },
     license='N/A'
 )
