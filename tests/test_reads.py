@@ -21,7 +21,7 @@ def rcp_setup(request):
 
     request.addfinalizer(teardown)
 
-    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small.sam')
+    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
     rcp = ReadsCoverageProcessor(sam_file, n_jobs=1, tmp_dir=outdir)
     return rcp
 

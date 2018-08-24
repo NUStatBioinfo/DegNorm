@@ -20,7 +20,7 @@ def test_loader_file_dne_error():
 # ----------------------------------------------------- #
 @pytest.fixture
 def sam_loader():
-    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small.sam')
+    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
     sam_loader = SamLoader(sam_file)
     return sam_loader.get_data()
 
@@ -43,7 +43,7 @@ def test_sam_data(sam_loader):
 # ----------------------------------------------------- #
 @pytest.fixture
 def gene_loader():
-    gtf_file = os.path.join(THIS_DIR, 'data', 'hg_small.gtf')
+    gtf_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.gtf')
     gtf_loader = GeneAnnotationLoader(gtf_file)
     return gtf_loader.get_data()
 

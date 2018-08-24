@@ -250,6 +250,11 @@ def parse_args():
         if not os.path.isfile(f):
             raise IOError('File {0} not found.'.format(f))
 
+    # ensure there are at least 2 experiment files.
+    if len(args.input_files) == 1:
+        raise ValueError('Must input >= 2 RNA-Seq experiment files! Cannot estimate coverage curve matrix \n'
+                         'approximations from a single experiment.')
+
     # ensure only .sam or .bam files were supplied.
     extensions = list(set(map(lambda x: x.split('.')[-1], args.input_files)))
     if len(extensions) > 1:

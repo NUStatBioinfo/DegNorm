@@ -69,7 +69,8 @@ def main():
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
                                   , verbose=True
-                                  , chroms=chroms)
+                                  , chroms=chroms
+                                  , genes=args.genes)
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
@@ -146,7 +147,7 @@ def main():
 
     # quality control.
     if (X.shape[0] == 0) or (genes_df.empty) or (len(gene_cov_dict) == 0):
-        raise ValueError('No genes available to run through DegNorm!'
+        raise ValueError('No genes available to run through DegNorm!\n'
                          'Check that your requested genes are in genome annotation file.')
 
     logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
@@ -186,9 +187,9 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Save results.
     # ---------------------------------------------------------------------------- #
-    logging.info('Saving NMF-OA output:'
-                 '-- degradation index scores -- '
-                 '-- adjusted read counts --'
+    logging.info('Saving NMF-OA output:\n'
+                 '-- degradation index scores --\n'
+                 '-- adjusted read counts --\n'
                  '-- coverage curve estimates --')
     nmfoa.save_results(genes_df
                        , output_dir=output_dir

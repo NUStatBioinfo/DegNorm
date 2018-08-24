@@ -1,8 +1,9 @@
 ## DegNorm TODO
 
 ### Frank
-- Add requirements.txt
+- Update README.rst
 - Test modules:
+    - test with pytest-console-scripts
     - finish test_reads.py
     - nmf tests
     - gene processing tests

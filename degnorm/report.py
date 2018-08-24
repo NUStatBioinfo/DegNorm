@@ -2,7 +2,6 @@ import pkg_resources
 from degnorm.visualizations import *
 from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
 
 
 def render_report(data_dir, genenmfoa, gene_manifest_df,
@@ -50,6 +49,7 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
             sns.distplot(genenmfoa.rho[:, i], label=sample_ids[i])
 
     plt.xlim(-0.05, 1.05)
+    plt.ylim(0., 3.)
     fig.legend(loc='upper right')
 
     sample_di_dist_plot = os.path.abspath(os.path.join(report_dir, 'di_dists_samples.png'))
@@ -66,6 +66,7 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
     fig = plt.figure(figsize=[10, 6])
     fig.suptitle('Mean degradation index score distributions: by sample, by gene')
     gs = gridspec.GridSpec(2, 1)
+
     with sns.axes_style('darkgrid'):
 
         ax1 = plt.subplot(gs[0])
@@ -134,6 +135,5 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
 
     # render report and save.
     html_out = template.render(template_vars)
-    HTML(string=html_out).write_pdf(os.path.join(output_dir, 'degnorm_summary.pdf'))
-    # with open(os.path.join(output_dir, 'degnorm_summary.html'), 'w') as f:
-    #     f.write(html_out)
+    with open(os.path.join(report_dir, 'degnorm_summary.html'), 'w') as f:
+        f.write(html_out)
