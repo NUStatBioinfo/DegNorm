@@ -116,7 +116,7 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
     """
     for f in [coverage_file, estimates_file]:
         if not os.path.isfile(f):
-            raise IOError('Could not find file {0}'.format(f))
+            ('Could not find file {0}'.format(f))
 
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)

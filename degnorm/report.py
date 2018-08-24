@@ -2,6 +2,7 @@ import pkg_resources
 from degnorm.visualizations import *
 from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML
 
 
 def render_report(data_dir, genenmfoa, gene_manifest_df,
@@ -51,7 +52,7 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
     plt.xlim(-0.05, 1.05)
     fig.legend(loc='upper right')
 
-    sample_di_dist_plot = os.path.join(report_dir, 'di_dists_samples.png')
+    sample_di_dist_plot = os.path.abspath(os.path.join(report_dir, 'di_dists_samples.png'))
     fig.savefig(sample_di_dist_plot
                 , dpi=200)
 
@@ -80,7 +81,7 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
 
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-    mean_di_dist_plot = os.path.join(report_dir, 'di_mean_dists.png')
+    mean_di_dist_plot = os.path.abspath(os.path.join(report_dir, 'di_mean_dists.png'))
     fig.savefig(mean_di_dist_plot
                 , dpi=200)
 
@@ -103,8 +104,12 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
         hi_di_gene_chrom = gene_manifest_df[gene_manifest_df.gene == hi_di_gene].chr.iloc[0]
         lo_di_gene_chrom = gene_manifest_df[gene_manifest_df.gene == lo_di_gene].chr.iloc[0]
 
-        hi_di_imgs.append(os.path.join(data_dir, hi_di_gene_chrom, '{0}_coverage.png'.format(hi_di_gene)))
-        lo_di_imgs.append(os.path.join(data_dir, lo_di_gene_chrom, '{0}_coverage.png'.format(lo_di_gene)))
+        hi_di_imgs.append(os.path.abspath(os.path.join(data_dir
+                                                       , hi_di_gene_chrom
+                                                       , '{0}_coverage.png'.format(hi_di_gene))))
+        lo_di_imgs.append(os.path.abspath(os.path.join(data_dir
+                                                       , lo_di_gene_chrom
+                                                       , '{0}_coverage.png'.format(lo_di_gene))))
 
     # ---------------------------------------------------------------------------- #
     # Find report template and render.
@@ -129,5 +134,6 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
 
     # render report and save.
     html_out = template.render(template_vars)
-    with open(os.path.join(output_dir, 'degnorm_summary.html'), 'w') as f:
-        f.write(html_out)
+    HTML(string=html_out).write_pdf(os.path.join(output_dir, 'degnorm_summary.pdf'))
+    # with open(os.path.join(output_dir, 'degnorm_summary.html'), 'w') as f:
+    #     f.write(html_out)

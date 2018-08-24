@@ -59,7 +59,7 @@ def main():
 
     chroms = list(set(chroms))
     logging.info('Obtained reads coverage for {0} chromosomes:\n'
-                 '{1}'.format(len(chroms), ', '.join(chroms)))
+                 '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
     # ---------------------------------------------------------------------------- #
     # Load .gtf or .gff files and run processing pipeline.
@@ -176,8 +176,9 @@ def main():
     # Run NMF.
     # ---------------------------------------------------------------------------- #
     logging.info('Executing NMF-OA over-approximation algorithm...')
-    nmfoa = GeneNMFOA(nmf_iter=20
-                      , grid_points=2000
+    nmfoa = GeneNMFOA(iter=args.iter
+                      , nmf_iter=args.nmf_iter
+                      , grid_points=args.downsample_rate
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
                         , reads_dat=X)
@@ -191,13 +192,16 @@ def main():
                  '-- coverage curve estimates --')
     nmfoa.save_results(genes_df
                        , output_dir=output_dir
-                       , sample_ids=sample_ids
-                       , ignore_missing_genes=False)
+                       , sample_ids=sample_ids)
 
     # ---------------------------------------------------------------------------- #
     # Generate coverage curve plots.
     # ---------------------------------------------------------------------------- #
     logging.info('Generating coverage curve plots.')
+
+    # subset chromosomes to just those corresponding to genes run through degnorm
+    chroms = genes_df[genes_df.gene.isin(nmfoa.genes)].chr.unique().tolist()
+
     p = mp.Pool(processes=n_jobs)
     out = [p.apply_async(save_chrom_coverage
                          , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
