@@ -10,7 +10,9 @@ coverage curves.
 Users supply ``.sam`` files from paired-read RNA-seq experiments and a genome annotation file, and the DegNorm
 pipeline will generate everything from coverage matrices, normalized coverage matrices, plots, and a report.
 
-**Pipeline steps**
+==============
+Pipeline steps
+==============
 
 1. **Read RNA-Seq .sam files** and **compute chromosome coverage** for each experiment. Currently, only paired reads
 are considered. DegNorm does not use standard coverage tools (e.g. ``geneomecov``) that do not take into account paired
@@ -32,7 +34,9 @@ data format for Python), one per chromosome.
 6. Save adjusted read counts, gene- and experiment-specific *degradation index scores*, normalized coverage
 matrices, and coverage visualizations to an output directory.
 
-**degnorm pipeline output filestructure**
+======================================
+DegNorm pipeline output file structure
+======================================
 
 .. code-block:: text
 
@@ -73,10 +77,12 @@ An example DegNorm pipeline run using the .sam files found in the directory ``..
 
 .. code-block:: bash
 
-    degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --genes ../genes_test.txt -c 6
+    $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --genes ../genes_test.txt -c 6
 
 
-**Testing**
+=======
+Testing
+=======
 
 Check the successful installation of degnorm on your machine with the ``degnorm_test`` command. This runs all unit tests
 and a minimal DegNorm pipeline run on a small batch of sample data.
@@ -86,7 +92,7 @@ of a full pipeline test run. If you would like to keep and inspect that director
 
 .. code-block:: bash
 
-    degnorm_test --keep-output
+    $ degnorm_test --keep-output
 
 
 ============
@@ -103,18 +109,18 @@ THIS PACKAGE NOT YET ON PYPI.
 
 .. code-block:: bash
 
-    conda create -n degnorm python=3.6
-    source activate degnorm
+    $ conda create -n degnorm python=3.6
+    $ source activate degnorm
 
 3. Install requirements:
 
 .. code-block:: bash
 
-    pip install -r requirements.txt
+    $ pip install -r requirements.txt
 
 
 4. Install DegNorm package:
 
 .. code-block:: bash
 
-    python setup.py install
+    $ python setup.py install
