@@ -39,21 +39,21 @@ DegNorm pipeline output file structure
 ======================================
 
 .. code-block:: text
-
-    |-- read_counts.csv: genes x samples matrix of raw sample read counts.
-    |-- adjusted_read_counts.csv: genes x samples matrix of DI-score adjusted read counts.
-    |-- degradation_index_scores.csv: genes x samples matrix of per-gene, per-sample DI scores.
-    |-- gene_exon_metadata.csv: gene and constituent exon positioning data on each chromosome. The order of the genes in this file dictates the genes (rows) in both of the read count matrices and the DI score matrix.
-    |
-    |-- [<chromosome name> directory]
-    | |-- coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: coverage matrix} data.
-    | |-- estimated_coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: estimated coverage matrix} data.
-    | |-- <gene ID>_coverage.png: gene-specific plot of before- and after-DegNorm coverage curves.
-    | |-- <more gene IDs>_coverage.png
-    |
-    |-- [report]
-    | |-- degnorm_summary.html
-    | |-- <supporting images>
+    DegNorm_[mmddYY_HHMMSS]
+        |-- read_counts.csv: genes x samples matrix of raw sample read counts.
+        |-- adjusted_read_counts.csv: genes x samples matrix of DI-score adjusted read counts.
+        |-- degradation_index_scores.csv: genes x samples matrix of per-gene, per-sample DI scores.
+        |-- gene_exon_metadata.csv: gene and constituent exon positioning data on each chromosome. The order of the genes in this file dictates the genes (rows) in both of the read count matrices and the DI score matrix.
+        |
+        |-- [<chromosome name> directory]
+        | |-- coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: coverage matrix} data.
+        | |-- estimated_coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: estimated coverage matrix} data.
+        | |-- <gene ID>_coverage.png: gene-specific plot of before- and after-DegNorm coverage curves.
+        | |-- <more gene IDs>_coverage.png
+        |
+        |-- [report]
+        | |-- degnorm_summary.html
+        | |-- <supporting images>
 
 
 =====
@@ -66,7 +66,7 @@ The primary entry point into the DegNorm software is the ``degnorm`` console scr
 
 **Minimal requirements**
 
-1. You must pass either >= 2 .sam or .bam files to ``-i/--input`` or the location a directory containing >= 2
+1. You must pass at least 2 ``.sam`` files (or ``.bam`` files, if you have ``samtools`` installed) with the ``-i/--input`` flag, or the location of a directory containing at least 2
 .sam or .bam files with the ``--input-dir`` flag. The ``--input-dir`` flag must contain all files of either .sam or .bam extension. Also, DegNorm will not normalize the read counts/coverage of a single RNA-Seq experiment.
 
 2. You must pass a genome annotation file (.gtf/.gff) describing where each gene falls on a chromosome with the
