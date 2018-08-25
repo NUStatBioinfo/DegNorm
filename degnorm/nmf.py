@@ -58,8 +58,8 @@ class GeneNMFOA():
         :return: 2-tuple (K, E) matrix factorization
         """
         u, s, v = svds(x, k=1)
-        return u[::-1], s*v[::-1]
-        # return u, s*v
+        # return u[::-1], s*v[::-1]
+        return u, s*v
 
     def get_high_coverage_idx(self, x):
         """

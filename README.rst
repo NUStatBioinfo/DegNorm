@@ -28,15 +28,16 @@ matrices, and coverage visualizations to an output directory.
 
 **``degnorm`` pipeline output**
 ```
-|-- read_counts.csv
-|-- adjusted_read_counts.csv
-|-- degradation_index_scores.csv
-|-- gene_exon_metadata.csv
+|-- read_counts.csv: genes x samples matrix of raw sample read counts.
+|-- adjusted_read_counts.csv: genes x samples matrix of DI-score adjusted read counts.
+|-- degradation_index_scores.csv: genes x samples matrix of per-gene, per-sample DI scores.
+|-- gene_exon_metadata.csv: gene and constituent exon positioning data on each chromosome. The order of the genes
+    in this file dictates the genes (rows) in both of the read count matrices and the DI score matrix.
 |
 |-- [<chromosome name> directory]
-| |-- coverage_matrices_<chromosome name>.pkl
-| |-- estimated_coverage_matrices_<chromosome name>.pkl
-| |-- <gene ID>_coverage.png
+| |-- coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: coverage matrix} data.
+| |-- estimated_coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: estimated coverage matrix} data.
+| |-- <gene ID>_coverage.png: gene-specific plot of before- and after-DegNorm coverage curves.
 | |-- <more gene IDs>_coverage.png
 |
 |-- [report]
@@ -51,19 +52,49 @@ The primary entry point into the DegNorm software is the `degnorm` console scrip
 
 `degnorm` flags and details are outlined with the `--help` flag.
 
+
+**Minimal requirements**
+1. You must pass either >= 2 .sam or .bam files to `-i/--input` or the location a directory containing >= 2
+.sam or .bam files with the `--input-dir` flag. The `--input-dir` flag must contain all files of either .sam or .bam
+ extension. Also, DegNorm will not normalize the read counts/coverage of a single RNA-Seq experiment.
+2. You must pass a genome annotation file (.gtf/.gff) describing where each gene falls on a chromosome with the
+`-g/--genome-annotation` flag.
+
+
+An example DegNorm pipeline run using the .sam files found in the directory `../sam_files`:
 ```bash
 degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --genes ../genes_test.txt -c 6
 ```
 
-**Minimal requirements**
-1. You must pass either >= 2 .sam or .bam files to `-i/--input` or the location a directory containing >= 2
-.sam or .bam files. DegNorm will not normalize the read counts/coverage of a single RNA-Seq experiment.
-2. You must pass
-
+**Testing**
 Check the successful installation of degnorm on your machine with the `degnorm_test` command. This runs all unit tests
 and a minimal DegNorm pipeline run on a small batch of sample data.
+
+By default, `degnorm_test` will clean up after itself by removing the temporary directory containing the output
+of a full pipeline test run. If you would like to keep and inspect that directory, add the `--keep-output` flag:
+
+```bash
+degnorm_test --keep-output
+```
 
 
 ============
 Installation
 ============
+
+THIS PACKAGE NOT YET ON PYPI.
+
+**Install manually in Conda environment:**
+1. `git clone` this repository and `cd` into it.
+2. Create a degnorm Conda environment:
+```bash
+conda create -n degnorm python=3.6
+```
+3. Install requirements:
+```bash
+pip install -r requirements.txt
+```
+4. Install DegNorm package:
+```bash
+python setup.py install
+```

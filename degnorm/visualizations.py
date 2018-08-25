@@ -116,7 +116,7 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
     """
     for f in [coverage_file, estimates_file]:
         if not os.path.isfile(f):
-            ('Could not find file {0}'.format(f))
+            raise IOError('Could not find file {0}'.format(f))
 
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
@@ -134,6 +134,7 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
                                  , x_exon=tmp[['start', 'end']].values
                                  , gene=gene
                                  , chrom=tmp.chr.iloc[0]
+                                 , sample_ids=sample_ids
                                  , figsize=figsize)
 
         fig.savefig(os.path.join(output_dir, '{0}_coverage.png').format(gene)

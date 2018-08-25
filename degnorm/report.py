@@ -49,7 +49,7 @@ def render_report(data_dir, genenmfoa, gene_manifest_df,
             sns.distplot(genenmfoa.rho[:, i], label=sample_ids[i])
 
     plt.xlim(-0.05, 1.05)
-    plt.ylim(0., 3.)
+    plt.ylim(0., 4.)
     fig.legend(loc='upper right')
 
     sample_di_dist_plot = os.path.abspath(os.path.join(report_dir, 'di_dists_samples.png'))

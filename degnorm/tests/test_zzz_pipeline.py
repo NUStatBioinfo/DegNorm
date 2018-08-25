@@ -1,9 +1,8 @@
 import pytest
 import os
 import subprocess
-import glob
+import shutil
 from random import choice
-from shutil import rmtree
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -20,7 +19,13 @@ def run_setup(request):
     os.makedirs(outdir)
 
     def teardown():
-        rmtree(outdir)
+
+        # determine whether or not to remove pipeline test output.
+        if os.environ['DEGNORM_TEST_CLEANUP'] == 'True':
+            shutil.rmtree(outdir)
+
+        # remove corresponding environment var.
+        del os.environ['DEGNORM_TEST_CLEANUP']
 
     request.addfinalizer(teardown)
 
@@ -31,11 +36,12 @@ def test_pipeline(run_setup):
     print('TESTING DegNorm PIPELINE')
 
     # run degnorm command with test data.
-    cmd = 'degnorm -i {0} {1} -g {2} -o {3} --genes {4}'.format(os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
-                                                                , os.path.join(THIS_DIR, 'data', 'hg_small_2.sam')
-                                                                , os.path.join(THIS_DIR, 'data', 'chr1.gtf')
-                                                                , run_setup
-                                                                , os.path.join(THIS_DIR, 'data', 'genes.txt'))
+    cmd = 'degnorm -i {0} {1} -g {2} -o {3} --genes {4} --nmf-iter 50'\
+        .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
+                , os.path.join(THIS_DIR, 'data', 'hg_small_2.sam')
+                , os.path.join(THIS_DIR, 'data', 'chr1.gtf')
+                , run_setup
+                , os.path.join(THIS_DIR, 'data', 'genes.txt'))
 
     out = subprocess.run([cmd]
                          , shell=True)

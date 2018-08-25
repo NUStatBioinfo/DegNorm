@@ -129,10 +129,11 @@ def main():
                 delete_idx.append(i)
                 continue
 
+        # extract gene's p x Li coverage matrix.
         cov_mat = chrom_gene_cov_dict[chrom][gene]
 
         # do not add gene if there are any 100%-zero coverage samples.
-        if any(cov_mat.sum(axis=0) == 0):
+        if any(cov_mat.sum(axis=1) == 0):
             delete_idx.append(i)
 
         else:
