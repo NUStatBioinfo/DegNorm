@@ -27,6 +27,7 @@ def rcp_setup(request):
 
 
 def test_rcp_load(rcp_setup):
+    print('TESTING ReadsCoverageProcessor.load()')
     rcp_setup.load()
     assert isinstance(rcp_setup.header, DataFrame)
     assert isinstance(rcp_setup.data, DataFrame)
@@ -35,6 +36,7 @@ def test_rcp_load(rcp_setup):
 
 
 def test_cigar_parser(rcp_setup):
+    print('TESTING ReadsCoverageProcessor._cigar_segment_bounds')
 
     # one match, all 100 base pairs covering positions 0 through 99 (inclusive)
     cigar_1 = '100M'

@@ -47,7 +47,7 @@ def main():
             sam_file = bam_to_sam(sam_file)
 
         reader = ReadsCoverageProcessor(sam_file=sam_file
-                                        , n_jobs=args.cpu
+                                        , n_jobs=n_jobs
                                         , tmp_dir=output_dir
                                         , verbose=True)
         sample_id = reader.sample_id
@@ -229,7 +229,7 @@ def main():
                   , output_dir=output_dir)
 
     logging.info('DegNorm pipeline complete! Exiting...')
-    sys.exit()
+    sys.exit(0)
 
 
 if __name__ == "__main__":

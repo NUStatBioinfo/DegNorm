@@ -75,7 +75,7 @@ def find_samtools():
     out = subprocess.run(['which samtools']
                          , shell=True)
     if out.returncode != 0:
-        raise EnvironmentError('samtools is not installed.'
+        raise EnvironmentError('samtools is not installed or is not in your PATH.'
                                'samtools is required to convert .bam -> .sam files'
                                'Either use .sam files or install samtools.')
 
@@ -252,7 +252,7 @@ def parse_args():
 
     # ensure there are at least 2 experiment files.
     if len(args.input_files) == 1:
-        raise ValueError('Must input >= 2 RNA-Seq experiment files! Cannot estimate coverage curve matrix \n'
+        raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
                          'approximations from a single experiment.')
 
     # ensure only .sam or .bam files were supplied.
