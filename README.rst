@@ -86,9 +86,10 @@ THIS PACKAGE NOT YET ON PYPI.
 
 **Install manually in Conda environment:**
 1. `git clone` this repository and `cd` into it.
-2. Create a degnorm Conda environment:
+2. Create a degnorm Conda environment (accept default libraries) and activate it:
 ```bash
 conda create -n degnorm python=3.6
+source activate degnorm
 ```
 3. Install requirements:
 ```bash
