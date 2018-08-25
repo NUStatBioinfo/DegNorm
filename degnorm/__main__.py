@@ -47,7 +47,7 @@ def main():
             sam_file = bam_to_sam(sam_file)
 
         reader = ReadsCoverageProcessor(sam_file=sam_file
-                                        , n_jobs=args.cpu
+                                        , n_jobs=n_jobs
                                         , tmp_dir=output_dir
                                         , verbose=True)
         sample_id = reader.sample_id
@@ -59,7 +59,7 @@ def main():
 
     chroms = list(set(chroms))
     logging.info('Obtained reads coverage for {0} chromosomes:\n'
-                 '{1}'.format(len(chroms), ', '.join(chroms)))
+                 '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
     # ---------------------------------------------------------------------------- #
     # Load .gtf or .gff files and run processing pipeline.
@@ -69,7 +69,8 @@ def main():
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
                                   , verbose=True
-                                  , chroms=chroms)
+                                  , chroms=chroms
+                                  , genes=args.genes)
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
@@ -128,10 +129,11 @@ def main():
                 delete_idx.append(i)
                 continue
 
+        # extract gene's p x Li coverage matrix.
         cov_mat = chrom_gene_cov_dict[chrom][gene]
 
         # do not add gene if there are any 100%-zero coverage samples.
-        if any(cov_mat.sum(axis=0) == 0):
+        if any(cov_mat.sum(axis=1) == 0):
             delete_idx.append(i)
 
         else:
@@ -146,7 +148,7 @@ def main():
 
     # quality control.
     if (X.shape[0] == 0) or (genes_df.empty) or (len(gene_cov_dict) == 0):
-        raise ValueError('No genes available to run through DegNorm!'
+        raise ValueError('No genes available to run through DegNorm!\n'
                          'Check that your requested genes are in genome annotation file.')
 
     logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
@@ -176,8 +178,9 @@ def main():
     # Run NMF.
     # ---------------------------------------------------------------------------- #
     logging.info('Executing NMF-OA over-approximation algorithm...')
-    nmfoa = GeneNMFOA(nmf_iter=20
-                      , grid_points=2000
+    nmfoa = GeneNMFOA(iter=args.iter
+                      , nmf_iter=args.nmf_iter
+                      , grid_points=args.downsample_rate
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
                         , reads_dat=X)
@@ -185,19 +188,22 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Save results.
     # ---------------------------------------------------------------------------- #
-    logging.info('Saving NMF-OA output:'
-                 '-- degradation index scores -- '
-                 '-- adjusted read counts --'
+    logging.info('Saving NMF-OA output:\n'
+                 '-- degradation index scores --\n'
+                 '-- adjusted read counts --\n'
                  '-- coverage curve estimates --')
     nmfoa.save_results(genes_df
                        , output_dir=output_dir
-                       , sample_ids=sample_ids
-                       , ignore_missing_genes=False)
+                       , sample_ids=sample_ids)
 
     # ---------------------------------------------------------------------------- #
     # Generate coverage curve plots.
     # ---------------------------------------------------------------------------- #
     logging.info('Generating coverage curve plots.')
+
+    # subset chromosomes to just those corresponding to genes run through degnorm
+    chroms = genes_df[genes_df.gene.isin(nmfoa.genes)].chr.unique().tolist()
+
     p = mp.Pool(processes=n_jobs)
     out = [p.apply_async(save_chrom_coverage
                          , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
@@ -224,7 +230,7 @@ def main():
                   , output_dir=output_dir)
 
     logging.info('DegNorm pipeline complete! Exiting...')
-    sys.exit()
+    sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,13 @@ class ReadsCoverageProcessor():
 
         df_dict = self.loader.get_data()
         df = df_dict['data']
-        header_df = df_dict['header']
+
+        # .sam file must have valid header.
+        try:
+            header_df = df_dict['header']
+        except KeyError:
+            logging.error('No header was found in {0}!'.format(self.filename))
+            raise
 
         # hack: drop nonunique paired reads. TODO: look into why there are nonunique qname pairs.
         df.drop_duplicates(subset=['chr', 'qname']

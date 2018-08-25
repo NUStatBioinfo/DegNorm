@@ -8,7 +8,7 @@ import pickle as pkl
 class GeneNMFOA():
 
     def __init__(self, iter=5, grid_points=None, min_high_coverage=50,
-                 tol=1e-3, nmf_iter=100, bins=20, n_jobs=max_cpu()):
+                 nmf_iter=100, bins=20, n_jobs=max_cpu()):
         """
         Initialize an NMF-over-approximator object.
 
@@ -19,15 +19,12 @@ class GeneNMFOA():
         :param min_high_coverage: int minimum number of "high coverage" base positions for a gene
         to be considered for baseline selection algorithm. Refer to Supplement, section 2, for definition
         of high-enough coverage.
-        :param tol: relative difference in Frobenius norms in coverage matrix approximations between
-        successive NMF-OA loops before approximation stops for a particular gene.
         :param nmf_iter: int number of iterations to run per NMF-OA approximation per gene's coverage matrix.
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
         :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
         """
         self.iter = np.abs(int(iter))
         self.nmf_iter = np.abs(int(nmf_iter))
-        self.tol = np.abs(tol)
         self.n_jobs = np.abs(int(n_jobs))
         self.bins = np.abs(int(bins))
         self.min_high_coverage = np.abs(int(min_high_coverage))
@@ -47,6 +44,12 @@ class GeneNMFOA():
         self.fitted = False
         self.transformed = False
 
+        # Try to prevent situation where downsampling rate is so high
+        # that we can't pick high-coverage regions for baseline selection.
+        if self.grid_points:
+            if self.grid_points < self.min_high_coverage + 50:
+                self.grid_points = self.min_high_coverage + 50
+
     def rank_one_approx(self, x):
         """
         Decompose a matrix X via truncated SVD into (K)(E^t) = U_{1} \cdot \sigma_{1}V_{1}
@@ -55,8 +58,8 @@ class GeneNMFOA():
         :return: 2-tuple (K, E) matrix factorization
         """
         u, s, v = svds(x, k=1)
-        return u[::-1], s*v[::-1]
-        # return u, s*v
+        # return u[::-1], s*v[::-1]
+        return u, s*v
 
     def get_high_coverage_idx(self, x):
         """
@@ -327,9 +330,9 @@ class GeneNMFOA():
         original transcript size.
 
         :param x: 2-d numpy.array, downsampled coverage matrix.
-        :param Li: int target length of
-        :param xp:
-        :return:
+        :param Li: int target length of original coverage matrix prior to downsample.
+        :param xp: list of int or 1-d numpy array of int, points from original which downsample was obtained.
+        :return: 2-d numpy array of expanded coverage matrix.
         """
         ax = 1 if not by_row else 0
 
@@ -522,37 +525,37 @@ class GeneNMFOA():
         if not all([col in gene_manifest_df.columns.tolist() for col in ['chr', 'gene']]):
             raise ValueError('gene_manifest_df must have columns `chr` and `gene`.')
 
+        # if RNA-SEQ sample IDs were not provided, name them.
         if sample_ids:
-            if not len(sample_ids) == self.p:
+            if len(sample_ids) != self.p:
                 raise ValueError('Number of supplied sample IDs does not match number'
                                  'of samples used to fit GeneNMFOA object.')
         else:
             sample_ids = ['sample_{0}'.format(i + 1) for i in range(self.p)]
 
+        # subset gene manifest to genes run through DegNorm.
+        gene_df = gene_manifest_df[gene_manifest_df.gene.isin(self.genes)].copy()
+        if gene_df.empty:
+            raise ValueError('No genes used in DegNorm were found in gene manifest dataframe!')
+
+        manifest_chroms = gene_df.chr.unique().tolist()
+
         # assemble chromosome-gene:estimates partitions.
-        chrom_gene_dict = {chrom: dict() for chrom in gene_manifest_df.chr.unique().tolist()}
-        manifest_genes = gene_manifest_df.gene.unique().tolist()
+        chrom_gene_dict = {chrom: dict() for chrom in manifest_chroms}
         for gene in self.genes:
-            if not gene in manifest_genes:
-                if not ignore_missing_genes:
-                    raise ValueError('Gene {0} not found in gene manifest data.'.format(gene))
-                else:
-                    continue
+            chrom = gene_df[gene_df.gene == gene].chr.iloc[0]
+            if chrom not in chrom_gene_dict:
+                chrom_gene_dict[chrom] = dict()
 
-            else:
-                chrom = gene_manifest_df[gene_manifest_df.gene == gene].chr.iloc[0]
-                if not chrom in chrom_gene_dict:
-                    chrom_gene_dict[chrom] = dict()
-
-                gene_idx = np.where(np.array(self.genes) == gene)[0][0]
-                chrom_gene_dict[chrom][gene] = self.estimates[gene_idx]
+            gene_idx = np.where(np.array(self.genes) == gene)[0][0]
+            chrom_gene_dict[chrom][gene] = self.estimates[gene_idx]
 
         # Instantiate results-save progress bar.
         pbar = tqdm.tqdm(total=(self.n_genes + 2)
                          , leave=False
-                         , desc='GeneNMFOA save progress')
+                         , desc='GeneNMFOA results save progress')
 
-        for chrom in chrom_gene_dict:
+        for chrom in manifest_chroms:
             chrom_dir = os.path.join(output_dir, chrom)
             if not os.path.isdir(chrom_dir):
                 os.makedirs(chrom_dir)
@@ -594,7 +597,7 @@ class GeneNMFOA():
 #     print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
 #
 #     print('Executing GeneNMFOA.fit_transform')
-#     nmfoa = GeneNMFOA(nmf_iter=3, grid_points=5000, n_jobs=1)
+#     nmfoa = GeneNMFOA(nmf_iter=3, grid_points=1000, n_jobs=1)
 #     nmfoa.fit_transform({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
 #               , reads_dat=X[0:100, :])
 #

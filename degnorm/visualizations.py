@@ -134,6 +134,7 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
                                  , x_exon=tmp[['start', 'end']].values
                                  , gene=gene
                                  , chrom=tmp.chr.iloc[0]
+                                 , sample_ids=sample_ids
                                  , figsize=figsize)
 
         fig.savefig(os.path.join(output_dir, '{0}_coverage.png').format(gene)

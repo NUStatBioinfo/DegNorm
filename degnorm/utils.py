@@ -20,6 +20,7 @@ def welcome():
     resources_dir = pkg_resources.resource_filename('degnorm', 'resources')
     with open(os.path.join(resources_dir, 'welcome.txt'), 'r') as f:
         welcome = f.readlines()
+        welcome += '\nversion {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
     sys.stdout.write(''.join(welcome) + '\n'*4)
 
@@ -74,7 +75,7 @@ def find_samtools():
     out = subprocess.run(['which samtools']
                          , shell=True)
     if out.returncode != 0:
-        raise EnvironmentError('samtools is not installed.'
+        raise EnvironmentError('samtools is not installed or is not in your PATH.'
                                'samtools is required to convert .bam -> .sam files'
                                'Either use .sam files or install samtools.')
 
@@ -165,6 +166,27 @@ def parse_args():
                         , required=False
                         , help='List of gene names or a text file (with extension .txt) specifying a subset'
                                'of genes you would like to send through DegNorm pipeline.')
+    parser.add_argument('-d'
+                        , '--downsample-rate'
+                        , type=int
+                        , default=None
+                        , required=False
+                        , help='Gene nucleotide downsample rate. Reduce all genes longer genes down to this size.'
+                               'Resulting coverage matrix estimates (and plots) will be re-interpolated back'
+                               'to original size.'
+                               'Use to speed up computation. Reasonable size is ~3000. Default is NO downsampling.')
+    parser.add_argument( '--nmf-iter'
+                        , type=int
+                        , default=100
+                        , required=False
+                        , help='Number of iterations to perform per NMF-OA computation per gene.'
+                               'Different than number of DegNorm iterations (--iter flag). Default = 100.')
+    parser.add_argument( '--iter'
+                        , type=int
+                        , default=5
+                        , required=False
+                        , help='Number of DegNorm iterations to perform. Default = 5.'
+                               'Different than number of NMF-OA iterations (--nmf-iter flag).')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
@@ -181,7 +203,7 @@ def parse_args():
     parser.add_argument('-v'
                         , '--version'
                         , action='version'
-                        , version='DegNorm version 0.0.1'
+                        , version='DegNorm version {0}'.format(pkg_resources.get_distribution('degnorm').version)
                         , help='Display DegNorm package version and exit.')
     parser.add_argument('-h'
                         , '--help'
@@ -228,6 +250,11 @@ def parse_args():
         if not os.path.isfile(f):
             raise IOError('File {0} not found.'.format(f))
 
+    # ensure there are at least 2 experiment files.
+    if len(args.input_files) == 1:
+        raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
+                         'approximations from a single experiment.')
+
     # ensure only .sam or .bam files were supplied.
     extensions = list(set(map(lambda x: x.split('.')[-1], args.input_files)))
     if len(extensions) > 1:
@@ -259,6 +286,10 @@ def parse_args():
 
         # replace input with parsed list of unique genes.
         args.genes = list(set(genes))
+
+    # quality control on DegNorm parameters.
+    if (args.nmf_iter <= 0) or (args.iter <= 0) or ((args.downsample_rate if args.downsample_rate else 1) <= 0):
+        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be > 0.')
 
     welcome()
 
