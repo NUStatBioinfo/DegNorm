@@ -40,8 +40,7 @@ DegNorm pipeline output file structure
 
 .. code-block:: text
 
-    DegNorm_[mmddYY_HHMMSS] (pipeline output directory)
-        |
+    DegNorm_<mmddYY_HHMMSS> (pipeline output directory)
         |
         |-- read_counts.csv: genes x samples matrix of raw sample read counts.
         |-- adjusted_read_counts.csv: genes x samples matrix of DI-score adjusted read counts.

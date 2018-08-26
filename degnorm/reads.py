@@ -1,16 +1,18 @@
 import re
+from pandas import DataFrame, concat
 from degnorm.utils import *
 from degnorm.loaders import SamLoader
 
 
-class ReadsCoverageProcessor():
-    def __init__(self, sam_file=None, n_jobs=max_cpu(), tmp_dir=None, verbose=True):
+class ReadsProcessor():
+    def __init__(self, sam_file=None, chroms=None, n_jobs=max_cpu(), tmp_dir=None, verbose=True):
         """
         Genome coverage reader for a single RNA-seq experiment, contained in a .sam file.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
 
         :param sam_file: str .sam filename
         :param tmp_dir: str path to directory where coverage array files are saved.
+        :param chroms: list of str names of chromosomes to load.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
         :param verbose: bool indicator should progress be written to logger?
@@ -29,6 +31,7 @@ class ReadsCoverageProcessor():
         self.loader = None
         self.data = None
         self.header = None
+        self.chroms = chroms
 
     def load(self):
         """
@@ -36,12 +39,13 @@ class ReadsCoverageProcessor():
         """
         self.loader = SamLoader(self.filename)
 
-        df_dict = self.loader.get_data()
+        df_dict = self.loader.get_data(chrom=self.chroms)
         df = df_dict['data']
 
         # .sam file must have valid header.
         try:
             header_df = df_dict['header']
+
         except KeyError:
             logging.error('No header was found in {0}!'.format(self.filename))
             raise
@@ -98,25 +102,24 @@ class ReadsCoverageProcessor():
 
         return match_idx_list, num_match_segs
 
-    def chromosome_coverage(self, chrom=None, chrom_len=0):
+    def chromosome_coverage_read_counts(self, gene_df, chrom, chrom_len=0):
         """
-        Determine per-chromosome reads coverage from an RNA-seq experiment. The cigar scores from
-        single and paired reads are parsed according to _cigar_segment_bounds.
+        Determine per-chromosome reads coverage and per-gene read counts from an RNA-seq experiment.
+        The cigar scores from single and paired reads are parsed according to _cigar_segment_bounds.
 
         Saves compressed coverage array to self.tmp_dir with file name 'sample_[sample_id]_[chrom].npz'
 
+        :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
+        that delineate the start and end position of a gene's transcript on a chromosome.
         :param chrom: str chromosome name. If not supplied, presume df is already a chromosome subset
         :param chrom_len: int length of chromosome from reference genome
-        directory where .sam file came from.
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
-        if chrom:
-            df_chrom = subset_to_chrom(self.data, chrom=chrom)
-        else:
-            df_chrom = self.data.copy()
+        reads_sub_df = subset_to_chrom(self.data, chrom=chrom)
+        gene_sub_df = subset_to_chrom(gene_df, chrom=chrom)
 
         # grab cigar string and read starting position. Initialize coverage array.
-        dat = df_chrom[['cigar', 'pos']].values
+        dat = reads_sub_df[['cigar', 'pos']].values
         cov_vec = np.zeros([chrom_len])
 
         for i in np.arange(1, dat.shape[0], 2):
@@ -138,26 +141,55 @@ class ReadsCoverageProcessor():
                 cov_vec[(bounds[j - 1]) : (bounds[j] + 1)] += 1
 
         if self.verbose:
-            logging.info('CHROMOSOME {0} -- length: {1}'.format(chrom, len(cov_vec)))
-            logging.info('CHROMOSOME {0} -- max read coverage: {1}'.format(chrom, str(np.max(cov_vec))))
-            logging.info('CHROMOSOME {0} -- mean read coverage: {1}'.format(chrom, str(np.mean(cov_vec))))
-            logging.info('CHROMOSOME {0} -- % of chromosome covered: {1}'.format(chrom, str(np.mean(cov_vec > 0))))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} length: {2}'.format(self.sample_id, chrom, len(cov_vec)))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} max read coverage: {2}'
+                         .format(self.sample_id, chrom, str(np.max(cov_vec))))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} mean read coverage: {2}'
+                         .format(self.sample_id, chrom, str(np.mean(cov_vec))))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} % of chromosome covered: {2}'
+                         .format(self.sample_id, chrom, str(np.mean(cov_vec > 0))))
 
         # create output directory if it does not exist, and then make output file name.
         out_file = os.path.join(self.tmp_dir, 'sample_' + self.sample_id + '_' + chrom + '.npz')
         if not os.path.isdir(self.tmp_dir):
             os.makedirs(self.tmp_dir)
 
-        logging.info('CHROMOSOME {0} -- saving coverage array to {1}'.format(chrom, out_file))
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} saving coverage array to {1}'
+                         .format(self.sample_id, chrom, out_file))
         np.savez_compressed(out_file
                             , cov=cov_vec)
 
-        return out_file
+        # finally, parse gene read counts.
+        counts = np.zeros(gene_df.shape[0])
+        dat = gene_sub_df[['gene_start', 'gene_end']].values
 
-    def coverage(self):
+        # iterate over genes, count number of reads (entirely) falling between gene_start and gene_end.
+        for i in range(gene_sub_df.shape[0]):
+            counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]
+            counts[i] = counts_df.shape[0] / 2
+
+        # turn read counts into a DataFrame so we can join on genes later.
+        read_count_df = DataFrame({'chr': chrom
+                                      , 'gene': gene_df.gene.values
+                                      , 'read_count': counts})
+
+        if read_count_df.empty:
+            raise ValueError('Missing read counts!')
+
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} mean per-gene read count: {2}'
+                         .format(self.sample_id, chrom, read_count_df.read_count.mean()))
+
+        return out_file, read_count_df
+
+    def coverage_read_counts(self, gene_df):
         """
         Main function for computing coverage arrays in parallel over chromosomes.
 
+        :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
+        that delineate the start and end position of a gene's transcript on a chromosome. See
+        GeneAnnotationProcessor.
         :return: list of str file paths of compressed .npz files containing coverage arrays.
         """
         if self.verbose:
@@ -174,15 +206,21 @@ class ReadsCoverageProcessor():
         header_df = self.header[self.header.chr.isin(chroms)]
 
         if self.verbose:
-            logging.info('Determining coverage for {0} chromosomes:\n'
-                         '\t{1}'.format(len(chroms), ', '.join(chroms)))
+            logging.info('SAMPLE {0}: determining coverage and read counts for {1} chromosomes:\n'
+                         '\t{1}'.format(self.sample_id, len(chroms), ', '.join(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
-        cov_filepaths = [p.apply_async(self.chromosome_coverage
-                                       , args=(header_df.chr.iloc[i], header_df.length.iloc[i])) for i in
-                         range(header_df.shape[0])]
+        par_output = [p.apply_async(self.chromosome_coverage_read_counts
+                                    , args=(gene_df
+                                            , header_df.chr.iloc[i]
+                                            , header_df.length.iloc[i])) for i in
+                      range(header_df.shape[0])]
         p.close()
-        cov_filepaths = [x.get() for x in cov_filepaths]
 
-        return cov_filepaths
+        # parse output from parallel workers.
+        par_output = [x.get() for x in par_output]
+        cov_filepaths = [x[0] for x in par_output]
+        read_count_dfs = [x[1] for x in par_output]
+
+        return cov_filepaths, concat(read_count_dfs)

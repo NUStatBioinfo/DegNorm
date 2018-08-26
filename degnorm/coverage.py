@@ -28,14 +28,16 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     n_genes = len(genes)
 
     if verbose:
-        logging.info('CHROMOSOME {0} -- begin loading coverage matrix.'.format(chrom))
+        logging.info('CHROMOSOME {0}: begin loading coverage matrix.'.format(chrom))
 
+    # load up this chromosome's coverage curves (over samples).
     idx = 0
     for sample_id in coverage_files:
         r = re.compile('sample_{0}_{1}.npz'.format(sample_id, chrom))
         npz_file = list(filter(r.search, coverage_files[sample_id]))[0]
         cov_vec = np.load(npz_file)['cov']
 
+        # initialize coverage matrix to have nrows == length of chromosome.
         if idx == 0:
             cov_mat = np.zeros([len(cov_vec), len(coverage_files)])
 
@@ -43,7 +45,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         idx += 1
 
     if verbose:
-        logging.info('CHROMOSOME {0} -- coverage matrix shape: {1}'.format(chrom, cov_mat.shape))
+        logging.info('CHROMOSOME {0}: coverage matrix shape: {1}'.format(chrom, cov_mat.shape))
 
     # store coverage matrices in a dictionary with gene name keys
     gene_cov_dict = dict()
@@ -51,7 +53,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     # Instantiate progress bar.
     pbar = tqdm.tqdm(total=n_genes
                      , leave=False
-                     , desc='CHROMOSOME {0} -- coverage matrix progress'.format(chrom))
+                     , desc='CHROMOSOME {0}: gene coverage matrix progress'.format(chrom))
 
     for gene_idx in range(n_genes):
         gene = genes[gene_idx]
@@ -89,33 +91,3 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
             pkl.dump(gene_cov_dict, f)
 
     return gene_cov_dict, chrom
-
-
-def read_counts(reads_df, genes_df):
-    """
-    Determine the read count for gene i in sample j, defined as the number of paired reads
-    that land within the exonic region of the ith gene (in sample j).
-
-    :param reads_df: pandas.DataFrame with columns "chr," "pos", and "qname_unpaired" designating the
-    query name of a paired read, but without the pairing index
-    :param genes_df: pandas.DataFrame with columns "chr", "gene", "gene_start", and "gene_end" designating
-    the start and end position of a gene on a chromosome.
-    :return: 1-d numpy array of read counts, length is equal to number of genes
-    """
-    counts = np.zeros(genes_df.shape[0])
-    chroms = genes_df.chr.unique().tolist()
-    chroms.sort()
-
-    count_idx = 0
-    for chrom in chroms:
-        reads_sub_df = subset_to_chrom(reads_df, chrom=chrom)
-        genes_sub_df = subset_to_chrom(genes_df, chrom=chrom)
-        dat = genes_sub_df[['gene_start', 'gene_end']].values
-
-        for i in range(genes_sub_df.shape[0]):
-            counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]
-            counts[count_idx + i] = counts_df.shape[0] / 2
-
-        count_idx += i
-
-    return counts

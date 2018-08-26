@@ -1,5 +1,6 @@
 import os
 import re
+from degnorm.utils import *
 from pandas import DataFrame, read_table
 
 
@@ -53,40 +54,25 @@ class SamLoader(Loader):
         Loader.__init__(self, '.sam')
         self.get_file(to_load)
 
-    def get_data(self):
+    def separate_header(self, dat):
         """
-        Extract .sam files listed in self.to_load into a dictionary of pandas.DataFrames.
-        Each DataFrame has the following fields:
+        Separate the header of a .sam file from the reads.
 
-        - qname
-        - chr
-        - pos
-        - cigar
-        - pnext
-        - tlen
-        - qname_unpaired: qname field but without '.1' or '.2' extension indicating the
-        paired-order of the read in a paired read
-        - end_pos: rightmost position of aligned reads
-
-        See .sam file specification: http://samtools.github.io/hts-specs/SAMv1.pdf
-
-        :return: dictionary {.sam file: pandas.DataFrame}
+        :param dat: list of strings; IO from from .sam file readlines()
+        :return: 2-tuple (pd.DataFrame with .sam file header data, header_idx - integer, row
+        of .sam file corresponding to first line of reads data)
         """
-        df_dict = dict()
-
-        with open(self.filename, 'r') as f:
-            lines = f.readlines()
 
         # identify line number where header lines stop
         header_idx = 0
-        is_header_line = lines[header_idx][0] == '@'
+        is_header_line = dat[header_idx][0] == '@'
 
         # store header info: chromosome lengths
         chrom_len_dict = dict()
 
         while is_header_line:
             header_idx += 1
-            line = lines[header_idx]
+            line = dat[header_idx]
             is_header_line = line[0] == '@'
 
             if line[0:3] == '@SQ':
@@ -103,7 +89,39 @@ class SamLoader(Loader):
 
         # turn header into a pandas.DataFrame
         header_df = DataFrame(list(chrom_len_dict.items())
-                              , columns = ['chr', 'length'])
+                              , columns=['chr', 'length'])
+
+        # return 2-tuple necessary to parse the reads
+        return header_df, header_idx
+
+    def get_data(self, chrom=None):
+        """
+        Extract .sam files listed in self.to_load into a dictionary of pandas.DataFrames.
+        A loaded DataFrame will look like this:
+
+        +----------------+----------------+----------------+----------------+-----------------+-----------------+--------------------+
+        |     qname      |     chr        |     pos        |     cigar      |       pnext     |       tlen      |   qname_unpaired   |
+        +================+================+================+================+=================+=================+====================+
+        | SRR89.1166.1   |     chr1       |    13785       |     100M       |      13791      |        106      |     SRR89.1166     |
+        +----------------+----------------+----------------+----------------+-----------------+-----------------+--------------------+
+        | SRR89.1166.2   |     chr1       |    13791       |     100M       |      13785      |        106      |     SRR89.1166     |
+        +----------------+----------------+----------------+----------------+-----------------+-----------------+--------------------+
+
+        - qname_unpaired: qname field but without '.1' or '.2' extension indicating the
+        paired-order of the read in a paired read
+        - end_pos: rightmost position of aligned reads
+
+        See .sam file specification: http://samtools.github.io/hts-specs/SAMv1.pdf
+
+        :param chrom: list of str names of chromosomes to load from .sam file. Optional. Default = None (no subsetting).
+        :return: dictionary {.sam file: pandas.DataFrame}
+        """
+        df_dict = dict()
+
+        with open(self.filename, 'r') as f:
+            lines = f.readlines()
+
+        header_df, header_idx = self.separate_header(lines)
 
         if not header_df.empty:
             df_dict['header'] = header_df
@@ -122,6 +140,10 @@ class SamLoader(Loader):
         # subset .sam file to paired reads using rnext column.
         df = df[df['rnext'] == '=']
 
+        # if chromosomes specified, subset reads to them.
+        if chrom:
+            df = subset_to_chrom(df, chrom=chrom, reindex=True)
+
         # typecasting: change int fields from str.
         int_cols = ['pos']
         for col in int_cols:
@@ -137,6 +159,23 @@ class SamLoader(Loader):
         df_dict['data'] = df.reset_index(drop=True)
 
         return df_dict
+
+    def find_chromosomes(self):
+        """
+        Find set of chromosomes included in RNA-Seq experiment from the header of a .sam file.
+
+        :return: list of chr, chromosome names.
+        """
+        lines = list()
+        with open(self.filename, 'r') as f:
+
+            # do not need whole file; just check first 300 lines for header.
+            for i in range(300):
+                lines.append(f.readline())
+
+        header_df, _ = self.separate_header(lines)
+
+        return header_df.chr.unique().tolist()
 
 
 class GeneAnnotationLoader(Loader):
@@ -219,8 +258,12 @@ class GeneAnnotationLoader(Loader):
         return df[['chr', 'start', 'end', 'gene']].drop_duplicates()
 
 
-# if __name__ == '__main__':
-#     gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
-#     loader = GeneAnnotationLoader(gtf_file)
-#     df = loader.get_data()
-#     print(df.head(20))
+if __name__ == '__main__':
+    # gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
+    # loader = GeneAnnotationLoader(gtf_file)
+    # df = loader.get_data()
+    # print(df.head(20))
+
+    sam_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'A01_R01_chr1_2.sam')
+    loader = SamLoader(sam_file)
+    print(loader.find_chromosomes())
