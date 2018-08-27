@@ -117,6 +117,9 @@ class ReadsProcessor():
         """
         logging.info('BEGIN SAMPLE {0}: CHROMOSOME {1}'.format(self.sample_id, chrom))
 
+        logging.info('READS CHROMOSOMES: {0}'.format(','.join(self.data.chr.unique().tolist())))
+        logging.info('GENES CHROMOSOMES: {0}'.format(','.join(gene_df.chr.unique().tolist())))
+
         reads_sub_df = subset_to_chrom(self.data, chrom=chrom)
         gene_sub_df = subset_to_chrom(gene_df, chrom=chrom)
 
@@ -220,9 +223,8 @@ class ReadsProcessor():
         p = mp.Pool(processes=self.n_jobs)
         par_output = [p.apply_async(self.chromosome_coverage_read_counts
                                     , args=(gene_df
-                                            , header_df.chr.iloc[i]
-                                            , header_df.length.iloc[i])) for i in
-                      range(header_df.shape[0])]
+                                            , chrom
+                                            , header_df[header_df.chr == chrom].length.iloc[0])) for chrom in chroms]
         p.close()
 
         # parse output from parallel workers.

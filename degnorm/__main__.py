@@ -66,6 +66,10 @@ def main():
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
+    # take intersection of chromosomes available in genome annotation file and those in the reads data,
+    # if for some reason annotation file only contains subset.
+    chroms = np.intersect1d(chroms, genes_df.chr.unique()).tolist()
+
     # ---------------------------------------------------------------------------- #
     # Load .sam or .bam files, parse into coverage arrays, store them, and
     # compute gene read counts.
