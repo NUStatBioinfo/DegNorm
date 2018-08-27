@@ -115,6 +115,8 @@ class ReadsProcessor():
         :param chrom_len: int length of chromosome from reference genome
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
+        logging.info('BEGIN SAMPLE {0}: CHROMOSOME {1}'.format(self.sample_id, chrom))
+
         reads_sub_df = subset_to_chrom(self.data, chrom=chrom)
         gene_sub_df = subset_to_chrom(gene_df, chrom=chrom)
 
