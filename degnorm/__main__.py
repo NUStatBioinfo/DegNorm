@@ -32,7 +32,7 @@ def main():
 
     # ---------------------------------------------------------------------------- #
     # Overhead: if supplied with .bam files, convert to .sam;
-    # further, determine intersection of chromosomes across experiments.
+    # further, determine intersection of chromosomes across samples.
     # ---------------------------------------------------------------------------- #
     for idx in range(n_samples):
         sam_file = args.input_files[idx]
@@ -43,10 +43,13 @@ def main():
                          .format(sam_file))
             args.input_files[idx] = bam_to_sam(sam_file)
 
-        # find chromosomes in the header of this sample.
-        chroms.extend(SamLoader(args.input_files[idx]).find_chromosomes())
+        # Take intersection of chromosomes over samples.
+        if idx == 0:
+            chroms = SamLoader(args.input_files[idx]).find_chromosomes()
 
-    chroms = list(set(chroms))
+        else:
+            chroms = np.intersect1d(chroms, SamLoader(args.input_files[idx]).find_chromosomes()).tolist()
+
     logging.info('Found {0} chromosomes in intersection of all experiments:\n'
                  '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
