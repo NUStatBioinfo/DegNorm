@@ -159,8 +159,8 @@ class GeneAnnotationProcessor():
         # Iterating over chromosomes in parallel.
         p = mp.Pool(processes=self.n_jobs)
         rm_exons = [p.apply_async(self.find_overlapping_exons, args=(exon_df, gene_df, chrom)) for chrom in chroms]
-        rm_exons = [x.get() for x in rm_exons]
         p.close()
+        rm_exons = [x.get() for x in rm_exons]
 
         # collapse 2-d list of lists into 1-d list
         rm_exons = list(itertools.chain.from_iterable(rm_exons))

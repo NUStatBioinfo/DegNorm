@@ -111,7 +111,7 @@ class ReadsProcessor():
 
         :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome.
-        :param chrom: str chromosome name. If not supplied, presume df is already a chromosome subset
+        :param chrom: str chromosome name
         :param chrom_len: int length of chromosome from reference genome
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
@@ -142,11 +142,11 @@ class ReadsProcessor():
 
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} length: {2}'.format(self.sample_id, chrom, len(cov_vec)))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} max read coverage: {2}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} max read coverage: {2:.4}'
                          .format(self.sample_id, chrom, str(np.max(cov_vec))))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} mean read coverage: {2}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} mean read coverage: {2:.4}'
                          .format(self.sample_id, chrom, str(np.mean(cov_vec))))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} % of chromosome covered: {2}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} % of chromosome covered: {2:.4}'
                          .format(self.sample_id, chrom, str(np.mean(cov_vec > 0))))
 
         # create output directory if it does not exist, and then make output file name.
@@ -155,30 +155,32 @@ class ReadsProcessor():
             os.makedirs(self.tmp_dir)
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} saving coverage array to {1}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} saving coverage array to {2}'
                          .format(self.sample_id, chrom, out_file))
         np.savez_compressed(out_file
                             , cov=cov_vec)
 
         # finally, parse gene read counts.
-        counts = np.zeros(gene_df.shape[0])
+        n_genes = gene_sub_df.shape[0]
+        counts = np.zeros(n_genes)
         dat = gene_sub_df[['gene_start', 'gene_end']].values
 
         # iterate over genes, count number of reads (entirely) falling between gene_start and gene_end.
-        for i in range(gene_sub_df.shape[0]):
+        for i in range(n_genes):
             counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]
             counts[i] = counts_df.shape[0] / 2
 
         # turn read counts into a DataFrame so we can join on genes later.
         read_count_df = DataFrame({'chr': chrom
-                                      , 'gene': gene_df.gene.values
+                                      , 'gene': gene_sub_df.gene.values
                                       , 'read_count': counts})
 
+        # quality control.
         if read_count_df.empty:
             raise ValueError('Missing read counts!')
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} mean per-gene read count: {2}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} mean per-gene read count: {2:.4}'
                          .format(self.sample_id, chrom, read_count_df.read_count.mean()))
 
         return out_file, read_count_df
@@ -193,13 +195,13 @@ class ReadsProcessor():
         :return: list of str file paths of compressed .npz files containing coverage arrays.
         """
         if self.verbose:
-            logging.info('Begin loading file {0}...'.format(self.filename))
+            logging.info('Begin reading file {0}...'.format(self.filename))
 
         # load .sam file's reads + header.
         self.load()
 
         if self.verbose:
-            logging.info('Load successful. Total reads -- {0}'.format( self.data.shape[0]))
+            logging.info('File read successfully. Total transcript reads -- {0}'.format( self.data.shape[0]))
 
         # determine chromosomes whose coverage will be computed.
         chroms = self.data.chr.unique()

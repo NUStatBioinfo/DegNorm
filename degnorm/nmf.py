@@ -493,7 +493,7 @@ class GeneNMFOA():
         self.transform()
 
     def save_results(self, gene_manifest_df, output_dir='.',
-                     sample_ids=None, ignore_missing_genes=False):
+                     sample_ids=None):
         """
         Save GeneNMFOA output to disk:
             - self.estimates: for each gene's estimated coverage matrix, find the chromosome to which the
@@ -509,10 +509,6 @@ class GeneNMFOA():
         :param output_dir: str output directory to save GeneNMFOA output.
         :param sample_ids: (optional) list of str names of RNA_seq experiments, to be used
          as headers for adjusted read counts matrix and degradation index score matrix.
-        :param ignore_missing_genes: Boolean (default False) - if a gene is in self.genes (and therefore
-        has an estimated coverage curve), but gene is not found in gene_manifest_df, should save_results
-        skip gene?
-        :return: None
         """
         # quality control.
         if not self.transformed:

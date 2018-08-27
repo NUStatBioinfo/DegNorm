@@ -44,10 +44,10 @@ def main():
             args.input_files[idx] = bam_to_sam(sam_file)
 
         # find chromosomes in the header of this sample.
-        chroms.append(SamLoader(args.input_files[idx]).find_chromosomes())
+        chroms.extend(SamLoader(args.input_files[idx]).find_chromosomes())
 
     chroms = list(set(chroms))
-    logging.info('Found {0} chromosomes in intersection of all experiments.:\n'
+    logging.info('Found {0} chromosomes in intersection of all experiments:\n'
                  '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
     # ---------------------------------------------------------------------------- #
@@ -113,7 +113,9 @@ def main():
 
     # re-order genes, read counts so that they're parsimonious in chromosomes + gene ordering.
     genes_df.sort_values(['chr', 'gene'], inplace=True)
+    genes_df.reset_index(inplace=True, drop=True)
     read_count_df.sort_values(['chr', 'gene'], inplace=True)
+    read_count_df.reset_index(inplace=True, drop=True)
 
     # quality control.
     if genes_df.shape[0] != read_count_df.shape[0]:
@@ -188,9 +190,9 @@ def main():
                    , index=False)
 
     # save read counts.
-    read_counts_file = os.path.join(output_dir, 'read_counts.csv')
-    logging.info('Saving original read counts to {0}'.format(read_counts_file))
-    read_count_df.to_csv(read_counts_file
+    read_count_file = os.path.join(output_dir, 'read_counts.csv')
+    logging.info('Saving original read counts to {0}'.format(read_count_file))
+    read_count_df.to_csv(read_count_file
                          , index=False)
 
     # free up more memory: delete exon / genome annotation data
@@ -205,7 +207,7 @@ def main():
                       , grid_points=args.downsample_rate
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
-                        , reads_dat=read_count_df[sample_ids].values())
+                        , reads_dat=read_count_df[sample_ids].values)
 
     # ---------------------------------------------------------------------------- #
     # Save results.
