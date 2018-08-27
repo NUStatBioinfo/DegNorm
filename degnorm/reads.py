@@ -160,6 +160,9 @@ class ReadsProcessor():
         np.savez_compressed(out_file
                             , cov=cov_vec)
 
+        # free up memory, delete coverage vector (it's saved to disk).
+        del cov_vec
+
         # finally, parse gene read counts.
         n_genes = gene_sub_df.shape[0]
         counts = np.zeros(n_genes)
