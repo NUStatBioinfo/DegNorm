@@ -446,7 +446,8 @@ class GeneNMFOA():
         self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
 
         # determine (integer) number of data splits for parallel workers (100Mb per worker)
-        self.mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8))
+        mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8))
+        self.mem_splits = mem_splits if mem_splits > self.n_jobs else self.n_jobs
 
         self.fitted = True
 
