@@ -181,7 +181,7 @@ class GeneAnnotationProcessor():
         outlining exons ready to use for reads coverage computations
         """
         if self.verbose:
-            logging.info('Loading genome annotation file {0} into pandas.DataFrame'.format(self.filename))
+            logging.info('Reading genome annotation file {0}.'.format(self.filename))
 
         exon_df = self.load()
 

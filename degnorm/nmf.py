@@ -4,6 +4,8 @@ from sklearn.exceptions import NotFittedError
 import warnings
 import tqdm
 import pickle as pkl
+from joblib import Parallel, delayed
+
 
 class GeneNMFOA():
 
@@ -58,8 +60,8 @@ class GeneNMFOA():
         :return: 2-tuple (K, E) matrix factorization
         """
         u, s, v = svds(x, k=1)
-        # return u[::-1], s*v[::-1]
-        return u, s*v
+        return u[::-1], s*v[::-1]
+        # return u, s*v
 
     def get_high_coverage_idx(self, x):
         """
@@ -102,7 +104,7 @@ class GeneNMFOA():
 
         return est
 
-    def run_nmf_serial(self, x, factors):
+    def run_nmf_serial(self, x, factors=False):
         return list(map(lambda z: self.nmf(z, factors), x))
 
     def par_apply_nmf(self, dat):
@@ -114,15 +116,19 @@ class GeneNMFOA():
         """
 
         # split list of coverage matrices into chunks for distribution over n_jobs cores.
-        dat_split = split_into_chunks(dat, self.n_jobs)
-
-        p = mp.Pool(processes=self.n_jobs)
-        nmf_ests = [p.apply_async(self.run_nmf_serial
-                                  , args=(x, False)) for x in dat_split]
-        p.close()
-
+        # dat_split = split_into_chunks(dat, self.n_jobs)
+        #
+        # p = mp.Pool(processes=self.n_jobs)
+        # nmf_ests = [p.apply_async(self.run_nmf_serial
+        #                           , args=(x, False)) for x in dat_split]
+        # p.close()
         # Consolidate worker results.
-        nmf_ests = [x.get() for x in nmf_ests]
+        # nmf_ests = [x.get() for x in nmf_ests]
+        dat_split = split_into_chunks(dat, self.n_jobs)
+        nmf_ests = Parallel(n_jobs=self.n_jobs
+                                 , verbose=0
+                                 , backend='loky')(map(delayed(self.run_nmf_serial), dat_split))
+
         return [elt for lst1d in nmf_ests for elt in lst1d]
 
     def compute_scale_factors(self, estimates):
@@ -288,16 +294,21 @@ class GeneNMFOA():
         """
         # Obtain initial coverage estimates. Split estimates
         # and coverage matrices into chunked sublists.
-        dat = split_into_chunks(dat, self.n_jobs)
+        dat_split = split_into_chunks(dat, self.n_jobs)
 
         # Dispatch serial jobs over parallel workers.
-        p = mp.Pool(processes=self.n_jobs)
-        baseline_ests = [p.apply_async(self.run_baseline_selection_serial
-                                  , args=(dat[i],)) for i in range(len(dat))]
-        p.close()
+        # p = mp.Pool(processes=self.n_jobs)
+        # baseline_ests = [p.apply_async(self.run_baseline_selection_serial
+        #                           , args=(dat_split[i],)) for i in range(len(dat_split))]
+        # p.close()
 
         # Consolidate worker results.
-        baseline_ests = [x.get() for x in baseline_ests]
+        # baseline_ests = [x.get() for x in baseline_ests]
+        baseline_ests = Parallel(n_jobs=self.n_jobs
+                                 , verbose=0
+                                 , backend='loky')(map(delayed(self.run_baseline_selection_serial), dat_split))
+
+
         return [elt for lst1d in baseline_ests for elt in lst1d]
 
     def downsample_2d(self, x, by_row=True):

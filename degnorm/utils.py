@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 import argparse
 import pkg_resources
+import gc
 
 
 logging.basicConfig(stream=sys.stdout

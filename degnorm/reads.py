@@ -102,26 +102,23 @@ class ReadsProcessor():
 
         return match_idx_list, num_match_segs
 
-    def chromosome_coverage_read_counts(self, gene_df, chrom, chrom_len=0):
+    def chromosome_coverage_read_counts(self, reads_sub_df, gene_sub_df, chrom, chrom_len=0):
         """
         Determine per-chromosome reads coverage and per-gene read counts from an RNA-seq experiment.
         The cigar scores from single and paired reads are parsed according to _cigar_segment_bounds.
 
         Saves compressed coverage array to self.tmp_dir with file name 'sample_[sample_id]_[chrom].npz'
 
+        :param reads_sub_df: pandas.DataFrame of paired reads data with `cigar` and `pos` fields,
+        must be subsetted to the chromosome in study.
         :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
-        that delineate the start and end position of a gene's transcript on a chromosome.
+        that delineate the start and end position of a gene's transcript on a chromosome, must be
+        subsetted to the chromosome in study.
         :param chrom: str chromosome name
         :param chrom_len: int length of chromosome from reference genome
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
         logging.info('BEGIN SAMPLE {0}: CHROMOSOME {1}'.format(self.sample_id, chrom))
-
-        logging.info('READS CHROMOSOMES: {0}'.format(','.join(self.data.chr.unique().tolist())))
-        logging.info('GENES CHROMOSOMES: {0}'.format(','.join(gene_df.chr.unique().tolist())))
-
-        reads_sub_df = subset_to_chrom(self.data, chrom=chrom)
-        gene_sub_df = subset_to_chrom(gene_df, chrom=chrom)
 
         # grab cigar string and read starting position. Initialize coverage array.
         dat = reads_sub_df[['cigar', 'pos']].values
@@ -167,6 +164,7 @@ class ReadsProcessor():
 
         # free up memory, delete coverage vector (it's saved to disk).
         del cov_vec
+        gc.collect()
 
         # finally, parse gene read counts.
         n_genes = gene_sub_df.shape[0]
@@ -217,12 +215,13 @@ class ReadsProcessor():
 
         if self.verbose:
             logging.info('SAMPLE {0}: determining coverage and read counts for {1} chromosomes:\n'
-                         '\t{1}'.format(self.sample_id, len(chroms), ', '.join(chroms)))
+                         '\t{2}'.format(self.sample_id, len(chroms), ', '.join(chroms)))
 
         # run .chromosome_coverage in parallel over chromosomes.
         p = mp.Pool(processes=self.n_jobs)
         par_output = [p.apply_async(self.chromosome_coverage_read_counts
-                                    , args=(gene_df
+                                    , args=(subset_to_chrom(self.data, chrom=chrom)
+                                            , subset_to_chrom(gene_df, chrom=chrom)
                                             , chrom
                                             , header_df[header_df.chr == chrom].length.iloc[0])) for chrom in chroms]
         p.close()

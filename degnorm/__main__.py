@@ -94,6 +94,7 @@ def main():
                  .format(len(sample_ids)))
 
     del reader
+    gc.collect()
 
     # ---------------------------------------------------------------------------- #
     # Merge per-sample gene read count matrices:
@@ -112,6 +113,7 @@ def main():
     logging.info('Successfully merged sample read counts -- shape: {0}'.format(read_count_df.shape))
 
     del read_count_dict
+    gc.collect()
 
     # subset genes, exons to genes in intersection of experiments.
     genes_df = genes_df[genes_df.gene.isin(read_count_df.gene.unique())]
@@ -207,6 +209,12 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
+
+    # joblib overhead: specify temp folder if not in environment.
+    joblib_folder = os.environ.get('JOBLIB_TEMP_FOLDER')
+    if not joblib_folder:
+        os.environ['JOBLIB_TEMP_FOLDER'] = output_dir
+
     logging.info('Executing NMF-OA over-approximation algorithm...')
     nmfoa = GeneNMFOA(iter=args.iter
                       , nmf_iter=args.nmf_iter
@@ -214,6 +222,10 @@ def main():
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
                         , reads_dat=read_count_df[sample_ids].values)
+
+    # restore original environment.
+    if not joblib_folder:
+        del os.environ['JOBLIB_TEMP_FOLDER']
 
     # ---------------------------------------------------------------------------- #
     # Save results.
