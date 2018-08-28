@@ -2,6 +2,7 @@ import re
 from pandas import DataFrame, concat
 from degnorm.utils import *
 from degnorm.loaders import SamLoader
+from joblib import Parallel, delayed
 
 
 class ReadsProcessor():
@@ -217,17 +218,28 @@ class ReadsProcessor():
             logging.info('SAMPLE {0}: determining coverage and read counts for {1} chromosomes:\n'
                          '\t{2}'.format(self.sample_id, len(chroms), ', '.join(chroms)))
 
-        # run .chromosome_coverage in parallel over chromosomes.
-        p = mp.Pool(processes=self.n_jobs)
-        par_output = [p.apply_async(self.chromosome_coverage_read_counts
-                                    , args=(subset_to_chrom(self.data, chrom=chrom)
-                                            , subset_to_chrom(gene_df, chrom=chrom)
-                                            , chrom
-                                            , header_df[header_df.chr == chrom].length.iloc[0])) for chrom in chroms]
-        p.close()
+        # distribute work with joblib.Parallel:
+        par_output = Parallel(n_jobs=self.n_jobs
+                              , verbose=0
+                              , backend='threading')(delayed(self.chromosome_coverage_read_counts)(
+            reads_sub_df=subset_to_chrom(self.data, chrom=chrom),
+            gene_sub_df=subset_to_chrom(gene_df, chrom=chrom),
+            chrom=chrom,
+            chrom_len=header_df[header_df.chr == chrom].length.iloc[0])
+            for chrom in chroms)
+
+        # # run .chromosome_coverage in parallel over chromosomes.
+        # p = mp.Pool(processes=self.n_jobs))
+        #
+        # par_output = [p.apply_async(self.chromosome_coverage_read_counts
+        #                             , args=(subset_to_chrom(self.data, chrom=chrom)
+        #                                     , subset_to_chrom(gene_df, chrom=chrom)
+        #                                     , chrom
+        #                                     , header_df[header_df.chr == chrom].length.iloc[0])) for chrom in chroms]
+        # p.close()
 
         # parse output from parallel workers.
-        par_output = [x.get() for x in par_output]
+        # par_output = [x.get() for x in par_output]
         cov_filepaths = [x[0] for x in par_output]
         read_count_dfs = [x[1] for x in par_output]
 
