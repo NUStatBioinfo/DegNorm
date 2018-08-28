@@ -61,8 +61,8 @@ class GeneNMFOA():
         :return: 2-tuple (K, E) matrix factorization
         """
         u, s, v = svds(x, k=1)
-        return u[::-1], s*v[::-1]
-        # return u, s*v
+        # return u[::-1], s*v[::-1]
+        return u, s*v
 
     def get_high_coverage_idx(self, x):
         """
@@ -261,7 +261,7 @@ class GeneNMFOA():
             # collapse the remaining bins into an array of indices to keep, then subset F matrix.
             keep_idx = [np.arange(bin[0], bin[1], dtype=int) for bin in bin_segs]
             keep_idx = np.unique(flatten_2d(keep_idx))
-            F_bin = np.copy(F[:, keep_idx])
+            F_bin = F[:, keep_idx]
 
             # estimate coverage curves from remaining regions.
             KE_bin = self.nmf(F_bin)
@@ -445,8 +445,8 @@ class GeneNMFOA():
         # sum coverage per sample, for later.
         self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
 
-        # determine number of data splits for parallel workers (100Mb per worker)
-        self.mem_splits = np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8)
+        # determine (integer) number of data splits for parallel workers (100Mb per worker)
+        self.mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8))
 
         self.fitted = True
 

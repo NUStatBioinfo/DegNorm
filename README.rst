@@ -2,7 +2,7 @@
 DegNorm: Normalizing RNA degradation in RNA-Seq experiments
 ===========================================================
 
-.. image:: degnorm_logo.jpeg
+.. image:: degnorm_logo.png
    :height: 150px
    :width: 500px
    :scale: 50 %
