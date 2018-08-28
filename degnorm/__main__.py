@@ -50,9 +50,6 @@ def main():
         else:
             chroms = np.intersect1d(chroms, SamLoader(args.input_files[idx]).find_chromosomes()).tolist()
 
-    logging.info('Found {0} chromosomes in intersection of all experiments:\n'
-                 '\t{1}'.format(len(chroms), ', '.join(chroms)))
-
     # ---------------------------------------------------------------------------- #
     # Load .gtf or .gff files and run processing pipeline.
     # Run in parallel over chromosomes.
@@ -69,6 +66,8 @@ def main():
     # take intersection of chromosomes available in genome annotation file and those in the reads data,
     # if for some reason annotation file only contains subset.
     chroms = np.intersect1d(chroms, genes_df.chr.unique()).tolist()
+    logging.info('Found {0} chromosomes in intersection of all experiments and gene annotation data:\n'
+                 '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
     # ---------------------------------------------------------------------------- #
     # Load .sam or .bam files, parse into coverage arrays, store them, and
