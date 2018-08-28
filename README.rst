@@ -2,6 +2,12 @@
 DegNorm: Normalizing RNA degradation in RNA-Seq experiments
 ===========================================================
 
+.. image:: degnorm_logo.jpeg
+   :height: 150px
+   :width: 500px
+   :scale: 50 %
+   :align: left
+
 RNA-Seq transcriptome sequencing experiments often undergo gene- *and* sample-specific transcript degradation, thus
 potentially biasing results in standard RNA-Seq analysis (e.g. differential expression analysis). The DegNorm pipeline
 uses non-negative matrix factorization with an over-approximation constraint to normalized degraded gene transcript

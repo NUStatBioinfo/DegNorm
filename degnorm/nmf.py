@@ -33,6 +33,7 @@ class GeneNMFOA():
         self.min_bins = np.ceil(self.bins * 0.3)
         self.grid_points = np.abs(int(grid_points)) if grid_points else None
         self.downsample_idx = list()
+        self.mem_splits = None
         self.x = None
         self.x_adj = None
         self.p = None
@@ -124,10 +125,12 @@ class GeneNMFOA():
         # p.close()
         # Consolidate worker results.
         # nmf_ests = [x.get() for x in nmf_ests]
-        dat_split = split_into_chunks(dat, self.n_jobs)
+
+        # split up list of coverage matrices to feed to workers.
+        dat = split_into_chunks(dat, self.mem_splits)
         nmf_ests = Parallel(n_jobs=self.n_jobs
                                  , verbose=0
-                                 , backend='loky')(map(delayed(self.run_nmf_serial), dat_split))
+                                 , backend='threading')(map(delayed(self.run_nmf_serial), dat))
 
         return [elt for lst1d in nmf_ests for elt in lst1d]
 
@@ -170,6 +173,8 @@ class GeneNMFOA():
         # be updated by 1 - average(DI score) per sample.
         # From Supplement section 2: "For [genes with insufficient coverage], we adjust
         # the read count based on the average DI score of the corresponding sample.
+
+        # TODO: find out if high-coverage judgement done on original or adjusted coverage matrices.
         adj_standard = list(map(lambda x: len(self.get_high_coverage_idx(x)) >= self.min_high_coverage
                                 , self.cov_mats_adj))
         adj_standard = np.array(adj_standard)
@@ -292,21 +297,12 @@ class GeneNMFOA():
         coverage arrays will be adjusted for sequencing-depth.
         :return: list of numpy reads coverage arrays estimates
         """
-        # Obtain initial coverage estimates. Split estimates
-        # and coverage matrices into chunked sublists.
-        dat_split = split_into_chunks(dat, self.n_jobs)
 
-        # Dispatch serial jobs over parallel workers.
-        # p = mp.Pool(processes=self.n_jobs)
-        # baseline_ests = [p.apply_async(self.run_baseline_selection_serial
-        #                           , args=(dat_split[i],)) for i in range(len(dat_split))]
-        # p.close()
-
-        # Consolidate worker results.
-        # baseline_ests = [x.get() for x in baseline_ests]
+        # split up coverage matrices so that no worker gets much more than 100Mb.
+        dat = split_into_chunks(dat, self.mem_splits)
         baseline_ests = Parallel(n_jobs=self.n_jobs
                                  , verbose=0
-                                 , backend='loky')(map(delayed(self.run_baseline_selection_serial), dat_split))
+                                 , backend='threading')(map(delayed(self.run_baseline_selection_serial), dat))
 
 
         return [elt for lst1d in baseline_ests for elt in lst1d]
@@ -448,6 +444,9 @@ class GeneNMFOA():
 
         # sum coverage per sample, for later.
         self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
+
+        # determine number of data splits for parallel workers (100Mb per worker)
+        self.mem_splits = np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8)
 
         self.fitted = True
 
