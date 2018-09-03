@@ -119,8 +119,6 @@ class ReadsProcessor():
         :param chrom_len: int length of chromosome from reference genome
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
-        logging.info('BEGIN SAMPLE {0}: CHROMOSOME {1}'.format(self.sample_id, chrom))
-
         # grab cigar string and read starting position. Initialize coverage array.
         dat = reads_sub_df[['cigar', 'pos']].values
         cov_vec = np.zeros([chrom_len])
@@ -227,16 +225,6 @@ class ReadsProcessor():
             chrom=chrom,
             chrom_len=header_df[header_df.chr == chrom].length.iloc[0])
             for chrom in chroms)
-
-        # # run .chromosome_coverage in parallel over chromosomes.
-        # p = mp.Pool(processes=self.n_jobs))
-        #
-        # par_output = [p.apply_async(self.chromosome_coverage_read_counts
-        #                             , args=(subset_to_chrom(self.data, chrom=chrom)
-        #                                     , subset_to_chrom(gene_df, chrom=chrom)
-        #                                     , chrom
-        #                                     , header_df[header_df.chr == chrom].length.iloc[0])) for chrom in chroms]
-        # p.close()
 
         # parse output from parallel workers.
         # par_output = [x.get() for x in par_output]

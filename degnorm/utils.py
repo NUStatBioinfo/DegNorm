@@ -165,17 +165,18 @@ def parse_args():
                         , type=str
                         , default=None
                         , required=False
-                        , help='List of gene names or a text file (with extension .txt) specifying a subset'
-                               'of genes you would like to send through DegNorm pipeline.')
+                        , help='List of gene names or a text file (with extension .txt) specifying a set'
+                               'of genes for which you would like pre- and post-DegNorm coverage curve plots rendered.')
     parser.add_argument('-d'
                         , '--downsample-rate'
                         , type=int
-                        , default=None
+                        , default=1
                         , required=False
-                        , help='Gene nucleotide downsample rate. Reduce all genes longer genes down to this size.'
-                               'Resulting coverage matrix estimates (and plots) will be re-interpolated back'
+                        , help='Gene nucleotide downsample rate for systematic sampling of gene coverage curves.'
+                               'Specifies a \'take every\' interval. Larger value -> fewer bases sampled. '
+                               'Resulting coverage matrix estimates (and plots) will be re-interpolated back '
                                'to original size.'
-                               'Use to speed up computation. Reasonable size is ~3000. Default is NO downsampling.')
+                               'Use to speed up computation. Default is NO downsampling.')
     parser.add_argument( '--nmf-iter'
                         , type=int
                         , default=100
@@ -188,6 +189,12 @@ def parse_args():
                         , required=False
                         , help='Number of DegNorm iterations to perform. Default = 5.'
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
+    parser.add_argument('--minimax-coverage'
+                        , type=int
+                        , default=20
+                        , required=False
+                        , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. '
+                               'Default is 20.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
@@ -289,8 +296,8 @@ def parse_args():
         args.genes = list(set(genes))
 
     # quality control on DegNorm parameters.
-    if (args.nmf_iter <= 0) or (args.iter <= 0) or ((args.downsample_rate if args.downsample_rate else 1) <= 0):
-        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be > 0.')
+    if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
+        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be >= 1.')
 
     welcome()
 

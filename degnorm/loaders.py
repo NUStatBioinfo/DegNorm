@@ -258,12 +258,12 @@ class GeneAnnotationLoader(Loader):
         return df[['chr', 'start', 'end', 'gene']].drop_duplicates()
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
     # loader = GeneAnnotationLoader(gtf_file)
     # df = loader.get_data()
     # print(df.head(20))
 
-    sam_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'A01_R01_chr1_2.sam')
-    loader = SamLoader(sam_file)
-    print(loader.find_chromosomes())
+    # sam_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'A01_R01_chr1_2.sam')
+    # loader = SamLoader(sam_file)
+    # print(loader.find_chromosomes())

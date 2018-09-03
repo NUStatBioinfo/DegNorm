@@ -58,8 +58,7 @@ def main():
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
                                   , verbose=True
-                                  , chroms=chroms
-                                  , genes=args.genes)
+                                  , chroms=chroms)
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
@@ -73,7 +72,6 @@ def main():
     # Load .sam or .bam files, parse into coverage arrays, store them, and
     # compute gene read counts.
     # ---------------------------------------------------------------------------- #
-
     # iterate over .sam files; compute each sample's chromosomes' coverage arrays
     # and save them to .npz files.
     for idx in range(n_samples):
@@ -119,7 +117,7 @@ def main():
     genes_df = genes_df[genes_df.gene.isin(read_count_df.gene.unique())]
     exon_df = exon_df[exon_df.gene.isin(read_count_df.gene.unique())]
 
-    # re-order genes, read counts so that they're parsimonious in chromosomes + gene ordering.
+    # re-order genes, read counts so that they're parsimonious in chromosome + gene ordering.
     genes_df.sort_values(['chr', 'gene'], inplace=True)
     genes_df.reset_index(inplace=True, drop=True)
     read_count_df.sort_values(['chr', 'gene'], inplace=True)
@@ -133,12 +131,14 @@ def main():
     # Slice up genome coverage matrix for each gene according to exon positioning.
     # Run in parallel over chromosomes.
     # ---------------------------------------------------------------------------- #
-    # cov_output_dir = None if args.disregard_coverage else output_dir
-    p = mp.Pool(processes=n_jobs)
-    gene_cov_mats = [p.apply_async(gene_coverage
-                                   , args=(exon_df, chrom, cov_files, output_dir, True)) for chrom in chroms]
-    p.close()
-    gene_cov_mats = [x.get() for x in gene_cov_mats]
+    gene_cov_mats = Parallel(n_jobs=n_jobs
+                   , verbose=0
+                   , backend='threading')(delayed(gene_coverage)(
+        exon_df=exon_df,
+        chrom=chrom,
+        coverage_files=cov_files,
+        output_dir=output_dir,
+        verbose=True) for chrom in chroms)
 
     # ---------------------------------------------------------------------------- #
     # Process gene coverage matrix output prior to running NMF.
@@ -146,7 +146,7 @@ def main():
     # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
     # initialize an OrderedDict to store coverage matrices that pass DegNorm inclusion
     # criteria in order.
-    chrom_gene_cov_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
+    chrom_gene_cov_dict = {chroms[idx]: gene_cov_mats[idx] for idx in range(len(chroms))}
     gene_cov_dict = OrderedDict()
 
     # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
@@ -158,17 +158,14 @@ def main():
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
 
-        # if user-defined gene subset is specified, only add gene if in subset.
-        if args.genes:
-            if gene not in args.genes:
-                delete_idx.append(i)
-                continue
-
         # extract gene's p x Li coverage matrix.
         cov_mat = chrom_gene_cov_dict[chrom][gene]
 
         # do not add gene if there are any 100%-zero coverage samples.
-        if any(cov_mat.sum(axis=1) == 0):
+        # do not add gene if maximum coverage is < minimum coverage threshold.
+        # do not add gene if downsample rate low enough s.t. take-every > length of gene.
+        if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
+                or (cov_mat.shape[1] <= args.downsample_rate):
             delete_idx.append(i)
 
         else:
@@ -218,7 +215,7 @@ def main():
     logging.info('Executing NMF-OA over-approximation algorithm...')
     nmfoa = GeneNMFOA(iter=args.iter
                       , nmf_iter=args.nmf_iter
-                      , grid_points=args.downsample_rate
+                      , downsample_rate=args.downsample_rate
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
                         , reads_dat=read_count_df[sample_ids].values)
@@ -239,25 +236,25 @@ def main():
                        , sample_ids=sample_ids)
 
     # ---------------------------------------------------------------------------- #
-    # Generate coverage curve plots.
+    # Generate coverage curve plots if -g/--genes were specified.
     # ---------------------------------------------------------------------------- #
-    logging.info('Generating coverage curve plots.')
+    if args.genes:
+        plot_exon_df = exon_df[exon_df.gene.isin(np.intersect1d(args.genes, nmfoa.genes))]
 
-    # subset chromosomes to just those corresponding to genes run through degnorm
-    chroms = genes_df[genes_df.gene.isin(nmfoa.genes)].chr.unique().tolist()
+        if not plot_exon_df.empty:
+            logging.info('Generating {0} coverage curve plots for specified genes.'
+                         .format(len(plot_exon_df.gene.unique())))
 
-    p = mp.Pool(processes=n_jobs)
-    out = [p.apply_async(save_chrom_coverage
-                         , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
-                                 , os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
-                                 , exon_df[exon_df.chr == chrom]
-                                 , sample_ids
-                                 , [10, 6]
-                                 , os.path.join(output_dir, chrom))) for chrom in chroms]
-    p.close()
-
-    # Execute parallel work.
-    out = [x.get() for x in out]
+            out = Parallel(n_jobs=n_jobs
+                           , verbose=0
+                           , backend='threading')(delayed(save_chrom_coverage)(
+                coverage_file=os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom)),
+                estimates_file=os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom)),
+                exon_df=plot_exon_df[plot_exon_df.chr == chrom],
+                sample_ids=sample_ids,
+                figsize=[10, 6],
+                output_dir=os.path.join(output_dir, chrom))
+                for chrom in plot_exon_df.chr.unique())
 
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.
@@ -265,7 +262,6 @@ def main():
     logging.info('Rendering summary report.')
     render_report(data_dir=output_dir
                   , genenmfoa=nmfoa
-                  , gene_manifest_df=genes_df
                   , input_files=args.input_files
                   , sample_ids=sample_ids
                   , top_n_genes=5

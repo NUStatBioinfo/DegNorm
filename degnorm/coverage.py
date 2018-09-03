@@ -90,4 +90,4 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         with open(gene_cov_output_file, 'wb') as f:
             pkl.dump(gene_cov_dict, f)
 
-    return gene_cov_dict, chrom
+    return gene_cov_dict
