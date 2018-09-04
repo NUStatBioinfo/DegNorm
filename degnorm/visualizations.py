@@ -213,17 +213,26 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False, n_jobs=1):
         # determine genes in this chromosome.
         chrom_genes = exon_sub_df.gene.unique()
 
+        # intersect desired chromosome genes with those actually run through DegNorm pipeline.
+        nmfoa_genes = list()
+        for gene in chrom_genes:
+            if (ests_dat.get(gene) is not None) and (cov_dat.get(gene) is not None):
+                nmfoa_genes.append(gene)
+
+        chrom_genes = np.intersect1d(chrom_genes, nmfoa_genes)
+
         # generate plots in parallel.
-        chrom_figs = Parallel(n_jobs=n_jobs
-                   , verbose=0
-                   , backend='threading')(delayed(plot_gene_coverage)(
-            ke=ests_dat.get(gene),
-            f=cov_dat.get(gene),
-            x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values,
-            gene=gene,
-            chrom=chrom,
-            sample_ids=sample_ids,
-            figsize=figsize) for gene in chrom_genes)
+        if len(chrom_genes) > 0:
+            chrom_figs = Parallel(n_jobs=n_jobs
+                       , verbose=0
+                       , backend='threading')(delayed(plot_gene_coverage)(
+                ke=ests_dat.get(gene),
+                f=cov_dat.get(gene),
+                x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values,
+                gene=gene,
+                chrom=chrom,
+                sample_ids=sample_ids,
+                figsize=figsize) for gene in chrom_genes)
 
         # save plots if desired.
         if save:
