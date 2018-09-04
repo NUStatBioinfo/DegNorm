@@ -214,8 +214,8 @@ class ReadsProcessor():
         header_df = self.header[self.header.chr.isin(chroms)]
 
         if self.verbose:
-            logging.info('SAMPLE {0}: determining coverage and read counts for {1} chromosomes:\n'
-                         '\t{2}'.format(self.sample_id, len(chroms), ', '.join(chroms)))
+            logging.info('SAMPLE {0}: determining read coverage and read counts for {1} chromosomes.'
+                         .format(self.sample_id, len(chroms)))
 
         # distribute work with joblib.Parallel:
         par_output = Parallel(n_jobs=self.n_jobs

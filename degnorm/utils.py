@@ -121,8 +121,14 @@ def split_into_chunks(x, n):
     :return: list of lists
     """
     csize = int(np.ceil(len(x) / n))
-    return [x[(i * csize):(i * csize + csize)] for i in range(min(len(x), n))]
+    out = list()
+    
+    i = 0
+    while i*csize < len(x):
+        out.append(x[(i * csize):(i * csize + csize)])
+        i += 1
 
+    return out
 
 def parse_args():
     """
