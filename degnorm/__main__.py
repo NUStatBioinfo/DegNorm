@@ -186,8 +186,6 @@ def main():
     if len(gene_cov_dict.keys()) != read_count_df.shape[0]:
         raise ValueError('Number of coverage matrices not equal to number of genes in read count DataFrame!')
 
-    logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
-
     # save gene annotation metadata.
     exon_output_file = os.path.join(output_dir, 'gene_exon_metadata.csv')
     logging.info('Saving gene-exon metadata to {0}'.format(exon_output_file))
@@ -202,6 +200,10 @@ def main():
 
     # free up more memory: delete exon / genome annotation data
     del chrom_gene_cov_dict, gene_cov_mats
+
+    # status update.
+    logging.info('DegNorm will run on {0} genes with downsampling rate = 1 / {1}'
+                 .format(len(gene_cov_dict), args.downsample_rate))
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
@@ -239,11 +241,13 @@ def main():
     # Generate coverage curve plots if -g/--genes were specified.
     # ---------------------------------------------------------------------------- #
     if args.genes:
-        plot_exon_df = exon_df[exon_df.gene.isin(np.intersect1d(args.genes, nmfoa.genes))]
+        plot_genes = np.intersect1d(args.genes, nmfoa.genes)
 
-        if not plot_exon_df.empty:
+        if len(plot_genes) > 0:
+
+            plot_exon_df = exon_df[exon_df.gene.isin(plot_genes)]
             logging.info('Generating {0} coverage curve plots for specified genes.'
-                         .format(len(plot_exon_df.gene.unique())))
+                         .format(len(plot_genes)))
 
             out = Parallel(n_jobs=n_jobs
                            , verbose=0
@@ -259,7 +263,7 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.
     # ---------------------------------------------------------------------------- #
-    logging.info('Rendering summary report.')
+    logging.info('Rendering DegNorm summary report.')
     render_report(data_dir=output_dir
                   , genenmfoa=nmfoa
                   , input_files=args.input_files

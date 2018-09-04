@@ -141,8 +141,8 @@ def parse_args():
     parser.add_argument('--input-dir'
                         , default=None
                         , required=False
-                        , help='Input data directory. Use if not specifying individual .sam or .bam files.'
-                               'Must be used in coordination with --input-type flag to specify .sam or .bam file type.')
+                        , help='Input data directory. Use instead of, or in addition to, specifying individual '
+                               '.sam files. All .sam files in this directory will be considered input to DegNorm.')
     parser.add_argument('-g'
                         , '--genome-annotation'
                         , type=str
@@ -235,43 +235,43 @@ def parse_args():
 
     # check validity of file i/o selection.
     if args.input_dir:
-        if not args.input_type:
-            raise ValueError('If input-dir is specified, you must also specify input-type (.sam or .bam files).')
         if not os.path.isdir(args.input_dir):
             raise IOError('Cannot find input-dir {0}'.format(args.input_dir))
 
+        # scan directory for .sam files.
         input_files = list()
         for f in os.listdir(args.input_dir):
-            if f.endswith(args.input_type):
+            if f.endswith('.sam'):
                 input_files.append(os.path.join(args.input_dir, f))
 
         if not input_files:
             raise ValueError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
 
-        args.input_files = input_files
+        # if user used -i/--input-files, append contents of directory to individually specified files.
+        if args.input_files:
+            args.input_files += input_files
+
+        else:
+            args.input_files = input_files
 
     # ensure that input files are uniquely named.
     args.input_files = list(set(args.input_files))
 
     # ensure that all files can be found.
-    for f in args.input_files + [args.genome_annotation]:
+    for f in args.input_files:
         if not os.path.isfile(f):
-            raise IOError('File {0} not found.'.format(f))
+            raise IOError('Input file {0} not found.'.format(f))
+
+    if not os.path.isfile(args.genome_annotation):
+        raise IOError('Gene annotation file {0} not found.'.format(args.genome_annotation))
 
     # ensure there are at least 2 experiment files.
     if len(args.input_files) == 1:
         raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
                          'approximations from a single experiment.')
 
-    # ensure only .sam or .bam files were supplied.
-    extensions = list(set(map(lambda x: x.split('.')[-1], args.input_files)))
-    if len(extensions) > 1:
-        raise ValueError('Selected files contain multiple file extension types.'
-                         'Must supply exclusively .sam or .bam files.')
-    args.input_type = extensions[0]
-
     # if .bam files supplied, make sure samtools is installed.
-    if args.input_type == 'bam':
+    if any([x.split('.')[-1] == 'bam' for x in args.input_files]):
         samtools_avail = find_samtools()
 
     # check validity of output directory.

@@ -206,7 +206,8 @@ class ReadsProcessor():
         self.load()
 
         if self.verbose:
-            logging.info('File read successfully. Total transcript reads -- {0}'.format( self.data.shape[0]))
+            logging.info('Successfully read file {0}. Total transcript reads -- {0}'
+                         .format(self.filename, self.data.shape[0]))
 
         # determine chromosomes whose coverage will be computed.
         chroms = self.data.chr.unique()

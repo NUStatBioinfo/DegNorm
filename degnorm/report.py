@@ -41,16 +41,23 @@ def render_report(data_dir, genenmfoa, input_files,
     # ---------------------------------------------------------------------------- #
     # Render (overlayed) distributions of DI scores (one histogram per sample)
     # ---------------------------------------------------------------------------- #
+
+    # figure out max DI score density.
+    y_hist_max = np.ceil(np.max(np.apply_along_axis(lambda x: np.max(plt.histogram(x, density=True)[0])
+                                                    , axis=0
+                                                    , arr=genenmfoa.rho)))
+
     fig = plt.figure(figsize=[10, 6])
     fig.suptitle('Degradation index scores, by sample')
 
     with sns.axes_style('darkgrid'):
         if genenmfoa.rho.shape[0] > 1:
+
             for i in range(genenmfoa.p):
                 sns.distplot(genenmfoa.rho[:, i], label=sample_ids[i])
 
             plt.xlim(-0.05, 1.05)
-            plt.ylim(0., 4.)
+            plt.ylim(0., y_hist_max)
             fig.legend(loc='upper right')
 
         else:

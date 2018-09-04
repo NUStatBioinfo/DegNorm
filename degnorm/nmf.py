@@ -55,8 +55,8 @@ class GeneNMFOA():
         :return: 2-tuple (K, E) matrix factorization
         """
         u, s, v = svds(x, k=1)
-        return u[::-1], s*v[::-1]
-        # return u, s*v
+        # return u[::-1], s*v[::-1]
+        return u*s, v
 
     def get_high_coverage_idx(self, x):
         """
@@ -88,16 +88,16 @@ class GeneNMFOA():
             res = est - x
             lmbda -= res * (1 / c)
             lmbda[lmbda < 0.] = 0.
-            K, E = np.abs(self.rank_one_approx(est + lmbda))
+            K, E = self.rank_one_approx(est + lmbda)
             est = K.dot(E)
 
         if factors:
-            return K, E
+            return np.abs(K), np.abs(E)
 
         # quality control - ensure an over-approximation.
         est[est < x] = x[est < x]
 
-        return est
+        return np.abs(est)
 
     def run_nmf_serial(self, x, factors=False):
         return list(map(lambda z: self.nmf(z, factors), x))
@@ -130,7 +130,7 @@ class GeneNMFOA():
         """
         # construct block rho matrix: len(self.degnorm_genes) x p matrix of DI scores
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
-        self.rho = 1 - self.cov_sums / np.vstack(est_sums)
+        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1) # + 1 as per Bin's code.
 
         # quality control.
         self.rho[self.rho < 0] = 0.
@@ -193,64 +193,77 @@ class GeneNMFOA():
         :return: 2-tuple (numpy 2-d array, estimate of F post baseline-selection algorithm, boolean
         indicator for whether or not baseline selection algorithm exited early).
         """
-        F_bin = np.copy(F)
+
+        # ------------------------------------------------------------------------- #
+        # Overhead:
+        # 1. Downsample if desired.
+        # 2. Find high-coverage regions of the gene's transcript.
+        # 3. If not downsampling, determine whether or not there are sufficient
+        #   high-coverage nucleotide positions found in 2.
+        # 4. Subset coverage curve to (possibly downsampled) high-coverage regions.
+        # 5. Bin-up consecutive regions of high-coverage regions.
+        # ------------------------------------------------------------------------- #
         bin_me = True
         ran = False
 
         # Run systematic downsample if desired, prior to filtering out low-coverage regions.
         if self.downsample_rate > 1:
-            F_bin, downsample_idx = self.downsample_2d(F_bin
-                                                       , by_row=False)
+            _, downsample_idx = self.downsample_2d(F, by_row=False)
             bin_me = False
 
-        # STEP 2: determine if gene has sufficient coverage to execute baseline selection.
-        # If NOT downsampling, need at least min_high_coverage high-coverage points.
-        hi_cov_idx = self.get_high_coverage_idx(F_bin)
+        hi_cov_idx = self.get_high_coverage_idx(F)
         n_hi_cov = len(hi_cov_idx)
 
-        # If you ARE downsampling, use all high-coverage points, regardless of how many there are, as long
-        # as there are at least two such points.
-        if self.downsample_rate <= 1:
+        if bin_me:
             if n_hi_cov < self.min_high_coverage:
                 return F, ran
 
         else:
+            # intersect downsampled indices with high-coverage indices.
+            hi_cov_idx = np.intersect1d(downsample_idx, hi_cov_idx)
+            n_hi_cov = len(hi_cov_idx)
             if n_hi_cov <= 1:
                 return F, ran
 
-        # select high-coverage positions from coverage matrix.
-        F_bin = F_bin[:, hi_cov_idx]
-        Li = F_bin.shape[1]
+        # select high-coverage positions from (possibly downsampled) coverage matrix.
+        hi_cov_idx.sort()
+        F_start = np.copy(F)[:, hi_cov_idx]
+        F_bin = np.copy(F_start)
         ran = True
 
         # obtain initial coverage curve estimate.
         KE_bin = self.nmf(F_bin)
 
         # decide where to bin up regions of the gene.
-        # In downsampling regime, simply consider the grid points as bins.
-        if bin_me:
-            bin_vec = np.unique(np.linspace(0, Li, num=(self.bins + 1), endpoint=True, dtype=int))
-            bin_vec.sort()
-            bin_segs = [[bin_vec[i], bin_vec[i + 1]] for i in range(len(bin_vec) - 1)]
-
-        else:
-            bin_segs = [[x, x + 1] for x in hi_cov_idx]
+        # in downsampling regime, simply consider the individual sample points as individual bins.
+        bin_vec = split_into_chunks(list(range(F_bin.shape[1])), n=self.bins if bin_me else n_hi_cov)
+        bin_segs = [[x[0], x[-1] + 1] for x in bin_vec]
 
         # compute DI scores.
-        rho_vec = 1 - F_bin.sum(axis=1) / KE_bin.sum(axis=1)
+        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1) # + 1 as per Bin's code.
         rho_vec[rho_vec < 0] = 0.
         rho_vec[rho_vec >= 1] = 1. - 1e-5
 
-        # Run baseline selection algorithm while the degradation index score is still high
-        # or while there are still non-baseline regions left to trim.
+        # ------------------------------------------------------------------------- #
+        # Heavy lifting: run baseline selection iterations.
+        # Run while the degradation index score is still high.
+        # or while there are still non-baseline regions left to trim, before
+        # too-many bins have been dropped.
         # If max DI score is <= 0.1, then the baseline selection algorithm has converged; if >= min_bins
         # have been dropped, still exit baseline selection, although this is not convergence in a true sense.
+        # ------------------------------------------------------------------------- #
+
         baseline_ctr = 0
         while (len(bin_segs) >= self.min_bins) and (np.nanmax(rho_vec) > 0.1) and (baseline_ctr < self.bins):
 
-            # compute normalized residuals for each bin (if not downsampling).
-            ss_r = np.array(list(map(lambda z: self.matrix_sst(KE_bin - F_bin, z[0], z[1]), bin_segs)))
-            ss_f = np.array(list(map(lambda z: self.matrix_sst(F_bin, z[0], z[1]), bin_segs)))
+            # compute normalized residuals for each bin.
+            if bin_me:
+                ss_r = np.array(list(map(lambda z: self.matrix_sst(KE_bin - F_bin, z[0], z[1]), bin_segs)))
+                ss_f = np.array(list(map(lambda z: self.matrix_sst(F_bin, z[0], z[1]), bin_segs)))
+
+            else:
+                ss_r = np.apply_along_axis(np.linalg.norm, axis=0, arr=KE_bin - F_bin)
+                ss_f = np.apply_along_axis(np.linalg.norm, axis=0, arr=F_bin)
 
             # safely divide binned residual norms by original binned norms.
             with np.errstate(divide='ignore', invalid='ignore'):
@@ -262,26 +275,27 @@ class GeneNMFOA():
                 break
 
             # drop the bin corresponding to the bin with the maximum normalized residual.
-            del bin_segs[np.nanargmax(res_norms)]
+            drop_idx = np.nanargmax(res_norms)
+            del bin_segs[drop_idx]
 
             # collapse the remaining bins into an array of indices to keep, then subset F matrix to fewer bins.
             # Separate logic under a non-sampling (binning) regime vs. a downsampling regime.
             if bin_me:
-                keep_idx = [np.arange(bin[0], bin[1], dtype=int) for bin in bin_segs]
+                keep_idx = [np.arange(x[0], x[1], dtype=int) for x in bin_segs]
                 keep_idx = np.unique(flatten_2d(keep_idx))
+                F_bin = F_start[:, keep_idx]
 
             else:
                 keep_idx = np.array([x[0] for x in bin_segs])
-
-            F_bin = np.copy(F[:, keep_idx])
+                F_bin = F_start[:, keep_idx]
 
             # estimate coverage curves from remaining regions.
             KE_bin = self.nmf(F_bin)
 
             # safely compute degradation index scores: closer to 1 -> more degradation,
-            # although this should. not. be a problem given transcript filtering above.
+            # although division by a zero-approximation should be unlikely given low-coverage filtering above.
             with np.errstate(divide='ignore', invalid='ignore'):
-                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), KE_bin.sum(axis=1))
+                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), (KE_bin.sum(axis=1) + 1)) # + 1 as per Bin's code.
                 rho_vec[~np.isfinite(rho_vec)] = 1. - 1e-5
 
             # quality control.
@@ -299,8 +313,12 @@ class GeneNMFOA():
         with np.errstate(divide='ignore', invalid='ignore'):
             E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1)
 
+        # quality control: ensure a final over-approximation.
+        est = K.dot(E.T)
+        est[est < F] = F[est < F]
+
         # return estimate of F.
-        return K.dot(E.T), ran
+        return est, ran
 
     def run_baseline_selection_serial(self, x):
         return list(map(self.baseline_selection, x))
@@ -313,7 +331,6 @@ class GeneNMFOA():
         coverage arrays will be adjusted for sequencing-depth.
         :return: list of numpy reads coverage arrays estimates
         """
-
         # split up coverage matrices so that no worker gets much more than 100Mb.
         dat = split_into_chunks(dat, self.mem_splits)
         baseline_ests = Parallel(n_jobs=self.n_jobs
@@ -560,40 +577,40 @@ class GeneNMFOA():
         pbar.close()
 
 
-if __name__ == '__main__':
-    import pandas as pd
-
-    data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
-    genes_df = pd.read_csv(os.path.join(data_path, 'gene_exon_metadata.csv'))
-    read_count_df = pd.read_csv(os.path.join(data_path, 'read_counts.csv'))
-    X = read_count_df[list(set(read_count_df.columns) - {'chr', 'gene'})].values
-
-    with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
-        gene_cov_dict = pkl.load(f)
-
-    min_gene_length = min(list(map(lambda x: x.shape[1], list(gene_cov_dict.values()))))
-
-    print('read counts matrix shape -- {0}'.format(X.shape))
-    print('genes_df shape -- {0}'.format(genes_df.shape))
-    print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
-    print('minimum gene length: {0}'.format(min_gene_length))
-
-    print('Executing GeneNMFOA.fit_transform')
-    nmfoa = GeneNMFOA(nmf_iter=10
-                      , downsample_rate=1
-                      , n_jobs=1)
-    nmfoa.fit_transform({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
-                        , reads_dat=X[0:100, :])
-
-    with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
-        pkl.dump(nmfoa, f)
-
-    print('Saving NMF-OA results.')
-    nmfoa.save_results(gene_manifest_df=genes_df
-                       , output_dir=data_path)
-
-    print(nmfoa.rho)
-    print(nmfoa.x_adj)
+# if __name__ == '__main__':
+#     import pandas as pd
+#
+#     data_path = os.path.join(os.getenv('HOME'), 'nu/jiping_research/exploration')
+#     genes_df = pd.read_csv(os.path.join(data_path, 'gene_exon_metadata.csv'))
+#     read_count_df = pd.read_csv(os.path.join(data_path, 'read_counts.csv'))
+#     X = read_count_df[list(set(read_count_df.columns) - {'chr', 'gene'})].values
+#
+#     with open(os.path.join(data_path, 'gene_cov_dict.pkl'), 'rb') as f:
+#         gene_cov_dict = pkl.load(f)
+#
+#     min_gene_length = min(list(map(lambda x: x.shape[1], list(gene_cov_dict.values()))))
+#
+#     print('read counts matrix shape -- {0}'.format(X.shape))
+#     print('genes_df shape -- {0}'.format(genes_df.shape))
+#     print('number of coverage matrices -- {0}'.format(len(gene_cov_dict.values())))
+#     print('minimum gene length: {0}'.format(min_gene_length))
+#
+#     print('Executing GeneNMFOA.fit_transform')
+#     nmfoa = GeneNMFOA(nmf_iter=10
+#                       , downsample_rate=1
+#                       , n_jobs=1)
+#     nmfoa.fit_transform({k: v for (k, v) in list(gene_cov_dict.items())[0:100]}
+#                         , reads_dat=X[0:100, :])
+#
+#     with open(os.path.join(data_path, 'test_output.pkl'), 'wb') as f:
+#         pkl.dump(nmfoa, f)
+#
+#     print('Saving NMF-OA results.')
+#     nmfoa.save_results(gene_manifest_df=genes_df
+#                        , output_dir=data_path)
+#
+#     print(nmfoa.rho)
+#     print(nmfoa.x_adj)
 
 
 # --------------------------------------------------------------------------------------------------- #
