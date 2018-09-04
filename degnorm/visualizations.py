@@ -9,6 +9,7 @@ import numpy as np
 import os
 import pickle as pkl
 
+
 def plot_gene_coverage(ke, f, x_exon, gene
                        , chrom, sample_ids=None, **kwargs):
     """
@@ -155,6 +156,7 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False, n_jobs=1):
     string filenames of saved plots. If False (default) return list of matplotlib.figure.Figures.
     :return: See save parameter.
     """
+    plt.rcParams.update({'figure.max_open_warning': 0})
 
     # genes should be a list.
     if isinstance(genes, str):
