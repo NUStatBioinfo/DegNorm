@@ -112,13 +112,11 @@ def render_report(data_dir, genenmfoa, input_files,
     hi_di_imgs = get_gene_coverage(hi_di_genes
                                    , data_dir=data_dir
                                    , figsize=[10, 6]
-                                   , n_jobs=1
                                    , save=True)
 
     lo_di_imgs = get_gene_coverage(lo_di_genes
                                    , data_dir=data_dir
                                    , figsize=[10, 6]
-                                   , n_jobs=1
                                    , save=True)
 
     # ---------------------------------------------------------------------------- #

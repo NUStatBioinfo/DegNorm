@@ -8,8 +8,6 @@ from pandas import read_csv
 import numpy as np
 import os
 import pickle as pkl
-from joblib import Parallel, delayed
-
 
 def plot_gene_coverage(ke, f, x_exon, gene
                        , chrom, sample_ids=None, **kwargs):
@@ -221,30 +219,30 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False, n_jobs=1):
 
         chrom_genes = np.intersect1d(chrom_genes, nmfoa_genes)
 
-        # generate plots in parallel.
+        # generate plots.
         if len(chrom_genes) > 0:
-            chrom_figs = Parallel(n_jobs=n_jobs
-                       , verbose=0
-                       , backend='threading')(delayed(plot_gene_coverage)(
-                ke=ests_dat.get(gene),
-                f=cov_dat.get(gene),
-                x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values,
-                gene=gene,
-                chrom=chrom,
-                sample_ids=sample_ids,
-                figsize=figsize) for gene in chrom_genes)
+            chrom_figs = list()
 
-        # save plots if desired.
-        if save:
-            for i in range(len(chrom_genes)):
-                fig = chrom_figs[i]
-                fig_path = os.path.join(data_dir, chrom, '{0}_coverage.png'.format(chrom_genes[i]))
-                fig.savefig(fig_path
-                            , dpi=150)
+            for gene in chrom_genes:
+                chrom_figs.append(plot_gene_coverage(ests_dat.get(gene)
+                                                     , f=cov_dat.get(gene)
+                                                     , x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values
+                                                     , gene=gene
+                                                     , chrom=chrom
+                                                     , sample_ids=sample_ids
+                                                     , figsize=figsize))
 
-                figs.append(fig_path)
+            # save plots if desired.
+            if save:
+                for i in range(len(chrom_genes)):
+                    fig = chrom_figs[i]
+                    fig_path = os.path.join(data_dir, chrom, '{0}_coverage.png'.format(chrom_genes[i]))
+                    fig.savefig(fig_path
+                                , dpi=150)
 
-        else:
-            figs.extend(chrom_figs)
+                    figs.append(fig_path)
+
+            else:
+                figs.extend(chrom_figs)
 
     return figs
