@@ -1,5 +1,5 @@
 from degnorm.reads import *
-from degnorm.coverage_counts import *
+from degnorm.coverage import *
 from degnorm.gene_processing import *
 from degnorm.visualizations import *
 from degnorm.nmf import *
@@ -21,7 +21,7 @@ def main():
     sample_ids = list()
     chroms = list()
     cov_files = dict()
-    reads_dict = dict()
+    read_count_dict = dict()
 
     output_dir = os.path.join(args.output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
     if os.path.isdir(output_dir):
@@ -31,35 +31,24 @@ def main():
     os.makedirs(output_dir)
 
     # ---------------------------------------------------------------------------- #
-    # Load .sam or .bam files; parse into coverage arrays and store them.
+    # Overhead: if supplied with .bam files, convert to .sam;
+    # further, determine intersection of chromosomes across samples.
     # ---------------------------------------------------------------------------- #
-
-    # iterate over .sam files; compute each sample's chromosomes' coverage arrays
-    # and save them to .npz files.
     for idx in range(n_samples):
-        logging.info('Loading RNA-seq data file {0} / {1}'.format(idx + 1, n_samples))
         sam_file = args.input_files[idx]
 
-        # if actually working with .bam files, convert them to .sam.
+        # if file actually .bam, convert to .sam.
         if sam_file.endswith('.bam'):
-            logging.info('Converting {0} into .sam file format...'
+            logging.info('Converting input file {0} into .sam file format...'
                          .format(sam_file))
-            sam_file = bam_to_sam(sam_file)
+            args.input_files[idx] = bam_to_sam(sam_file)
 
-        reader = ReadsCoverageProcessor(sam_file=sam_file
-                                        , n_jobs=n_jobs
-                                        , tmp_dir=output_dir
-                                        , verbose=True)
-        sample_id = reader.sample_id
-        sample_ids.append(sample_id)
-        cov_files[sample_id] = reader.coverage()
-        reads_dict[sample_id] = reader.data
+        # Take intersection of chromosomes over samples.
+        if idx == 0:
+            chroms = SamLoader(args.input_files[idx]).find_chromosomes()
 
-        chroms += [os.path.basename(f).split('.npz')[0].split('_')[-1] for f in cov_files[sample_id]]
-
-    chroms = list(set(chroms))
-    logging.info('Obtained reads coverage for {0} chromosomes:\n'
-                 '\t{1}'.format(len(chroms), ', '.join(chroms)))
+        else:
+            chroms = np.intersect1d(chroms, SamLoader(args.input_files[idx]).find_chromosomes()).tolist()
 
     # ---------------------------------------------------------------------------- #
     # Load .gtf or .gff files and run processing pipeline.
@@ -69,121 +58,173 @@ def main():
     gap = GeneAnnotationProcessor(args.genome_annotation
                                   , n_jobs=n_jobs
                                   , verbose=True
-                                  , chroms=chroms
-                                  , genes=args.genes)
+                                  , chroms=chroms)
     exon_df = gap.run()
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
+    # take intersection of chromosomes available in genome annotation file and those in the reads data,
+    # if for some reason annotation file only contains subset.
+    chroms = np.intersect1d(chroms, genes_df.chr.unique()).tolist()
+    logging.info('Found {0} chromosomes in intersection of all experiments and gene annotation data:\n'
+                 '\t{1}'.format(len(chroms), ', '.join(chroms)))
+
     # ---------------------------------------------------------------------------- #
-    # Obtain read count matrix: X, an n (genes) x p (samples) matrix
-    # Run in parallel over samples.
+    # Load .sam or .bam files, parse into coverage arrays, store them, and
+    # compute gene read counts.
     # ---------------------------------------------------------------------------- #
-    logging.info('Obtaining read count matrix...')
+    # iterate over .sam files; compute each sample's chromosomes' coverage arrays
+    # and save them to .npz files.
+    for idx in range(n_samples):
+        logging.info('Loading RNA-seq data file {0} / {1}'.format(idx + 1, n_samples))
+        sam_file = args.input_files[idx]
 
-    p = mp.Pool(processes=n_jobs)
-    read_count_vecs = [p.apply_async(read_counts
-                                     , args=(reads_dict[sample_id], genes_df)) for sample_id in sample_ids]
-    p.close()
-    read_count_vecs = [x.get() for x in read_count_vecs]
+        reader = ReadsProcessor(sam_file=sam_file
+                                , chroms=chroms
+                                , n_jobs=n_jobs
+                                , tmp_dir=output_dir
+                                , verbose=True)
 
-    if n_samples > 1:
-        X = np.vstack(read_count_vecs).T
-    else:
-        X = np.reshape(read_count_vecs[0], (-1, 1))
+        sample_id = reader.sample_id
+        sample_ids.append(sample_id)
+        cov_files[sample_id], read_count_dict[sample_id] = reader.coverage_read_counts(genes_df)
 
-    logging.info('Successfully obtained read count matrix -- shape: {0}'.format(X.shape))
+    logging.info('Successfully processed chromosome read coverage and gene read counts for all {0} experiments'
+                 .format(len(sample_ids)))
 
-    # free up some memory: delete reads data
-    del reads_dict, read_count_vecs, reader
-    
+    del reader
+    gc.collect()
+
+    # ---------------------------------------------------------------------------- #
+    # Merge per-sample gene read count matrices:
+    # obtain read count DataFrame containing X, an n (genes) x p (samples) matrix.
+    # ---------------------------------------------------------------------------- #
+
+    read_count_df = read_count_dict[sample_ids[0]]
+    read_count_df.rename(columns={'read_count': sample_ids[0]}, inplace=True)
+
+    for sample_id in sample_ids[1:]:
+        read_count_df = pd.merge(read_count_df
+                                 , read_count_dict[sample_id].rename(columns={'read_count': sample_id})
+                                 , how='inner'
+                                 , on=['chr', 'gene'])
+
+    logging.info('Successfully merged sample read counts -- shape: {0}'.format(read_count_df.shape))
+
+    del read_count_dict
+    gc.collect()
+
+    # subset genes, exons to genes in intersection of experiments.
+    genes_df = genes_df[genes_df.gene.isin(read_count_df.gene.unique())]
+    exon_df = exon_df[exon_df.gene.isin(read_count_df.gene.unique())]
+
+    # re-order genes, read counts so that they're parsimonious in chromosome + gene ordering.
+    genes_df.sort_values(['chr', 'gene'], inplace=True)
+    genes_df.reset_index(inplace=True, drop=True)
+    read_count_df.sort_values(['chr', 'gene'], inplace=True)
+    read_count_df.reset_index(inplace=True, drop=True)
+
+    # quality control.
+    if genes_df.shape[0] != read_count_df.shape[0]:
+        raise ValueError('Genes DataFrame and read counts DataFrame do not have same number of rows!')
+
     # ---------------------------------------------------------------------------- #
     # Slice up genome coverage matrix for each gene according to exon positioning.
     # Run in parallel over chromosomes.
     # ---------------------------------------------------------------------------- #
-    # cov_output_dir = None if args.disregard_coverage else output_dir
-    p = mp.Pool(processes=n_jobs)
-    gene_cov_mats = [p.apply_async(gene_coverage
-                                   , args=(exon_df, chrom, cov_files, output_dir, True)) for chrom in chroms]
-    p.close()
-    gene_cov_mats = [x.get() for x in gene_cov_mats]
+    gene_cov_mats = Parallel(n_jobs=n_jobs
+                   , verbose=0
+                   , backend='threading')(delayed(gene_coverage)(
+        exon_df=exon_df,
+        chrom=chrom,
+        coverage_files=cov_files,
+        output_dir=output_dir,
+        verbose=True) for chrom in chroms)
 
     # ---------------------------------------------------------------------------- #
     # Process gene coverage matrix output prior to running NMF.
     # ---------------------------------------------------------------------------- #
     # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}, and
-    # initialized an OrderedDict to store
-    chrom_gene_cov_dict = {gene_cov_mats[i][1]: gene_cov_mats[i][0] for i in range(len(gene_cov_mats))}
+    # initialize an OrderedDict to store coverage matrices that pass DegNorm inclusion
+    # criteria in order.
+    chrom_gene_cov_dict = {chroms[idx]: gene_cov_mats[idx] for idx in range(len(chroms))}
     gene_cov_dict = OrderedDict()
 
     # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
     # which transcript regions to filter out prior to running DegNorm.
-    logging.info('Determining genes include in DegNorm coverage curve approximation.')
+    logging.info('Determining genes to include in DegNorm coverage curve approximation.')
     delete_idx = list()
+
     for i in range(genes_df.shape[0]):
         chrom = genes_df.chr.iloc[i]
         gene = genes_df.gene.iloc[i]
-
-        # if user-defined gene subset is specified, only add gene if in subset.
-        if args.genes:
-            if gene not in args.genes:
-                delete_idx.append(i)
-                continue
 
         # extract gene's p x Li coverage matrix.
         cov_mat = chrom_gene_cov_dict[chrom][gene]
 
         # do not add gene if there are any 100%-zero coverage samples.
-        if any(cov_mat.sum(axis=1) == 0):
+        # do not add gene if maximum coverage is < minimum coverage threshold.
+        # do not add gene if downsample rate low enough s.t. take-every > length of gene.
+        if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
+                or (cov_mat.shape[1] <= args.downsample_rate):
             delete_idx.append(i)
 
         else:
             gene_cov_dict[gene] = cov_mat
 
     if delete_idx:
-        X = np.delete(X
-                      , obj=delete_idx
-                      , axis=0)
+        read_count_df = read_count_df.drop(delete_idx
+                                           , axis=0).reset_index(drop=True)
         genes_df = genes_df.drop(delete_idx
                                  , axis=0).reset_index(drop=True)
 
     # quality control.
-    if (X.shape[0] == 0) or (genes_df.empty) or (len(gene_cov_dict) == 0):
+    if (read_count_df.shape[0] == 0) or (genes_df.empty) or (len(gene_cov_dict) == 0):
         raise ValueError('No genes available to run through DegNorm!\n'
                          'Check that your requested genes are in genome annotation file.')
 
-    logging.info('DegNorm will run on {0} genes.'.format(len(gene_cov_dict)))
-
     # check that read counts and coverage matrices contain data for same number of genes.
-    if len(gene_cov_dict.keys()) != X.shape[0]:
-        raise ValueError('Number of coverage matrices not equal to number of genes in read count matrix!')
+    if len(gene_cov_dict.keys()) != read_count_df.shape[0]:
+        raise ValueError('Number of coverage matrices not equal to number of genes in read count DataFrame!')
 
     # save gene annotation metadata.
-    logging.info('Saving gene-exon metadata.')
     exon_output_file = os.path.join(output_dir, 'gene_exon_metadata.csv')
+    logging.info('Saving gene-exon metadata to {0}'.format(exon_output_file))
     exon_df.to_csv(exon_output_file
-                    , index=False)
+                   , index=False)
 
     # save read counts.
-    logging.info('Saving original read counts.')
-    np.savetxt(os.path.join(output_dir, 'read_counts.csv')
-               , X=X
-               , header=','.join(sample_ids)
-               , comments=''
-               , delimiter=',')
+    read_count_file = os.path.join(output_dir, 'read_counts.csv')
+    logging.info('Saving original read counts to {0}'.format(read_count_file))
+    read_count_df.to_csv(read_count_file
+                         , index=False)
 
     # free up more memory: delete exon / genome annotation data
     del chrom_gene_cov_dict, gene_cov_mats
 
+    # status update.
+    logging.info('DegNorm will run on {0} genes with downsampling rate = 1 / {1}'
+                 .format(len(gene_cov_dict), args.downsample_rate))
+
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
+
+    # joblib overhead: specify temp folder if not in environment.
+    joblib_folder = os.environ.get('JOBLIB_TEMP_FOLDER')
+    if not joblib_folder:
+        os.environ['JOBLIB_TEMP_FOLDER'] = output_dir
+
     logging.info('Executing NMF-OA over-approximation algorithm...')
     nmfoa = GeneNMFOA(iter=args.iter
                       , nmf_iter=args.nmf_iter
-                      , grid_points=args.downsample_rate
+                      , downsample_rate=args.downsample_rate
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
-                        , reads_dat=X)
+                        , reads_dat=read_count_df[sample_ids].values)
+
+    # restore original environment.
+    if not joblib_folder:
+        del os.environ['JOBLIB_TEMP_FOLDER']
 
     # ---------------------------------------------------------------------------- #
     # Save results.
@@ -197,33 +238,34 @@ def main():
                        , sample_ids=sample_ids)
 
     # ---------------------------------------------------------------------------- #
-    # Generate coverage curve plots.
+    # Generate coverage curve plots if -g/--genes were specified.
     # ---------------------------------------------------------------------------- #
-    logging.info('Generating coverage curve plots.')
+    if args.genes:
+        plot_genes = np.intersect1d(args.genes, nmfoa.genes)
 
-    # subset chromosomes to just those corresponding to genes run through degnorm
-    chroms = genes_df[genes_df.gene.isin(nmfoa.genes)].chr.unique().tolist()
+        if len(plot_genes) > 0:
 
-    p = mp.Pool(processes=n_jobs)
-    out = [p.apply_async(save_chrom_coverage
-                         , args=(os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
-                                 , os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
-                                 , exon_df[exon_df.chr == chrom]
-                                 , sample_ids
-                                 , [10, 6]
-                                 , os.path.join(output_dir, chrom))) for chrom in chroms]
-    p.close()
+            plot_exon_df = exon_df[exon_df.gene.isin(plot_genes)]
+            logging.info('Generating {0} coverage curve plots for specified genes.'
+                         .format(len(plot_genes)))
 
-    # Execute parallel work.
-    out = [x.get() for x in out]
+            out = Parallel(n_jobs=n_jobs
+                           , verbose=0
+                           , backend='threading')(delayed(save_chrom_coverage)(
+                coverage_file=os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom)),
+                estimates_file=os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom)),
+                exon_df=plot_exon_df[plot_exon_df.chr == chrom],
+                sample_ids=sample_ids,
+                figsize=[10, 6],
+                output_dir=os.path.join(output_dir, chrom))
+                for chrom in plot_exon_df.chr.unique())
 
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.
     # ---------------------------------------------------------------------------- #
-    logging.info('Rendering summary report.')
+    logging.info('Rendering DegNorm summary report.')
     render_report(data_dir=output_dir
                   , genenmfoa=nmfoa
-                  , gene_manifest_df=genes_df
                   , input_files=args.input_files
                   , sample_ids=sample_ids
                   , top_n_genes=5

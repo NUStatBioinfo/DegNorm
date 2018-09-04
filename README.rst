@@ -2,6 +2,12 @@
 DegNorm: Normalizing RNA degradation in RNA-Seq experiments
 ===========================================================
 
+.. image:: degnorm_logo.png
+   :height: 150px
+   :width: 500px
+   :scale: 50 %
+   :align: left
+
 RNA-Seq transcriptome sequencing experiments often undergo gene- *and* sample-specific transcript degradation, thus
 potentially biasing results in standard RNA-Seq analysis (e.g. differential expression analysis). The DegNorm pipeline
 uses non-negative matrix factorization with an over-approximation constraint to normalized degraded gene transcript
@@ -29,7 +35,7 @@ the start and end position of every gene. The read counts matrix is ``n x p`` (2
 4. **Break up chromosome coverage matrices into gene coverage matrices**. Matrices are saved to pickle file (a serialized
 data format for Python), one per chromosome.
 
-5. Fit a **non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
+5. **Fit a non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
 
 6. Save adjusted read counts, gene- and experiment-specific *degradation index scores*, normalized coverage
 matrices, and coverage visualizations to an output directory.
@@ -40,8 +46,7 @@ DegNorm pipeline output file structure
 
 .. code-block:: text
 
-    DegNorm_[mmddYY_HHMMSS] (pipeline output directory)
-        |
+    DegNorm_<mmddYY_HHMMSS> (pipeline output directory)
         |
         |-- read_counts.csv: genes x samples matrix of raw sample read counts.
         |-- adjusted_read_counts.csv: genes x samples matrix of DI-score adjusted read counts.
@@ -51,8 +56,7 @@ DegNorm pipeline output file structure
         |-- [<chromosome name> directory]
         | |-- coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: coverage matrix} data.
         | |-- estimated_coverage_matrices_<chromosome name>.pkl: serialized dictionary of {gene: estimated coverage matrix} data.
-        | |-- <gene ID>_coverage.png: gene-specific plot of before- and after-DegNorm coverage curves.
-        | |-- <more gene IDs>_coverage.png
+        | |-- <gene ID>_coverage.pngs: gene-specific plots of pre- and post-DegNorm coverage curves, for genes specified with ``--genes`` flag.
         |
         |-- [report]
         | |-- degnorm_summary.html
@@ -66,8 +70,8 @@ The primary entry point into the DegNorm software is the ``degnorm`` console scr
 
 ``degnorm`` flags and details are outlined with the ``--help`` flag.
 
-
-**Minimal requirements**
+Minimal requirements
+####################
 
 1. You must pass at least 2 ``.sam`` files (or ``.bam`` files, if you have ``samtools`` installed) with the ``-i/--input`` flag, or the location of a directory containing at least 2
 .sam or .bam files with the ``--input-dir`` flag. The ``--input-dir`` flag must contain all files of either .sam or .bam extension. Also, DegNorm will not normalize the read counts/coverage of a single RNA-Seq experiment.
@@ -76,12 +80,30 @@ The primary entry point into the DegNorm software is the ``degnorm`` console scr
 ``-g/--genome-annotation`` flag.
 
 
-An example DegNorm pipeline run using the .sam files found in the directory ``../sam_files``:
+Testing
+#######
+
+An example DegNorm pipeline run using the .sam files found in the directory ``../sam_files`` that will
+plot the coverage curves for all genes in ``../plot_genes.txt``:
 
 .. code-block:: bash
 
-    $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --genes ../genes_test.txt -c 6
+    $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --genes ../plot_genes.txt -c 6
 
+
+``get_gene_coverage``
+#####################
+
+Should you need coverage plots in addition to the ones generated during a DegNorm pipeline run, ``get_gene_coverage``
+leverages the coverage matrices (original and degradation index-normalized) saved in a DegNorm output directory to
+make new plots.
+
+.. code-block:: python
+
+    from degnorm.visualizations import get_gene_coverage
+
+    plots = get_gene_coverage('SDF4', data_dir='./DegNorm_09022018_214247', save=False)
+    plots[0].show()
 
 =======
 Testing

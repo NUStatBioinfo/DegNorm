@@ -6,8 +6,7 @@ from degnorm.loaders import GeneAnnotationLoader
 
 class GeneAnnotationProcessor():
 
-    def __init__(self, annotation_file, n_jobs=max_cpu(),
-                 genes=None, chroms=None, verbose=True):
+    def __init__(self, annotation_file, n_jobs=max_cpu(), chroms=None, verbose=True):
         """
         Genome coverage reader for a single RNA-seq experiment.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
@@ -16,14 +15,12 @@ class GeneAnnotationProcessor():
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1
         :param verbose: bool indicator should progress be written to logger?
-        :param genes: str or list of str gene names - subset gene annotation data to specified genes
         :param chroms: str or list of str chromosome names - subset gene annotation data to
          specified chromosomes
         """
         self.filename = annotation_file
         self.n_jobs = n_jobs
         self.verbose = verbose
-        self.genes = genes
         self.chroms = chroms
         self.loader = None
 
@@ -31,10 +28,6 @@ class GeneAnnotationProcessor():
         if self.chroms:
             if not isinstance(self.chroms, list):
                 self.chroms = [self.chroms]
-
-        if self.genes:
-            if not isinstance(self.genes, list):
-                self.genes = [self.genes]
 
     def load(self):
         """
@@ -49,13 +42,6 @@ class GeneAnnotationProcessor():
                              '\t{1}'.format(len(self.chroms), ', '.join(self.chroms)))
 
             exon_df = subset_to_chrom(exon_df, chrom=self.chroms)
-
-        if self.genes:
-            if self.verbose:
-                logging.info('Subsetting exon data to {0} genes.'
-                             .format(len(self.genes)))
-
-            exon_df = exon_df[exon_df.gene.isin(self.genes)]
 
         if self.verbose:
             logging.info('Successfully loaded exon data -- shape: {0}'.format(exon_df.shape))
@@ -159,8 +145,8 @@ class GeneAnnotationProcessor():
         # Iterating over chromosomes in parallel.
         p = mp.Pool(processes=self.n_jobs)
         rm_exons = [p.apply_async(self.find_overlapping_exons, args=(exon_df, gene_df, chrom)) for chrom in chroms]
-        rm_exons = [x.get() for x in rm_exons]
         p.close()
+        rm_exons = [x.get() for x in rm_exons]
 
         # collapse 2-d list of lists into 1-d list
         rm_exons = list(itertools.chain.from_iterable(rm_exons))
@@ -181,7 +167,7 @@ class GeneAnnotationProcessor():
         outlining exons ready to use for reads coverage computations
         """
         if self.verbose:
-            logging.info('Loading genome annotation file {0} into pandas.DataFrame'.format(self.filename))
+            logging.info('Reading genome annotation file {0}.'.format(self.filename))
 
         exon_df = self.load()
 

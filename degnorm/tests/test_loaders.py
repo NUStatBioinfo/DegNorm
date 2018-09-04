@@ -45,7 +45,7 @@ def test_sam_data(sam_loader):
 @pytest.fixture
 def gene_loader():
     print('TESTING GeneAnnotationLoader')
-    gtf_file = os.path.join(THIS_DIR, 'data', 'chr1.gtf')
+    gtf_file = os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
     gtf_loader = GeneAnnotationLoader(gtf_file)
     return gtf_loader.get_data()
 

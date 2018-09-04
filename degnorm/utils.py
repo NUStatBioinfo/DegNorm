@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 import argparse
 import pkg_resources
+import gc
 
 
 logging.basicConfig(stream=sys.stdout
@@ -120,8 +121,14 @@ def split_into_chunks(x, n):
     :return: list of lists
     """
     csize = int(np.ceil(len(x) / n))
-    return [x[(i * csize):(i * csize + csize)] for i in range(min(len(x), n))]
+    out = list()
+    
+    i = 0
+    while i*csize < len(x):
+        out.append(x[(i * csize):(i * csize + csize)])
+        i += 1
 
+    return out
 
 def parse_args():
     """
@@ -140,8 +147,8 @@ def parse_args():
     parser.add_argument('--input-dir'
                         , default=None
                         , required=False
-                        , help='Input data directory. Use if not specifying individual .sam or .bam files.'
-                               'Must be used in coordination with --input-type flag to specify .sam or .bam file type.')
+                        , help='Input data directory. Use instead of, or in addition to, specifying individual '
+                               '.sam files. All .sam files in this directory will be considered input to DegNorm.')
     parser.add_argument('-g'
                         , '--genome-annotation'
                         , type=str
@@ -164,17 +171,18 @@ def parse_args():
                         , type=str
                         , default=None
                         , required=False
-                        , help='List of gene names or a text file (with extension .txt) specifying a subset'
-                               'of genes you would like to send through DegNorm pipeline.')
+                        , help='List of gene names or a text file (with extension .txt) specifying a set'
+                               'of genes for which you would like pre- and post-DegNorm coverage curve plots rendered.')
     parser.add_argument('-d'
                         , '--downsample-rate'
                         , type=int
-                        , default=None
+                        , default=1
                         , required=False
-                        , help='Gene nucleotide downsample rate. Reduce all genes longer genes down to this size.'
-                               'Resulting coverage matrix estimates (and plots) will be re-interpolated back'
+                        , help='Gene nucleotide downsample rate for systematic sampling of gene coverage curves.'
+                               'Specifies a \'take every\' interval. Larger value -> fewer bases sampled. '
+                               'Resulting coverage matrix estimates (and plots) will be re-interpolated back '
                                'to original size.'
-                               'Use to speed up computation. Reasonable size is ~3000. Default is NO downsampling.')
+                               'Use to speed up computation. Default is NO downsampling.')
     parser.add_argument( '--nmf-iter'
                         , type=int
                         , default=100
@@ -187,6 +195,12 @@ def parse_args():
                         , required=False
                         , help='Number of DegNorm iterations to perform. Default = 5.'
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
+    parser.add_argument('--minimax-coverage'
+                        , type=int
+                        , default=20
+                        , required=False
+                        , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. '
+                               'Default is 20.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
@@ -227,43 +241,43 @@ def parse_args():
 
     # check validity of file i/o selection.
     if args.input_dir:
-        if not args.input_type:
-            raise ValueError('If input-dir is specified, you must also specify input-type (.sam or .bam files).')
         if not os.path.isdir(args.input_dir):
             raise IOError('Cannot find input-dir {0}'.format(args.input_dir))
 
+        # scan directory for .sam files.
         input_files = list()
         for f in os.listdir(args.input_dir):
-            if f.endswith(args.input_type):
+            if f.endswith('.sam'):
                 input_files.append(os.path.join(args.input_dir, f))
 
         if not input_files:
             raise ValueError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
 
-        args.input_files = input_files
+        # if user used -i/--input-files, append contents of directory to individually specified files.
+        if args.input_files:
+            args.input_files += input_files
+
+        else:
+            args.input_files = input_files
 
     # ensure that input files are uniquely named.
     args.input_files = list(set(args.input_files))
 
     # ensure that all files can be found.
-    for f in args.input_files + [args.genome_annotation]:
+    for f in args.input_files:
         if not os.path.isfile(f):
-            raise IOError('File {0} not found.'.format(f))
+            raise IOError('Input file {0} not found.'.format(f))
+
+    if not os.path.isfile(args.genome_annotation):
+        raise IOError('Gene annotation file {0} not found.'.format(args.genome_annotation))
 
     # ensure there are at least 2 experiment files.
     if len(args.input_files) == 1:
         raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
                          'approximations from a single experiment.')
 
-    # ensure only .sam or .bam files were supplied.
-    extensions = list(set(map(lambda x: x.split('.')[-1], args.input_files)))
-    if len(extensions) > 1:
-        raise ValueError('Selected files contain multiple file extension types.'
-                         'Must supply exclusively .sam or .bam files.')
-    args.input_type = extensions[0]
-
     # if .bam files supplied, make sure samtools is installed.
-    if args.input_type == 'bam':
+    if any([x.split('.')[-1] == 'bam' for x in args.input_files]):
         samtools_avail = find_samtools()
 
     # check validity of output directory.
@@ -288,8 +302,8 @@ def parse_args():
         args.genes = list(set(genes))
 
     # quality control on DegNorm parameters.
-    if (args.nmf_iter <= 0) or (args.iter <= 0) or ((args.downsample_rate if args.downsample_rate else 1) <= 0):
-        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be > 0.')
+    if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
+        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be >= 1.')
 
     welcome()
 
