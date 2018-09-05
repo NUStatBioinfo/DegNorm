@@ -20,7 +20,6 @@ def test_loader_file_dne_error():
 # ----------------------------------------------------- #
 @pytest.fixture
 def sam_loader():
-    print('TESTING SamLoader')
     sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
     sam_loader = SamLoader(sam_file)
     return sam_loader.get_data()

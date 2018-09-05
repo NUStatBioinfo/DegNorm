@@ -53,19 +53,19 @@ def plot_gene_coverage(ke, f, x_exon, gene
 
     with sns.axes_style('darkgrid'):
 
-        # upper-left subplot: estimated coverage curves
+        # upper-left subplot: original coverage curves
         ax1 = plt.subplot(gs[0])
-        for i in range(ke.shape[0]):
-            ax1.plot(ke[i, :], label=sample_ids[i])
+        for i in range(f.shape[0]):
+            ax1.plot(f[i, :], label=sample_ids[i])
 
-        ax1.set_title('Normalized')
+        ax1.set_title('Original')
 
-        # upper-right subplot: estimated coverage curves
+        # upper-right subplot: DegNorm-estimated coverage curves
         ax2 = plt.subplot(gs[1])
         for i in range(ke.shape[0]):
-            ax2.plot(f[i, :], label=sample_ids[i])
+            ax2.plot(ke[i, :], label=sample_ids[i])
 
-        ax2.set_title('Original')
+        ax2.set_title('Normalized')
         handles, labels = ax2.get_legend_handles_labels()
 
         for ax in [ax1, ax2]:

@@ -88,7 +88,7 @@ plot the coverage curves for all genes in ``../plot_genes.txt``:
 
 .. code-block:: bash
 
-    $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --genes ../plot_genes.txt -c 6
+    $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --plot-genes ../plot_genes.txt -c 6
 
 
 ``get_gene_coverage``
