@@ -240,14 +240,13 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Generate coverage curve plots if -g/--genes were specified.
     # ---------------------------------------------------------------------------- #
-    if args.genes:
-        plot_genes = np.intersect1d(args.genes, nmfoa.genes)
+    if args.plot_genes:
+        plot_genes = np.intersect1d(args.plot_genes, nmfoa.genes)
 
         if len(plot_genes) > 0:
 
             plot_exon_df = exon_df[exon_df.gene.isin(plot_genes)]
-            logging.info('Generating {0} coverage curve plots for specified genes.'
-                         .format(len(plot_genes)))
+            logging.info('Generating coverage curve plots for specified genes.')
 
             out = Parallel(n_jobs=n_jobs
                            , verbose=0

@@ -1,5 +1,7 @@
 import pkg_resources
+import subprocess
 from degnorm.visualizations import *
+from degnorm.utils import find_software
 from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
 
@@ -144,5 +146,14 @@ def render_report(data_dir, genenmfoa, input_files,
 
     # render report and save.
     html_out = template.render(template_vars)
-    with open(os.path.join(report_dir, 'degnorm_summary.html'), 'w') as f:
+    html_filename = os.path.join(report_dir, 'degnorm_summary.html')
+    with open(html_filename, 'w') as f:
         f.write(html_out)
+
+    # if pandoc is installed and available in path, swap out .html report for a .pdf
+    pandoc_avail = find_software('pandoc')
+    if pandoc_avail:
+        out = subprocess.run(['pandoc {0} -o {1}'.format(html_filename, html_filename.replace('.html', '.pdf'))]
+                             , shell=True)
+
+        os.remove(html_filename)

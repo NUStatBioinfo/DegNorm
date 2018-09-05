@@ -66,19 +66,16 @@ def flatten_2d(lst2d):
     return arr1d
 
 
-def find_samtools():
+def find_software(software='samtools'):
     """
-    Determine if samtools is installed. Note that samtools is only available
-    for Linux and Mac OS: https://github.com/samtools/samtools/blob/develop/INSTALL
+    Determine if a software is in a $PATH.
 
-    :return: True if samtools is installed.
+    :return: True if software is in path, otherwise False
     """
-    out = subprocess.run(['which samtools']
+    out = subprocess.run(['which {0}'.format(software)]
                          , shell=True)
     if out.returncode != 0:
-        raise EnvironmentError('samtools is not installed or is not in your PATH.'
-                               'samtools is required to convert .bam -> .sam files'
-                               'Either use .sam files or install samtools.')
+        return False
 
     return True
 
@@ -130,6 +127,7 @@ def split_into_chunks(x, n):
 
     return out
 
+
 def parse_args():
     """
     Obtain degnorm CLI parameters.
@@ -166,7 +164,7 @@ def parse_args():
                         , help='Output directory.'
                                'A directory for storing DegNorm analyses, visualizations, '
                                'and data will be created. Default to the current working directory.')
-    parser.add_argument('--genes'
+    parser.add_argument('--plot-genes'
                         , nargs='+'
                         , type=str
                         , default=None
@@ -278,28 +276,35 @@ def parse_args():
 
     # if .bam files supplied, make sure samtools is installed.
     if any([x.split('.')[-1] == 'bam' for x in args.input_files]):
-        samtools_avail = find_samtools()
+        samtools_avail = find_software('samtools')
+
+        # Note that samtools is only available for Linux and Mac OS:
+        # https://github.com/samtools/samtools/blob/develop/INSTALL
+        if not samtools_avail:
+            raise EnvironmentError('samtools is not installed or is not in your PATH.'
+                                   'samtools is required to convert .bam -> .sam files'
+                                   'Either use .sam files or install samtools.')
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
         raise IOError('Cannot find output-dir {0}'.format(args.output_dir))
 
     # if --genes is specified, parse input in case file(s) are given.
-    if args.genes:
+    if args.plot_genes:
         genes = list()
 
         # check for text files that will hold names of genes.
-        gene_files = list(filter(lambda x: x.endswith('.txt'), args.genes))
+        gene_files = list(filter(lambda x: x.endswith('.txt'), args.plot_genes))
         for gene_file in gene_files:
             with open(gene_file, 'r') as f:
                 genes_in_file = f.readlines()
                 genes += [x.strip() for x in genes_in_file]
 
         # include any individually-specified genes.
-        genes += list(set(args.genes) - set(gene_files))
+        genes += list(set(args.plot_genes) - set(gene_files))
 
         # replace input with parsed list of unique genes.
-        args.genes = list(set(genes))
+        args.plot_genes = list(set(genes))
 
     # quality control on DegNorm parameters.
     if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
