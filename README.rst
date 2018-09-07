@@ -80,9 +80,6 @@ Minimal requirements
 ``-g/--genome-annotation`` flag.
 
 
-Testing
-#######
-
 An example DegNorm pipeline run using the .sam files found in the directory ``../sam_files`` that will
 plot the coverage curves for all genes in ``../plot_genes.txt``:
 
@@ -105,9 +102,16 @@ make new plots.
     plots = get_gene_coverage('SDF4', data_dir='./DegNorm_09022018_214247', save=False)
     plots[0].show()
 
-=======
+``--warm-start-dir``
+####################
+The DegNorm preprocessing (steps 1. through 4.) is heavy, and time consuming. Should you want to run DegNorm with
+the same input files but with a a different parameterization, there is no need to recompute gene coverage matrices.
+Simply use the ``--warm-start-dir`` flag to specify the output directory of a prior DegNorm run, and the pipeline
+will copy and load the previously-determined coverage matrices, original read counts, and parsed exon/gene annotation
+data for your new run.
+
 Testing
-=======
+#######
 
 Check the successful installation of degnorm on your machine with the ``degnorm_test`` command. This runs all unit tests
 and a minimal DegNorm pipeline run on a small batch of sample data.

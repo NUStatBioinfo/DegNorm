@@ -147,6 +147,13 @@ def parse_args():
                         , required=False
                         , help='Input data directory. Use instead of, or in addition to, specifying individual '
                                '.sam files. All .sam files in this directory will be considered input to DegNorm.')
+    parser.add_argument('-w'
+                        , '--warm-start-dir'
+                        , default=None
+                        , required=False
+                        , help='Previous DegNorm run output directory. Use to source'
+                               'gene coverage matrices, read counts, and parsed genome annotation data.'
+                               'Use this to avoid duplicating costly preprocessing over multiple runs.')
     parser.add_argument('-g'
                         , '--genome-annotation'
                         , type=str
@@ -227,9 +234,6 @@ def parse_args():
 
     args = parser.parse_args()
 
-    if not args.input_files and not args.input_dir:
-        raise ValueError('Must specify one of input-files or input-dir')
-
     # check validity of cores selection.
     avail_cores = max_cpu() + 1
     if args.cpu > avail_cores:
@@ -237,59 +241,18 @@ def parse_args():
                         .format(args.cpu, avail_cores))
         args.cpu = avail_cores
 
-    # check validity of file i/o selection.
-    if args.input_dir:
-        if not os.path.isdir(args.input_dir):
-            raise IOError('Cannot find input-dir {0}'.format(args.input_dir))
-
-        # scan directory for .sam files.
-        input_files = list()
-        for f in os.listdir(args.input_dir):
-            if f.endswith('.sam'):
-                input_files.append(os.path.join(args.input_dir, f))
-
-        if not input_files:
-            raise ValueError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
-
-        # if user used -i/--input-files, append contents of directory to individually specified files.
-        if args.input_files:
-            args.input_files += input_files
-
-        else:
-            args.input_files = input_files
-
-    # ensure that input files are uniquely named.
-    args.input_files = list(set(args.input_files))
-
-    # ensure that all files can be found.
-    for f in args.input_files:
-        if not os.path.isfile(f):
-            raise IOError('Input file {0} not found.'.format(f))
-
-    if not os.path.isfile(args.genome_annotation):
-        raise IOError('Gene annotation file {0} not found.'.format(args.genome_annotation))
-
-    # ensure there are at least 2 experiment files.
-    if len(args.input_files) == 1:
-        raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
-                         'approximations from a single experiment.')
-
-    # if .bam files supplied, make sure samtools is installed.
-    if any([x.split('.')[-1] == 'bam' for x in args.input_files]):
-        samtools_avail = find_software('samtools')
-
-        # Note that samtools is only available for Linux and Mac OS:
-        # https://github.com/samtools/samtools/blob/develop/INSTALL
-        if not samtools_avail:
-            raise EnvironmentError('samtools is not installed or is not in your PATH.'
-                                   'samtools is required to convert .bam -> .sam files'
-                                   'Either use .sam files or install samtools.')
-
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
         raise IOError('Cannot find output-dir {0}'.format(args.output_dir))
 
-    # if --genes is specified, parse input in case file(s) are given.
+    if not args.input_files and not args.input_dir:
+        raise ValueError('Must specify one of input-files or input-dir')
+
+    # quality control on DegNorm parameters.
+    if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
+        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be >= 1.')
+
+    # if --plot-genes is specified, parse input for any .txt file(s) in addition to possible cli-specified genes.
     if args.plot_genes:
         genes = list()
 
@@ -306,9 +269,70 @@ def parse_args():
         # replace input with parsed list of unique genes.
         args.plot_genes = list(set(genes))
 
-    # quality control on DegNorm parameters.
-    if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
-        raise ValueError('--nmf-iter, --iter, and --downsample-rate must all be >= 1.')
+    # basic checks on warm start directory if supplied.
+    if args.warm_start_dir:
+
+        if not os.path.isdir(args.warm_start_dir):
+            raise IOError('Cannot find --warm-start-dir {0}'.format(args.warm_start_dir))
+
+        # warn user if they have also supplied RNA-Seq experiment input files.
+        if args.input_files or args.input_dir or args.genome_annotation:
+            logging.warning('Using warm-start directory. Supplied input files and/or directory will be ignored.')
+
+            args.input_files = None
+            args.input_dir = None
+            args.genome_annotation = None
+
+    # if not using a warm-start, parse input RNA-Seq + genome annotation files.
+    else:
+
+        # check validity of file i/o selection.
+        if args.input_dir:
+            if not os.path.isdir(args.input_dir):
+                raise IOError('Cannot find --input-dir {0}'.format(args.input_dir))
+
+            # scan directory for .sam files.
+            input_files = list()
+            for f in os.listdir(args.input_dir):
+                if f.endswith('.sam'):
+                    input_files.append(os.path.join(args.input_dir, f))
+
+            if not input_files:
+                raise ValueError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
+
+            # if user used -i/--input-files, append contents of directory to individually specified files.
+            if args.input_files:
+                args.input_files += input_files
+
+            else:
+                args.input_files = input_files
+
+        # ensure that input files are uniquely named.
+        args.input_files = list(set(args.input_files))
+
+        # ensure that all files can be found.
+        for f in args.input_files:
+            if not os.path.isfile(f):
+                raise IOError('Input file {0} not found.'.format(f))
+
+        if not os.path.isfile(args.genome_annotation):
+            raise IOError('Gene annotation file {0} not found.'.format(args.genome_annotation))
+
+        # ensure there are at least 2 experiment files.
+        if len(args.input_files) == 1:
+            raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
+                             'approximations from a single experiment.')
+
+        # if .bam files supplied, make sure samtools is installed.
+        if any([x.split('.')[-1] == 'bam' for x in args.input_files]):
+            samtools_avail = find_software('samtools')
+
+            # Note that samtools is only available for Linux and Mac OS:
+            # https://github.com/samtools/samtools/blob/develop/INSTALL
+            if not samtools_avail:
+                raise EnvironmentError('samtools is not installed or is not in your PATH.'
+                                       'samtools is required to convert .bam -> .sam files'
+                                       'Either use .sam files or install samtools.')
 
     welcome()
 

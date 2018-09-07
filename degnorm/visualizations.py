@@ -168,7 +168,7 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False, n_jobs=1):
 
     if not os.path.isfile(os.path.join(data_dir, 'gene_exon_metadata.csv')) \
         or not os.path.isfile(os.path.join(data_dir, 'read_counts.csv')):
-        raise ValueError('Gene/exon metadata and read count files were not found. Check that {0} is a '
+        raise ValueError('Missing gene/exon metadata or read count file. Check that {0} is a '
                          ' DegNorm output directory.'.format(data_dir))
 
     # read in required data: exon positioning data and sample ID's (saved in DI score data).
