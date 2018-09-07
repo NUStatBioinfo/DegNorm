@@ -1,6 +1,5 @@
 from scipy.sparse.linalg import svds
 from degnorm.utils import *
-from sklearn.exceptions import NotFittedError
 import warnings
 import tqdm
 import pickle as pkl
@@ -444,7 +443,7 @@ class GeneNMFOA():
 
     def transform(self):
         if not self.fitted:
-            raise NotFittedError('self.fit not yet executed.')
+            raise ValueError('self.fit not yet executed.')
 
         # initialize NMF-OA estimates of coverage curves.
         # Only use on genes that meet baseline selection criteria.

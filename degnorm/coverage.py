@@ -38,9 +38,10 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         npz_file = list(filter(r.search, coverage_files[sample_id]))[0]
 
         # load a sample's compressed sparse row coverage array for particular chromosome,
+        # load into a len(chrom) x 1 vector
         cov_vec_sp = sparse.load_npz(npz_file).transpose()
 
-        # initialize coverage matrix with copy of first experiment's coverage array.
+        # initialize coverage matrix (len(chrom) x p) with copy of first experiment's coverage array.
         if idx == 0:
             cov_mat = cov_vec_sp.copy()
 
@@ -81,7 +82,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         slicing = np.unique(flatten_2d(slices))
 
         # Save transposed coverage matrix so that shape is p x Li.
-        gene_cov_dict[gene] = cov_mat[slicing, :].T
+        gene_cov_dict[gene] = np.array(cov_mat[slicing, :].T).astype(np.float32)
 
         pbar.update()
 

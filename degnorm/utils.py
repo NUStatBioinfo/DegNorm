@@ -16,14 +16,32 @@ logging.basicConfig(stream=sys.stdout
                     , format='DegNorm (%(asctime)s) ---- %(message)s'
                     , datefmt='%m/%d/%Y %I:%M:%S')
 
-# welcome our user.
 def welcome():
+    """
+    Welcome our user with DegNorm ascii art.
+    """
     resources_dir = pkg_resources.resource_filename('degnorm', 'resources')
     with open(os.path.join(resources_dir, 'welcome.txt'), 'r') as f:
         welcome = f.readlines()
         welcome += '\nversion {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
     sys.stdout.write(''.join(welcome) + '\n'*4)
+
+
+def create_output_dir(output_dir):
+    """
+    Create a DegNorm output directory.
+
+    :param output_dir: str desired path to DegNorm output directory
+    :return: str path to newly created output directory
+    """
+    output_dir = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+    if os.path.isdir(output_dir):
+        time.sleep(2)
+        output_dir = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+
+    os.makedirs(output_dir)
+    return output_dir
 
 
 def subset_to_chrom(df, chrom, reindex=False):

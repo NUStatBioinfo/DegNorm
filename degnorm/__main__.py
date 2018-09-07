@@ -5,26 +5,18 @@ from degnorm.visualizations import *
 from degnorm.nmf import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
-from datetime import datetime
 from collections import OrderedDict
-import time
 import sys
 
 
 def main():
 
     # ---------------------------------------------------------------------------- #
-    # Load CLI arguments and initialize storage, output directory
+    # Load CLI arguments and create output directory
     # ---------------------------------------------------------------------------- #
     args = parse_args()
     n_jobs = args.cpu
-
-    output_dir = os.path.join(args.output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
-    if os.path.isdir(output_dir):
-        time.sleep(2)
-        output_dir = os.path.join(args.output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
-
-    os.makedirs(output_dir)
+    output_dir = create_output_dir(args.output_dir)
 
     # ---------------------------------------------------------------------------- #
     # Path 1: warm-start path.
@@ -32,9 +24,9 @@ def main():
     # genome annotation data, read counts into new output dir.
     # ---------------------------------------------------------------------------- #
     if args.warm_start_dir:
-
         logging.info('WARM-START: loading data from previous DegNorm run contained in {0}'
                      .format(args.warm_start_dir))
+
         load_dat = load_from_previous(args.warm_start_dir
                                       , new_dir=output_dir)
         chrom_gene_cov_dict = load_dat['chrom_gene_cov_dict']
