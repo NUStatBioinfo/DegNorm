@@ -433,7 +433,7 @@ class GeneNMFOA():
                 raise ValueError('downsample_rate is too large; take-every size > at least one gene.')
 
         # sum coverage per sample, for later.
-        self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
+        self.cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), self.cov_mats)))
 
         # determine (integer) number of data splits for parallel workers (100Mb per worker)
         mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8))
@@ -475,6 +475,9 @@ class GeneNMFOA():
             self.adjust_coverage_curves()
             self.adjust_read_counts()
 
+            print('NMFOA iteration {0} -- reads scale factors: {1}'
+                  .format(i, ', '.join([str(x) for x in self.scale_factors])))
+
             i += 1
             pbar.update()
 
@@ -506,7 +509,7 @@ class GeneNMFOA():
         """
         # quality control.
         if not self.transformed:
-            raise NotFittedError('Model not fitted, not transformed -- NMF-OA has not been run.')
+            raise ValueError('Model not fitted, not transformed -- NMF-OA has not been run.')
 
         if not os.path.isdir(output_dir):
             raise IOError('Directory {0} not found.'.format(output_dir))
