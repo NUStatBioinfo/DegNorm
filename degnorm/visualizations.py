@@ -147,10 +147,11 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
                                  , figsize=figsize)
 
         fig.savefig(os.path.join(output_dir, '{0}_coverage.png').format(gene)
-                  , dpi=150)
+                    , dpi=150
+                    , bbox_inches='tight')
 
 
-def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False, n_jobs=1):
+def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
     """
     Generate gene coverage plots on demand from DegNorm output directory.
 
@@ -161,8 +162,6 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False, n_jobs=1):
     :param genes: str or list of str, gene names (case insensitive)
     :param data_dir: str path to DegNorm pipeline run output directory
     :param figsize: [width (int), height (int)] dimensions of coverage curve plots.
-    :param n_jobs: int number of parallel workers to use in rendering gene coverage plots,
-    use if len(genes) is large.
     :param save: Bool if True save each plot to <chromosome name>/<gene name>_coverage.png and return
     string filenames of saved plots. If False (default) return list of matplotlib.figure.Figures.
     :return: See save parameter.
