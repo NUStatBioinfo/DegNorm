@@ -176,7 +176,7 @@ def parse_args():
                         , '--genome-annotation'
                         , type=str
                         , default=None
-                        , required=True
+                        , required=False
                         , help='Genome annotation file.'
                                'Must have extension .gtf or .gff.'
                                'All non-exon regions will be removed, along with exons that appear in'
@@ -202,10 +202,11 @@ def parse_args():
                         , default=1
                         , required=False
                         , help='Gene nucleotide downsample rate for systematic sampling of gene coverage curves.'
-                               'Specifies a \'take every\' interval. Larger value -> fewer bases sampled. '
+                               'Integer-valued. Specifies a \'take every\' interval. '
+                               'Larger value -> fewer bases sampled. '
                                'Resulting coverage matrix estimates (and plots) will be re-interpolated back '
                                'to original size.'
-                               'Use to speed up computation. Default is NO downsampling.')
+                               'Use to speed up computation. Default is NO downsampling (i.e. downsample rate == 1.')
     parser.add_argument( '--nmf-iter'
                         , type=int
                         , default=100
@@ -263,8 +264,8 @@ def parse_args():
     if not os.path.isdir(args.output_dir):
         raise IOError('Cannot find output-dir {0}'.format(args.output_dir))
 
-    if not args.input_files and not args.input_dir:
-        raise ValueError('Must specify one of input-files or input-dir')
+    if (not args.input_files and not args.input_dir) and (not args.warm_start_dir):
+        raise ValueError('Must specify either --input-files (alternatively, --input-dir) or a warm start directory')
 
     # quality control on DegNorm parameters.
     if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
