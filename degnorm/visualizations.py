@@ -250,7 +250,8 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
                     fig = chrom_figs[i]
                     fig_path = os.path.join(data_dir, chrom, '{0}_coverage.png'.format(chrom_genes[i]))
                     fig.savefig(fig_path
-                                , dpi=150)
+                                , dpi=150
+                                , bbox_inches='tight')
 
                     figs.append(fig_path)
 
