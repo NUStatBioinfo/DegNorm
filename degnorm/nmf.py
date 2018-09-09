@@ -169,16 +169,33 @@ class GeneNMFOA():
             avg_di_score = self.rho.mean(axis=0)
             self.x_adj[adj_low_idx, :] = self.x[adj_low_idx, :] / (1 - avg_di_score)
 
-    def matrix_sst(self, x, left_idx, right_idx):
+    def shift_bins(self, bins, dropped_bin):
         """
-        Compute sum of squared elements for a slice of a 2-d numpy array.
+        Shift bins of consecutive numbers after a bin has been dropped.
+        Example:
 
-        :param x: numpy 2-dimensional array
-        :param left_idx: left index, beginning of slice
-        :param right_idx: right index, end of slice (not inclusive)
-        :return: float sum of squared values in matrix slice
+        shift_bins([[0, 1], [2, 3], [4, 5], [6, 7]], dropped_bin=1)
+
+        [[0, 1], [2, 3], [4, 5]]
+
+        :param bins: list of list of int
+        :param dropped_bin: int, the bin that has been deleted from bins.
+        :return: list of consecutive integer bins, preserving to the fullest extent
+        possible the original bins.
         """
-        return np.linalg.norm(x[:, left_idx:right_idx])
+        if (dropped_bin == len(bins)) or (len(bins) == 1):
+            return bins
+        else:
+            if dropped_bin == 0:
+                delta = bins[0][0]
+
+            else:
+                delta = bins[dropped_bin][0] - bins[(dropped_bin - 1)][-1] - 1
+
+            for bin_idx in range(dropped_bin, len(bins)):
+                bins[bin_idx] = [idx - delta for idx in bins[bin_idx]]
+
+        return bins
 
     def baseline_selection(self, F):
         """
@@ -233,13 +250,14 @@ class GeneNMFOA():
         # obtain initial coverage curve estimate.
         KE_bin = self.nmf(F_bin)
 
-        # decide where to bin up regions of the gene.
-        # in downsampling regime, simply consider the individual sample points as individual bins.
-        bin_vec = split_into_chunks(list(range(F_bin.shape[1])), n=self.bins if bin_me else n_hi_cov)
-        bin_segs = [[x[0], x[-1] + 1] for x in bin_vec]
+        # split up consecutive regions of the high-coverage gene.
+        # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
+        bin_segs = split_into_chunks(list(range(F_bin.shape[1]))
+                                     , n=self.bins)
+        n_bins = len(bin_segs)
 
         # compute DI scores.
-        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1) # + 1 as per Bin's code.
+        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
         rho_vec[rho_vec < 0] = 0.
         rho_vec[rho_vec >= 1] = 1. - 1e-5
 
@@ -251,18 +269,14 @@ class GeneNMFOA():
         # If max DI score is <= 0.1, then the baseline selection algorithm has converged; if >= min_bins
         # have been dropped, still exit baseline selection, although this is not convergence in a true sense.
         # ------------------------------------------------------------------------- #
+        while (n_bins >= self.min_bins) and (np.nanmax(rho_vec) > 0.1):
 
-        baseline_ctr = 0
-        while (len(bin_segs) >= self.min_bins) and (np.nanmax(rho_vec) > 0.1) and (baseline_ctr < self.bins):
-
-            # compute normalized residuals for each bin.
-            if bin_me:
-                ss_r = np.array(list(map(lambda z: self.matrix_sst(KE_bin - F_bin, z[0], z[1]), bin_segs)))
-                ss_f = np.array(list(map(lambda z: self.matrix_sst(F_bin, z[0], z[1]), bin_segs)))
-
-            else:
-                ss_r = np.apply_along_axis(np.linalg.norm, axis=0, arr=KE_bin - F_bin)
-                ss_f = np.apply_along_axis(np.linalg.norm, axis=0, arr=F_bin)
+            # compute relative sum of squared errors by bin.
+            ss_r = np.ones(n_bins)
+            ss_f = np.ones(n_bins)
+            for idx in range(n_bins):
+                ss_r[idx] = np.linalg.norm((KE_bin - F_bin)[:, bin_segs[idx]])
+                ss_f[idx] = np.linalg.norm(F_bin[:, bin_segs[idx]])
 
             # safely divide binned residual norms by original binned norms.
             with np.errstate(divide='ignore', invalid='ignore'):
@@ -277,32 +291,28 @@ class GeneNMFOA():
             drop_idx = np.nanargmax(res_norms)
             del bin_segs[drop_idx]
 
-            # collapse the remaining bins into an array of indices to keep, then subset F matrix to fewer bins.
-            # Separate logic under a non-sampling (binning) regime vs. a downsampling regime.
-            if bin_me:
-                keep_idx = [np.arange(x[0], x[1], dtype=int) for x in bin_segs]
-                keep_idx = np.unique(flatten_2d(keep_idx))
-                F_bin = F_start[:, keep_idx]
+            # collapse the remaining bins into an array of indices to keep.
+            keep_idx = np.unique(flatten_2d(bin_segs))
 
-            else:
-                keep_idx = np.array([x[0] for x in bin_segs])
-                F_bin = F_start[:, keep_idx]
+            # update binned segments so that all bins are referencing indices in newly shrunken coverage matrices.
+            bin_segs = self.shift_bins(bin_segs
+                                       , dropped_bin=drop_idx)
+            n_bins = len(bin_segs)
 
-            # estimate coverage curves from remaining regions.
+            # shrink F matrix to the indices not dropped.
+            # estimate coverage curves from said indices.
+            F_bin = F_bin[:, keep_idx]
             KE_bin = self.nmf(F_bin)
 
             # safely compute degradation index scores: closer to 1 -> more degradation,
             # although division by a zero-approximation should be unlikely given low-coverage filtering above.
             with np.errstate(divide='ignore', invalid='ignore'):
-                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), (KE_bin.sum(axis=1) + 1)) # + 1 as per Bin's code.
+                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), (KE_bin.sum(axis=1) + 1))  # + 1 as per Bin's code.
                 rho_vec[~np.isfinite(rho_vec)] = 1. - 1e-5
 
             # quality control.
             rho_vec[rho_vec < 0] = 0.
             rho_vec[rho_vec >= 1] = 1. - 1e-5
-
-            # increment baseline selection iter.
-            baseline_ctr += 1
 
         # Run NMF on baseline-selected regions.
         K, E = self.nmf(F_bin, factors=True)
