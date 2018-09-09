@@ -102,7 +102,18 @@ def plot_gene_coverage(ke, f, x_exon, gene
                            , color='w'
                            , lw=2)
 
-    plt.figlegend(handles, labels, loc='lower center', ncol=len(labels))
+    # configure legend: determine if labels expand vertically or horizontally.
+    ncol = len(labels) if len(labels) < 6 else 1
+    loc = 'upper right' if ncol == 1 else 'lower center'
+    bbox_to_anchor = (1.1, 0.85) if ncol == 1 else None
+
+    plt.figlegend(handles
+                  , labels
+                  , loc=loc
+                  , title='Sample'
+                  , ncol=ncol
+                  , bbox_to_anchor=bbox_to_anchor)
+
     fig.tight_layout(rect=[0, 0.07, 1, 0.95])
     return fig
 

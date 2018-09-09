@@ -77,7 +77,7 @@ def render_report(data_dir, genenmfoa, input_files,
     di_gene_means = genenmfoa.rho.mean(axis=1)
 
     fig = plt.figure(figsize=[10, 6])
-    fig.suptitle('Mean degradation index score distributions: by sample, by gene')
+    fig.suptitle('Mean degradation index score distributions: across samples, genes')
     gs = gridspec.GridSpec(2, 1)
 
     with sns.axes_style('darkgrid'):
@@ -153,7 +153,11 @@ def render_report(data_dir, genenmfoa, input_files,
     # if pandoc is installed and available in path, swap out .html report for a .pdf
     pandoc_avail = find_software('pandoc')
     if pandoc_avail:
-        out = subprocess.run(['pandoc {0} -o {1}'.format(html_filename, html_filename.replace('.html', '.pdf'))]
+        pdf_filename = html_filename.replace('.html', '.pdf')
+
+        out = subprocess.run(['pandoc {0} -o {1}'.format(html_filename, pdf_filename)]
                              , shell=True)
 
-        os.remove(html_filename)
+        # if .pdf was created, scrap the .html report.
+        if os.path.isfile(pdf_filename):
+            os.remove(html_filename)

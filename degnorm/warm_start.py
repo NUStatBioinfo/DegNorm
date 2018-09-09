@@ -39,6 +39,7 @@ def load_from_previous(degnorm_dir, new_dir):
     except FileNotFoundError as e:
         raise e
 
+    # grab required data: sample IDs, gene manifest, chromosomes encompassed in gene manifest.
     sample_ids = read_count_df.columns.tolist()[2:]
     genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
     chroms = genes_df.chr.unique().tolist()
