@@ -59,7 +59,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     gc.collect()
 
     # convert coverage matrix to dense matrix for speed in splicing (costly memory-wise).
-    cov_mat = cov_mat.todense()
+    cov_mat = cov_mat.asfptype().todense()
 
     # store coverage matrices in a dictionary with gene name keys
     gene_cov_dict = dict()

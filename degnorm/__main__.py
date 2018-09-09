@@ -238,7 +238,7 @@ def main():
         os.environ['JOBLIB_TEMP_FOLDER'] = output_dir
 
     logging.info('Executing NMF-OA over-approximation algorithm...')
-    nmfoa = GeneNMFOA(iter=args.iter
+    nmfoa = GeneNMFOA(degnorm_iter=args.iter
                       , nmf_iter=args.nmf_iter
                       , downsample_rate=args.downsample_rate
                       , n_jobs=n_jobs)

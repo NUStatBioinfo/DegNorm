@@ -8,12 +8,12 @@ from joblib import Parallel, delayed
 
 class GeneNMFOA():
 
-    def __init__(self, iter=5, downsample_rate=1, min_high_coverage=50,
+    def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
                  nmf_iter=100, bins=20, n_jobs=max_cpu()):
         """
         Initialize an NMF-over-approximator object.
 
-        :param iter: int maximum number of NMF-OA iterations to run.
+        :param degnorm_iter: int maximum number of NMF-OA iterations to run.
         :param downsample_rate: int reciprocal of downsample rate; a "take every" systematic sampling rate. Use to
         down-sample coverage matrices by taking every r-th nucleotide. When downsample_rate == 1 this is equivalent
         to running DegNorm sans any downsampling.
@@ -24,7 +24,7 @@ class GeneNMFOA():
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
         :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
         """
-        self.iter = np.abs(int(iter))
+        self.degnorm_iter = np.abs(int(degnorm_iter))
         self.nmf_iter = np.abs(int(nmf_iter))
         self.n_jobs = np.abs(int(n_jobs))
         self.bins = np.abs(int(bins))
@@ -94,9 +94,10 @@ class GeneNMFOA():
             return np.abs(K), np.abs(E)
 
         # quality control - ensure an over-approximation.
-        est[est < x] = x[est < x]
+        # est[est < x] = x[est < x]
+        est = np.abs(np.where(est < x, x, est))
 
-        return np.abs(est)
+        return est
 
     def run_nmf_serial(self, x, factors=False):
         return list(map(lambda z: self.nmf(z, factors), x))
@@ -314,7 +315,7 @@ class GeneNMFOA():
 
         # quality control: ensure a final over-approximation.
         est = K.dot(E.T)
-        est[est < F] = F[est < F]
+        est = np.abs(np.where(est < F, F, est))
 
         # return estimate of F.
         return est, ran
@@ -451,6 +452,7 @@ class GeneNMFOA():
 
         # update vector of read count adjustment factors; update rho (DI) matrix.
         self.compute_scale_factors(self.estimates)
+        print('Initial reads scale factors -- '.format(', '.join([str(x) for x in self.scale_factors])))
 
         # scale baseline_cov coverage curves by 1 / (updated adjustment factors).
         self.adjust_coverage_curves()
@@ -459,13 +461,13 @@ class GeneNMFOA():
         self.adjust_read_counts()
 
         # Instantiate progress bar.
-        pbar = tqdm.tqdm(total = self.iter
+        pbar = tqdm.tqdm(total = self.degnorm_iter
                          , leave=False
                          , desc='NMF-OA iteration progress')
 
         # Run DegNorm iterations.
         i = 0
-        while i < self.iter:
+        while i < self.degnorm_iter:
 
             # run NMF-OA + baseline selection; obtain refined estimates of F.
             self.estimates = self.par_apply_baseline_selection(self.cov_mats_adj)
@@ -476,7 +478,7 @@ class GeneNMFOA():
             self.adjust_read_counts()
 
             print('NMFOA iteration {0} -- reads scale factors: {1}'
-                  .format(i, ', '.join([str(x) for x in self.scale_factors])))
+                  .format(i + 1, ', '.join([str(x) for x in self.scale_factors])))
 
             i += 1
             pbar.update()

@@ -34,7 +34,7 @@ def render_report(data_dir, genenmfoa, input_files,
     # Construct table with DegNorm runtime variable configuration information.
     # ---------------------------------------------------------------------------- #
     run_dat = {'NMF-OA SVD iterations': [genenmfoa.nmf_iter]
-               , 'DegNorm iterations': [genenmfoa.iter]
+               , 'DegNorm iterations': [genenmfoa.degnorm_iter]
                , 'Downsample rate': ['1/{0}'.format(str(genenmfoa.downsample_rate))]
                , 'Number of input genes': [genenmfoa.n_genes]
                , 'Baseline selection-eligible genes': [np.sum(genenmfoa.use_baseline_selection)]}
