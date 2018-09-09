@@ -243,7 +243,7 @@ def main():
                       , downsample_rate=args.downsample_rate
                       , n_jobs=n_jobs)
     nmfoa.fit_transform(gene_cov_dict
-                        , reads_dat=read_count_df[sample_ids].values)
+                        , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
 
     # restore original environment.
     if not joblib_folder:

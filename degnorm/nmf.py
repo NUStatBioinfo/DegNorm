@@ -94,8 +94,7 @@ class GeneNMFOA():
             return np.abs(K), np.abs(E)
 
         # quality control - ensure an over-approximation.
-        # est[est < x] = x[est < x]
-        est = np.abs(np.where(est < x, x, est))
+        est[est < x] = x[est < x]
 
         return est
 
@@ -305,17 +304,22 @@ class GeneNMFOA():
             # increment baseline selection iter.
             baseline_ctr += 1
 
-        # Run NMF on baseline regions.
+        # Run NMF on baseline-selected regions.
         K, E = self.nmf(F_bin, factors=True)
 
+        # quality control: ensure we never divide F by 0.
+        K[K < 1. - 1e-5] = 1.
+
         # Use refined estimate of K (p x 1 vector) to refine the envelope estimate,
-        # return refined estimate of KE^{T}. Do this safely in case any K are zero.
-        with np.errstate(divide='ignore', invalid='ignore'):
-            E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1)
+        # return refined estimate of KE^{T}.
+        E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1)
+
+        if np.any(np.isnan(E)):
+            raise ValueError('E factor matrix contains np.nans. Aborting.')
 
         # quality control: ensure a final over-approximation.
         est = K.dot(E.T)
-        est = np.abs(np.where(est < F, F, est))
+        est[est < F] = F[est < F]
 
         # return estimate of F.
         return est, ran
@@ -452,7 +456,7 @@ class GeneNMFOA():
 
         # update vector of read count adjustment factors; update rho (DI) matrix.
         self.compute_scale_factors(self.estimates)
-        print('Initial reads scale factors -- '.format(', '.join([str(x) for x in self.scale_factors])))
+        print('Initial reads scale factors -- {0}'.format(', '.join([str(x) for x in self.scale_factors])))
 
         # scale baseline_cov coverage curves by 1 / (updated adjustment factors).
         self.adjust_coverage_curves()
