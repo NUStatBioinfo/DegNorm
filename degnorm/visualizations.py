@@ -130,25 +130,32 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
+    # load original and estimated coverage curve matrices.
     with open(coverage_file, 'rb') as f:
         orig_dat = pkl.load(f)
 
     with open(estimates_file, 'rb') as f:
         est_dat = pkl.load(f)
 
+    # render coverage curve plots one gene at a time.
     for gene in exon_df.gene.unique():
-        tmp = exon_df[exon_df.gene == gene]
-        fig = plot_gene_coverage(est_dat.get(gene)
-                                 , f=orig_dat.get(gene)
-                                 , x_exon=tmp[['start', 'end']].values
-                                 , gene=gene
-                                 , chrom=tmp.chr.iloc[0]
-                                 , sample_ids=sample_ids
-                                 , figsize=figsize)
 
-        fig.savefig(os.path.join(output_dir, '{0}_coverage.png').format(gene)
-                    , dpi=150
-                    , bbox_inches='tight')
+        if (est_dat.get(gene) is not None) and (orig_dat.get(gene) is not None):
+            gene_exon_df = exon_df[exon_df.gene == gene]
+            fig = plot_gene_coverage(est_dat.get(gene)
+                                     , f=orig_dat.get(gene)
+                                     , x_exon=gene_exon_df[['start', 'end']].values
+                                     , gene=gene
+                                     , chrom=gene_exon_df.chr.iloc[0]
+                                     , sample_ids=sample_ids
+                                     , figsize=figsize)
+
+            fig.savefig(os.path.join(output_dir, '{0}_coverage.png').format(gene)
+                        , dpi=150
+                        , bbox_inches='tight')
+
+        else:
+            continue
 
 
 def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):

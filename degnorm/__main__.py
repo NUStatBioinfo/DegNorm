@@ -288,7 +288,7 @@ def main():
     logging.info('Rendering DegNorm summary report.')
     render_report(data_dir=output_dir
                   , genenmfoa=nmfoa
-                  , input_files=args.input_files
+                  , input_files=args.input_files if not args.warm_start_dir else [args.warm_start_dir]
                   , sample_ids=sample_ids
                   , top_n_genes=5
                   , output_dir=output_dir)

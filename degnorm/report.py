@@ -28,7 +28,12 @@ def render_report(data_dir, genenmfoa, input_files,
     # Construct table of input experiment files and sample IDs.
     # ---------------------------------------------------------------------------- #
     files_df = DataFrame([input_files, sample_ids]).T
-    files_df.columns = ['Input file', 'Sample ID']
+
+    if (len(input_files) == 1) and (os.path.isdir(input_files[0])):
+        files_df.columns = ['Warm-start directory', 'Sample ID']
+
+    else:
+        files_df.columns = ['Input file', 'Sample ID']
 
     # ---------------------------------------------------------------------------- #
     # Construct table with DegNorm runtime variable configuration information.
