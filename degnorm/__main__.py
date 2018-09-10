@@ -17,6 +17,7 @@ def main():
     args = parse_args()
     n_jobs = args.cpu
     output_dir = create_output_dir(args.output_dir)
+    logging.info('DegNorm output directory -- {0}'.format(output_dir))
 
     # ---------------------------------------------------------------------------- #
     # Path 1: warm-start path.
