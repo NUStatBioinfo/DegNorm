@@ -1,4 +1,5 @@
 from scipy.sparse.linalg import svds
+from pandas import DataFrame, concat
 from degnorm.utils import *
 import warnings
 import tqdm
@@ -569,29 +570,49 @@ class GeneNMFOA():
                          , desc='GeneNMFOA results save progress')
 
         # save estimated coverage matrices to genes nested within chromosomes.
+        chrom_gene_dfs = list()
         for chrom in manifest_chroms:
             chrom_dir = os.path.join(output_dir, chrom)
+
             if not os.path.isdir(chrom_dir):
                 os.makedirs(chrom_dir)
 
             with open(os.path.join(chrom_dir, 'estimated_coverage_matrices_{0}.pkl'.format(chrom)), 'wb') as f:
                 pkl.dump(chrom_gene_dict[chrom], f)
 
+            # keep track of chromosome-gene mapping.
+            chrom_gene_dfs.append(DataFrame({'chr': chrom
+                                          , 'gene': list(chrom_gene_dict[chrom].keys())}))
+
             pbar.update()
 
-        np.savetxt(os.path.join(output_dir, 'degradation_index_scores.csv')
-                   , X=self.rho
-                   , header=','.join(sample_ids)
-                   , comments=''
-                   , delimiter=',')
+        # order chromosome-gene index according to nmfoa gene order.
+        chrom_gene_df = concat(chrom_gene_dfs)
+        chrom_gene_df.set_index('gene'
+                                , inplace=True)
+        chrom_gene_df = chrom_gene_df.loc[self.genes]
+        chrom_gene_df.reset_index(inplace=True)
+        chrom_gene_df = chrom_gene_df[['chr', 'gene']]
+
+        # append chromosome-gene index to DI scores and save.
+        rho_df = DataFrame(self.rho
+                           , columns=sample_ids)
+        rho_df = concat([chrom_gene_df, rho_df]
+                        , axis=1)
+
+        rho_df.to_csv(os.path.join(output_dir, 'degradation_index_scores.csv')
+                      , index=False)
+
         pbar.update()
 
-        np.savetxt(os.path.join(output_dir, 'adjusted_read_counts.csv')
-                   , X=self.x_adj
-                   , header=','.join(sample_ids)
-                   , comments=''
-                   , delimiter=',')
-        pbar.update()
+        # append chromosome-gene index to adjusted read counts and save.
+        x_adj_df = DataFrame(self.x_adj
+                             , columns=sample_ids)
+        x_adj_df = concat([chrom_gene_df, x_adj_df]
+                          , axis=1)
+
+        x_adj_df.to_csv(os.path.join(output_dir, 'adjusted_read_counts.csv')
+                        , index=False)
         pbar.close()
 
 
@@ -629,75 +650,3 @@ class GeneNMFOA():
 #
 #     print(nmfoa.rho)
 #     print(nmfoa.x_adj)
-
-
-# --------------------------------------------------------------------------------------------------- #
-#                                               DEPRECATED                                            #
-# --------------------------------------------------------------------------------------------------- #
-
-# @staticmethod
-# def restore_from_downsample(x, Li, xp, by_row=True):
-#     """
-#     Restore a coverage matrix from a downsampled version to its
-#     original transcript size.
-#
-#     :param x: 2-d numpy.array, downsampled coverage matrix.
-#     :param Li: int target length of original coverage matrix prior to downsample.
-#     :param xp: list of int or 1-d numpy array of int, points from original which downsample was obtained.
-#     :return: 2-d numpy array of expanded coverage matrix.
-#     """
-#     ax = 1 if not by_row else 0
-#
-#     # quality control.
-#     if len(xp) != x.shape[ax]:
-#         raise ValueError('x.shape == {0} is incompatible with downsampled'
-#                          'indices of length {1}'.format(x.shape, len(xp)))
-#
-#     # if x has not been downsampled (shape of x is <= target length, Li), exit.
-#     if Li <= x.shape[ax]:
-#         return x
-#
-#     # restore (expand-interpolate) each column or row of x at points xp with values
-#     # fp coming from the column or row of x.
-#     z = np.arange(0, Li)
-#     x_restored = np.apply_along_axis(lambda fp: np.interp(z
-#                                                           , xp=xp
-#                                                           , fp=fp)
-#                                      , axis=ax
-#                                      , arr=x)
-#     return x_restored
-
-# def delta_norm(self, mat_t0, mat_t1):
-#     """
-#     Compute the relative difference between two matrices (one at time = 0,
-#      the other at time = 1) by using a Frobenius norm:
-#     ||X0 - X1||_{F}^{2} / ||X0||_{F}^{2}.
-#
-#     If X0 is a matrix of 0's, return ||X1||_{F}^{2}.
-#
-#     :param mat_t0: numpy nd array, represents matrix at iteration time = 0
-#     :param mat_t1: numpy nd array, represents matrix at iteration time = 1
-#     :return: float relative change in Frobenius norms between time 0 and time 1
-#     """
-#     t0_norm = np.linalg.norm(mat_t0)
-#     diff_norm = np.linalg.norm(mat_t0 - mat_t1)
-#
-#     if t0_norm == 0:
-#         return diff_norm
-#
-#     return diff_norm / t0_norm
-
-# def apply_delta_norm(self, mats_t0, mats_t1):
-#     """
-#     Apply self.delta_norm to a list of matrices at time = 0 and a list of matrices at
-#     time = 1.
-#
-#     :param mats_t0: list of numpy nd arrays at time 0
-#     :param mats_t1: list of numpy nd arrays at time 0
-#     :return: 1-d numpy array of relative changes in Frobenius norms between corresponding
-#     matrices in mats_t0 and mats_t1
-#     """
-#     if len(mats_t0) != len(mats_t1):
-#         raise ValueError('len(matsT0) != len(matsT1); cannot find '
-#                          'relative difference in matrix norms.')
-#     return np.array(list(map(self.delta_norm, mats_t0, mats_t1)))

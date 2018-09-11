@@ -191,7 +191,7 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
     # read in required data: exon positioning data and sample ID's (saved in DI score data).
     exon_df = read_csv(os.path.join(data_dir, 'gene_exon_metadata.csv'))
     with open(os.path.join(data_dir, 'degradation_index_scores.csv'), 'r') as di:
-        sample_ids = di.readline().strip().split(',')
+        sample_ids = di.readline().strip().split(',')[2:]
 
     # make genes case-insensitive: cast to uppercase
     genes = [x.upper() for x in genes]
