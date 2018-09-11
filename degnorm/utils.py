@@ -262,7 +262,7 @@ def parse_args():
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
-        raise IOError('Cannot find output-dir {0}'.format(args.output_dir))
+        raise NotADirectoryError('Cannot find output-dir {0}'.format(args.output_dir))
 
     if (not args.input_files and not args.input_dir) and (not args.warm_start_dir):
         raise ValueError('Must specify either --input-files (alternatively, --input-dir) or a warm start directory')
@@ -292,7 +292,7 @@ def parse_args():
     if args.warm_start_dir:
 
         if not os.path.isdir(args.warm_start_dir):
-            raise IOError('Cannot find --warm-start-dir {0}'.format(args.warm_start_dir))
+            raise NotADirectoryError('Cannot find --warm-start-dir {0}'.format(args.warm_start_dir))
 
         # warn user if they have also supplied RNA-Seq experiment input files.
         if args.input_files or args.input_dir or args.genome_annotation:
@@ -305,10 +305,18 @@ def parse_args():
     # if not using a warm-start, parse input RNA-Seq + genome annotation files.
     else:
 
+        # check validity of gene annotation file selection.
+        if not args.genome_annotation:
+            raise ValueError('If warm-start directory not specified, gene annotation file must be specified!')
+
+        else:
+            if not os.path.isfile(args.genome_annotation):
+                raise FileNotFoundError('Gene annotation file {0} not found.'.format(args.genome_annotation))
+
         # check validity of file i/o selection.
         if args.input_dir:
             if not os.path.isdir(args.input_dir):
-                raise IOError('Cannot find --input-dir {0}'.format(args.input_dir))
+                raise NotADirectoryError('Cannot find --input-dir {0}'.format(args.input_dir))
 
             # scan directory for .sam files.
             input_files = list()
@@ -317,7 +325,7 @@ def parse_args():
                     input_files.append(os.path.join(args.input_dir, f))
 
             if not input_files:
-                raise ValueError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
+                raise FileNotFoundError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
 
             # if user used -i/--input-files, append contents of directory to individually specified files.
             if args.input_files:
@@ -332,10 +340,7 @@ def parse_args():
         # ensure that all files can be found.
         for f in args.input_files:
             if not os.path.isfile(f):
-                raise IOError('Input file {0} not found.'.format(f))
-
-        if not os.path.isfile(args.genome_annotation):
-            raise IOError('Gene annotation file {0} not found.'.format(args.genome_annotation))
+                raise FileNotFoundError('Input file {0} not found.'.format(f))
 
         # ensure there are at least 2 experiment files.
         if len(args.input_files) == 1:
