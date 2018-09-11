@@ -11,9 +11,10 @@ import pickle as pkl
 
 
 def plot_gene_coverage(ke, f, x_exon, gene
-                       , chrom, sample_ids=None, **kwargs):
+                       , chrom, sample_ids=None
+                       , save_dir=None, **kwargs):
     """
-    Plot a gene's DegNorm-estimated and original coverage matrices.
+    Plot a gene's DegNorm-estimated and original coverage matrices. Option to save image.
 
     :param ke: estimated coverage matrix
     :param f: original coverage matrix
@@ -22,8 +23,10 @@ def plot_gene_coverage(ke, f, x_exon, gene
     :param gene: str name of gene whose coverage is being plotted
     :param chrom: str name of chromosome gene is on
     :param sample_ids: list of str names of samples corresponding to coverage curves
+    :param save_dir: str path to output directory where gene coverage plot should be saved as
+    save_dir/<chromosome>/<gene>_coverage.png (optional, default None returns plt.Figure)
     :param kwargs: keyword arguments to pass to matplotlib.pylab.figure (e.g. figsize)
-    :return: matplotlib.figure.Figure
+    :return: matplotlib.figure.Figure if save_dir is not specified, otherwise, a filepath to saved .png file
     """
 
     # quality control.
@@ -115,6 +118,21 @@ def plot_gene_coverage(ke, f, x_exon, gene
                   , bbox_to_anchor=bbox_to_anchor)
 
     fig.tight_layout(rect=[0, 0.07, 1, 0.95])
+
+    # if save directory specified, save coverage plots to file save_dir/chrom/<gene>_coverage.png and close figure.
+    if save_dir:
+
+        if not os.path.isdir(os.path.join(save_dir, chrom)):
+            os.makedirs(os.path.join(save_dir, chrom))
+
+        fig_path = os.path.join(save_dir, chrom, '{0}_coverage.png'.format(gene))
+        fig.savefig(fig_path
+                    , dpi=150
+                    , bbox_inches='tight')
+        plt.close(fig)
+
+        return fig_path
+
     return fig
 
 
@@ -137,22 +155,19 @@ def save_chrom_coverage(coverage_file, estimates_file, exon_df,
     with open(estimates_file, 'rb') as f:
         est_dat = pkl.load(f)
 
-    # render coverage curve plots one gene at a time.
+    # render and save coverage curve plots one gene at a time.
     for gene in exon_df.gene.unique():
 
         if (est_dat.get(gene) is not None) and (orig_dat.get(gene) is not None):
             gene_exon_df = exon_df[exon_df.gene == gene]
-            fig = plot_gene_coverage(est_dat.get(gene)
+            out = plot_gene_coverage(est_dat.get(gene)
                                      , f=orig_dat.get(gene)
                                      , x_exon=gene_exon_df[['start', 'end']].values
                                      , gene=gene
                                      , chrom=gene_exon_df.chr.iloc[0]
                                      , sample_ids=sample_ids
+                                     , save_dir=output_dir
                                      , figsize=figsize)
-
-            fig.savefig(os.path.join(output_dir, '{0}_coverage.png').format(gene)
-                        , dpi=150
-                        , bbox_inches='tight')
 
         else:
             continue
@@ -238,31 +253,17 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
 
         chrom_genes = np.intersect1d(chrom_genes, nmfoa_genes)
 
-        # generate plots.
+        # generate plots, save if desired.
         if len(chrom_genes) > 0:
-            chrom_figs = list()
 
             for gene in chrom_genes:
-                chrom_figs.append(plot_gene_coverage(ests_dat.get(gene)
-                                                     , f=cov_dat.get(gene)
-                                                     , x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values
-                                                     , gene=gene
-                                                     , chrom=chrom
-                                                     , sample_ids=sample_ids
-                                                     , figsize=figsize))
-
-            # save plots if desired.
-            if save:
-                for i in range(len(chrom_genes)):
-                    fig = chrom_figs[i]
-                    fig_path = os.path.join(data_dir, chrom, '{0}_coverage.png'.format(chrom_genes[i]))
-                    fig.savefig(fig_path
-                                , dpi=150
-                                , bbox_inches='tight')
-
-                    figs.append(fig_path)
-
-            else:
-                figs.extend(chrom_figs)
+                figs.append(plot_gene_coverage(ests_dat.get(gene)
+                                               , f=cov_dat.get(gene)
+                                               , x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values
+                                               , gene=gene
+                                               , chrom=chrom
+                                               , sample_ids=sample_ids
+                                               , save_dir=data_dir if save else None
+                                               , figsize=figsize))
 
     return figs
