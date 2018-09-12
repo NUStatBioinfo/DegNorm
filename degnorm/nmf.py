@@ -249,7 +249,8 @@ class GeneNMFOA():
         ran = True
 
         # obtain initial coverage curve estimate.
-        KE_bin = self.nmf(F_bin)
+        K, E = self.nmf(F_bin, factors=True)
+        KE_bin = np.abs(K.dot(E))
 
         # split up consecutive regions of the high-coverage gene.
         # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
@@ -257,7 +258,7 @@ class GeneNMFOA():
                                      , n=self.bins)
         n_bins = len(bin_segs)
 
-        # compute DI scores.
+        # compute DI scores. High score ->> high degradation.
         rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
         rho_vec[rho_vec < 0] = 0.
         rho_vec[rho_vec >= 1] = 1. - 1e-5
@@ -270,7 +271,8 @@ class GeneNMFOA():
         # If max DI score is <= 0.1, then the baseline selection algorithm has converged; if >= min_bins
         # have been dropped, still exit baseline selection, although this is not convergence in a true sense.
         # ------------------------------------------------------------------------- #
-        while (n_bins >= self.min_bins) and (np.nanmax(rho_vec) > 0.1):
+        while (n_bins > self.min_bins) and (np.nanmax(rho_vec) > 0.1):
+            n_bins = len(bin_segs)
 
             # compute relative sum of squared errors by bin.
             ss_r = np.ones(n_bins)
@@ -284,9 +286,9 @@ class GeneNMFOA():
                 res_norms = np.true_divide(ss_r, ss_f)
                 res_norms[~np.isfinite(res_norms)] = 0
 
-            # if perfect approximation, exit loop.
-            if np.nanmax(res_norms) == 0:
-                break
+            # # if perfect approximation, exit loop.
+            # if np.nanmax(res_norms) == 0:
+            #     break
 
             # drop the bin corresponding to the bin with the maximum normalized residual.
             drop_idx = np.nanargmax(res_norms)
@@ -298,28 +300,26 @@ class GeneNMFOA():
             # update binned segments so that all bins are referencing indices in newly shrunken coverage matrices.
             bin_segs = self.shift_bins(bin_segs
                                        , dropped_bin=drop_idx)
-            n_bins = len(bin_segs)
 
             # shrink F matrix to the indices not dropped.
             # estimate coverage curves from said indices.
             F_bin = F_bin[:, keep_idx]
             KE_bin = self.nmf(F_bin)
 
-            # safely compute degradation index scores: closer to 1 -> more degradation,
-            # although division by a zero-approximation should be unlikely given low-coverage filtering above.
-            with np.errstate(divide='ignore', invalid='ignore'):
-                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), (KE_bin.sum(axis=1) + 1))  # + 1 as per Bin's code.
-                rho_vec[~np.isfinite(rho_vec)] = 1. - 1e-5
+            # recompute DI scores: closer to 1 ->> more degradation
+            rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
 
             # quality control.
             rho_vec[rho_vec < 0] = 0.
             rho_vec[rho_vec >= 1] = 1. - 1e-5
 
-        # Run NMF on baseline-selected regions.
-        K, E = self.nmf(F_bin, factors=True)
+        # determine if baseline selection converged: check whether DI scores are still high.
+        # if not converged, just use original NMF factorization as K, E factors instead of baseline selected ones.
+        if np.nanmax(rho_vec) < 0.1:
+            K, E = self.nmf(F_bin, factors=True)
 
         # quality control: ensure we never divide F by 0.
-        K[K < 1. - 1e-5] = 1.
+        K[K < 1.e-5] = np.min(K[K >= 1.e-5])
 
         # Use refined estimate of K (p x 1 vector) to refine the envelope estimate,
         # return refined estimate of KE^{T}.
@@ -329,7 +329,7 @@ class GeneNMFOA():
             raise ValueError('E factor matrix contains np.nans. Aborting.')
 
         # quality control: ensure a final over-approximation.
-        est = K.dot(E.T)
+        est = np.abs(K.dot(E.T))
         est[est < F] = F[est < F]
 
         # return estimate of F.

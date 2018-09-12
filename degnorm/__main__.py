@@ -275,20 +275,6 @@ def main():
                                     , figsize=[10, 6]
                                     , save=True)
 
-            # plot_exon_df = exon_df[exon_df.gene.isin(plot_genes)]
-            # logging.info('Generating coverage curve plots for specified genes.')
-            #
-            # out = Parallel(n_jobs=n_jobs
-            #                , verbose=0
-            #                , backend='threading')(delayed(save_chrom_coverage)(
-            #     coverage_file=os.path.join(output_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom)),
-            #     estimates_file=os.path.join(output_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom)),
-            #     exon_df=plot_exon_df[plot_exon_df.chr == chrom],
-            #     sample_ids=sample_ids,
-            #     figsize=[10, 6],
-            #     output_dir=os.path.join(output_dir, chrom))
-            #     for chrom in plot_exon_df.chr.unique())
-
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.
     # ---------------------------------------------------------------------------- #

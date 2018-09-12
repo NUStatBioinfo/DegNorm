@@ -138,45 +138,6 @@ def plot_gene_coverage(ke, f, x_exon, gene
         return fig_path
 
 
-# def save_chrom_coverage(coverage_file, estimates_file, exon_df,
-#                         sample_ids, figsize=[10, 6], output_dir='.'):
-#     """
-#     Wrapper for plot_gene_coverage: make a coverage plot for every gene in a chromosome.
-#     """
-#     for f in [coverage_file, estimates_file]:
-#         if not os.path.isfile(f):
-#             raise IOError('Could not find file {0}'.format(f))
-#
-#     if not os.path.isdir(output_dir):
-#         os.makedirs(output_dir)
-#
-#     # load original and estimated coverage curve matrices.
-#     with open(coverage_file, 'rb') as f:
-#         orig_dat = pkl.load(f)
-#
-#     with open(estimates_file, 'rb') as f:
-#         est_dat = pkl.load(f)
-#
-#     # render and save coverage curve plots one gene at a time.
-#     for gene in exon_df.gene.unique():
-#         gene_exon_df = exon_df[exon_df.gene == gene]
-#
-#         if (est_dat.get(gene) is not None) and (orig_dat.get(gene) is not None)\
-#                 and (not gene_exon_df.empty):
-#
-#             out = plot_gene_coverage(est_dat.get(gene)
-#                                      , f=orig_dat.get(gene)
-#                                      , x_exon=gene_exon_df[['start', 'end']].values
-#                                      , gene=gene
-#                                      , chrom=gene_exon_df.chr.iloc[0]
-#                                      , sample_ids=sample_ids
-#                                      , save_dir=output_dir
-#                                      , figsize=figsize)
-#
-#         else:
-#             continue
-
-
 def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
     """
     Generate gene coverage plots on demand from DegNorm output directory.
