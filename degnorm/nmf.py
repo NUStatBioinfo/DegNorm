@@ -1,6 +1,6 @@
 from scipy.sparse.linalg import svds
+from pandas import DataFrame, concat
 from degnorm.utils import *
-from sklearn.exceptions import NotFittedError
 import warnings
 import tqdm
 import pickle as pkl
@@ -9,12 +9,12 @@ from joblib import Parallel, delayed
 
 class GeneNMFOA():
 
-    def __init__(self, iter=5, downsample_rate=1, min_high_coverage=50,
+    def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
                  nmf_iter=100, bins=20, n_jobs=max_cpu()):
         """
         Initialize an NMF-over-approximator object.
 
-        :param iter: int maximum number of NMF-OA iterations to run.
+        :param degnorm_iter: int maximum number of NMF-OA iterations to run.
         :param downsample_rate: int reciprocal of downsample rate; a "take every" systematic sampling rate. Use to
         down-sample coverage matrices by taking every r-th nucleotide. When downsample_rate == 1 this is equivalent
         to running DegNorm sans any downsampling.
@@ -25,7 +25,7 @@ class GeneNMFOA():
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
         :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
         """
-        self.iter = np.abs(int(iter))
+        self.degnorm_iter = np.abs(int(degnorm_iter))
         self.nmf_iter = np.abs(int(nmf_iter))
         self.n_jobs = np.abs(int(n_jobs))
         self.bins = np.abs(int(bins))
@@ -97,7 +97,7 @@ class GeneNMFOA():
         # quality control - ensure an over-approximation.
         est[est < x] = x[est < x]
 
-        return np.abs(est)
+        return est
 
     def run_nmf_serial(self, x, factors=False):
         return list(map(lambda z: self.nmf(z, factors), x))
@@ -170,16 +170,33 @@ class GeneNMFOA():
             avg_di_score = self.rho.mean(axis=0)
             self.x_adj[adj_low_idx, :] = self.x[adj_low_idx, :] / (1 - avg_di_score)
 
-    def matrix_sst(self, x, left_idx, right_idx):
+    def shift_bins(self, bins, dropped_bin):
         """
-        Compute sum of squared elements for a slice of a 2-d numpy array.
+        Shift bins of consecutive numbers after a bin has been dropped.
+        Example:
 
-        :param x: numpy 2-dimensional array
-        :param left_idx: left index, beginning of slice
-        :param right_idx: right index, end of slice (not inclusive)
-        :return: float sum of squared values in matrix slice
+        shift_bins([[0, 1], [2, 3], [4, 5], [6, 7]], dropped_bin=1)
+
+        [[0, 1], [2, 3], [4, 5]]
+
+        :param bins: list of list of int
+        :param dropped_bin: int, the bin that has been deleted from bins.
+        :return: list of consecutive integer bins, preserving to the fullest extent
+        possible the original bins.
         """
-        return np.linalg.norm(x[:, left_idx:right_idx])
+        if (dropped_bin == len(bins)) or (len(bins) == 1):
+            return bins
+        else:
+            if dropped_bin == 0:
+                delta = bins[0][0]
+
+            else:
+                delta = bins[dropped_bin][0] - bins[(dropped_bin - 1)][-1] - 1
+
+            for bin_idx in range(dropped_bin, len(bins)):
+                bins[bin_idx] = [idx - delta for idx in bins[bin_idx]]
+
+        return bins
 
     def baseline_selection(self, F):
         """
@@ -234,13 +251,14 @@ class GeneNMFOA():
         # obtain initial coverage curve estimate.
         KE_bin = self.nmf(F_bin)
 
-        # decide where to bin up regions of the gene.
-        # in downsampling regime, simply consider the individual sample points as individual bins.
-        bin_vec = split_into_chunks(list(range(F_bin.shape[1])), n=self.bins if bin_me else n_hi_cov)
-        bin_segs = [[x[0], x[-1] + 1] for x in bin_vec]
+        # split up consecutive regions of the high-coverage gene.
+        # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
+        bin_segs = split_into_chunks(list(range(F_bin.shape[1]))
+                                     , n=self.bins)
+        n_bins = len(bin_segs)
 
         # compute DI scores.
-        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1) # + 1 as per Bin's code.
+        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
         rho_vec[rho_vec < 0] = 0.
         rho_vec[rho_vec >= 1] = 1. - 1e-5
 
@@ -252,18 +270,14 @@ class GeneNMFOA():
         # If max DI score is <= 0.1, then the baseline selection algorithm has converged; if >= min_bins
         # have been dropped, still exit baseline selection, although this is not convergence in a true sense.
         # ------------------------------------------------------------------------- #
+        while (n_bins >= self.min_bins) and (np.nanmax(rho_vec) > 0.1):
 
-        baseline_ctr = 0
-        while (len(bin_segs) >= self.min_bins) and (np.nanmax(rho_vec) > 0.1) and (baseline_ctr < self.bins):
-
-            # compute normalized residuals for each bin.
-            if bin_me:
-                ss_r = np.array(list(map(lambda z: self.matrix_sst(KE_bin - F_bin, z[0], z[1]), bin_segs)))
-                ss_f = np.array(list(map(lambda z: self.matrix_sst(F_bin, z[0], z[1]), bin_segs)))
-
-            else:
-                ss_r = np.apply_along_axis(np.linalg.norm, axis=0, arr=KE_bin - F_bin)
-                ss_f = np.apply_along_axis(np.linalg.norm, axis=0, arr=F_bin)
+            # compute relative sum of squared errors by bin.
+            ss_r = np.ones(n_bins)
+            ss_f = np.ones(n_bins)
+            for idx in range(n_bins):
+                ss_r[idx] = np.linalg.norm((KE_bin - F_bin)[:, bin_segs[idx]])
+                ss_f[idx] = np.linalg.norm(F_bin[:, bin_segs[idx]])
 
             # safely divide binned residual norms by original binned norms.
             with np.errstate(divide='ignore', invalid='ignore'):
@@ -278,40 +292,41 @@ class GeneNMFOA():
             drop_idx = np.nanargmax(res_norms)
             del bin_segs[drop_idx]
 
-            # collapse the remaining bins into an array of indices to keep, then subset F matrix to fewer bins.
-            # Separate logic under a non-sampling (binning) regime vs. a downsampling regime.
-            if bin_me:
-                keep_idx = [np.arange(x[0], x[1], dtype=int) for x in bin_segs]
-                keep_idx = np.unique(flatten_2d(keep_idx))
-                F_bin = F_start[:, keep_idx]
+            # collapse the remaining bins into an array of indices to keep.
+            keep_idx = np.unique(flatten_2d(bin_segs))
 
-            else:
-                keep_idx = np.array([x[0] for x in bin_segs])
-                F_bin = F_start[:, keep_idx]
+            # update binned segments so that all bins are referencing indices in newly shrunken coverage matrices.
+            bin_segs = self.shift_bins(bin_segs
+                                       , dropped_bin=drop_idx)
+            n_bins = len(bin_segs)
 
-            # estimate coverage curves from remaining regions.
+            # shrink F matrix to the indices not dropped.
+            # estimate coverage curves from said indices.
+            F_bin = F_bin[:, keep_idx]
             KE_bin = self.nmf(F_bin)
 
             # safely compute degradation index scores: closer to 1 -> more degradation,
             # although division by a zero-approximation should be unlikely given low-coverage filtering above.
             with np.errstate(divide='ignore', invalid='ignore'):
-                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), (KE_bin.sum(axis=1) + 1)) # + 1 as per Bin's code.
+                rho_vec = 1 - np.true_divide(F_bin.sum(axis=1), (KE_bin.sum(axis=1) + 1))  # + 1 as per Bin's code.
                 rho_vec[~np.isfinite(rho_vec)] = 1. - 1e-5
 
             # quality control.
             rho_vec[rho_vec < 0] = 0.
             rho_vec[rho_vec >= 1] = 1. - 1e-5
 
-            # increment baseline selection iter.
-            baseline_ctr += 1
-
-        # Run NMF on baseline regions.
+        # Run NMF on baseline-selected regions.
         K, E = self.nmf(F_bin, factors=True)
 
+        # quality control: ensure we never divide F by 0.
+        K[K < 1. - 1e-5] = 1.
+
         # Use refined estimate of K (p x 1 vector) to refine the envelope estimate,
-        # return refined estimate of KE^{T}. Do this safely in case any K are zero.
-        with np.errstate(divide='ignore', invalid='ignore'):
-            E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1)
+        # return refined estimate of KE^{T}.
+        E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1)
+
+        if np.any(np.isnan(E)):
+            raise ValueError('E factor matrix contains np.nans. Aborting.')
 
         # quality control: ensure a final over-approximation.
         est = K.dot(E.T)
@@ -434,7 +449,7 @@ class GeneNMFOA():
                 raise ValueError('downsample_rate is too large; take-every size > at least one gene.')
 
         # sum coverage per sample, for later.
-        self.cov_sums = list(map(lambda x: x.sum(axis=1), self.cov_mats))
+        self.cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), self.cov_mats)))
 
         # determine (integer) number of data splits for parallel workers (100Mb per worker)
         mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, self.cov_mats))) / 1e8))
@@ -444,7 +459,7 @@ class GeneNMFOA():
 
     def transform(self):
         if not self.fitted:
-            raise NotFittedError('self.fit not yet executed.')
+            raise ValueError('self.fit not yet executed.')
 
         # initialize NMF-OA estimates of coverage curves.
         # Only use on genes that meet baseline selection criteria.
@@ -452,6 +467,7 @@ class GeneNMFOA():
 
         # update vector of read count adjustment factors; update rho (DI) matrix.
         self.compute_scale_factors(self.estimates)
+        print('Initial reads scale factors -- {0}'.format(', '.join([str(x) for x in self.scale_factors])))
 
         # scale baseline_cov coverage curves by 1 / (updated adjustment factors).
         self.adjust_coverage_curves()
@@ -460,13 +476,13 @@ class GeneNMFOA():
         self.adjust_read_counts()
 
         # Instantiate progress bar.
-        pbar = tqdm.tqdm(total = self.iter
+        pbar = tqdm.tqdm(total = self.degnorm_iter
                          , leave=False
                          , desc='NMF-OA iteration progress')
 
         # Run DegNorm iterations.
         i = 0
-        while i < self.iter:
+        while i < self.degnorm_iter:
 
             # run NMF-OA + baseline selection; obtain refined estimates of F.
             self.estimates = self.par_apply_baseline_selection(self.cov_mats_adj)
@@ -475,6 +491,9 @@ class GeneNMFOA():
             self.compute_scale_factors(self.estimates)
             self.adjust_coverage_curves()
             self.adjust_read_counts()
+
+            print('NMFOA iteration {0} -- reads scale factors: {1}'
+                  .format(i + 1, ', '.join([str(x) for x in self.scale_factors])))
 
             i += 1
             pbar.update()
@@ -507,7 +526,7 @@ class GeneNMFOA():
         """
         # quality control.
         if not self.transformed:
-            raise NotFittedError('Model not fitted, not transformed -- NMF-OA has not been run.')
+            raise ValueError('Model not fitted, not transformed -- NMF-OA has not been run.')
 
         if not os.path.isdir(output_dir):
             raise IOError('Directory {0} not found.'.format(output_dir))
@@ -551,29 +570,49 @@ class GeneNMFOA():
                          , desc='GeneNMFOA results save progress')
 
         # save estimated coverage matrices to genes nested within chromosomes.
+        chrom_gene_dfs = list()
         for chrom in manifest_chroms:
             chrom_dir = os.path.join(output_dir, chrom)
+
             if not os.path.isdir(chrom_dir):
                 os.makedirs(chrom_dir)
 
             with open(os.path.join(chrom_dir, 'estimated_coverage_matrices_{0}.pkl'.format(chrom)), 'wb') as f:
                 pkl.dump(chrom_gene_dict[chrom], f)
 
+            # keep track of chromosome-gene mapping.
+            chrom_gene_dfs.append(DataFrame({'chr': chrom
+                                          , 'gene': list(chrom_gene_dict[chrom].keys())}))
+
             pbar.update()
 
-        np.savetxt(os.path.join(output_dir, 'degradation_index_scores.csv')
-                   , X=self.rho
-                   , header=','.join(sample_ids)
-                   , comments=''
-                   , delimiter=',')
+        # order chromosome-gene index according to nmfoa gene order.
+        chrom_gene_df = concat(chrom_gene_dfs)
+        chrom_gene_df.set_index('gene'
+                                , inplace=True)
+        chrom_gene_df = chrom_gene_df.loc[self.genes]
+        chrom_gene_df.reset_index(inplace=True)
+        chrom_gene_df = chrom_gene_df[['chr', 'gene']]
+
+        # append chromosome-gene index to DI scores and save.
+        rho_df = DataFrame(self.rho
+                           , columns=sample_ids)
+        rho_df = concat([chrom_gene_df, rho_df]
+                        , axis=1)
+
+        rho_df.to_csv(os.path.join(output_dir, 'degradation_index_scores.csv')
+                      , index=False)
+
         pbar.update()
 
-        np.savetxt(os.path.join(output_dir, 'adjusted_read_counts.csv')
-                   , X=self.x_adj
-                   , header=','.join(sample_ids)
-                   , comments=''
-                   , delimiter=',')
-        pbar.update()
+        # append chromosome-gene index to adjusted read counts and save.
+        x_adj_df = DataFrame(self.x_adj
+                             , columns=sample_ids)
+        x_adj_df = concat([chrom_gene_df, x_adj_df]
+                          , axis=1)
+
+        x_adj_df.to_csv(os.path.join(output_dir, 'adjusted_read_counts.csv')
+                        , index=False)
         pbar.close()
 
 
@@ -611,75 +650,3 @@ class GeneNMFOA():
 #
 #     print(nmfoa.rho)
 #     print(nmfoa.x_adj)
-
-
-# --------------------------------------------------------------------------------------------------- #
-#                                               DEPRECATED                                            #
-# --------------------------------------------------------------------------------------------------- #
-
-# @staticmethod
-# def restore_from_downsample(x, Li, xp, by_row=True):
-#     """
-#     Restore a coverage matrix from a downsampled version to its
-#     original transcript size.
-#
-#     :param x: 2-d numpy.array, downsampled coverage matrix.
-#     :param Li: int target length of original coverage matrix prior to downsample.
-#     :param xp: list of int or 1-d numpy array of int, points from original which downsample was obtained.
-#     :return: 2-d numpy array of expanded coverage matrix.
-#     """
-#     ax = 1 if not by_row else 0
-#
-#     # quality control.
-#     if len(xp) != x.shape[ax]:
-#         raise ValueError('x.shape == {0} is incompatible with downsampled'
-#                          'indices of length {1}'.format(x.shape, len(xp)))
-#
-#     # if x has not been downsampled (shape of x is <= target length, Li), exit.
-#     if Li <= x.shape[ax]:
-#         return x
-#
-#     # restore (expand-interpolate) each column or row of x at points xp with values
-#     # fp coming from the column or row of x.
-#     z = np.arange(0, Li)
-#     x_restored = np.apply_along_axis(lambda fp: np.interp(z
-#                                                           , xp=xp
-#                                                           , fp=fp)
-#                                      , axis=ax
-#                                      , arr=x)
-#     return x_restored
-
-# def delta_norm(self, mat_t0, mat_t1):
-#     """
-#     Compute the relative difference between two matrices (one at time = 0,
-#      the other at time = 1) by using a Frobenius norm:
-#     ||X0 - X1||_{F}^{2} / ||X0||_{F}^{2}.
-#
-#     If X0 is a matrix of 0's, return ||X1||_{F}^{2}.
-#
-#     :param mat_t0: numpy nd array, represents matrix at iteration time = 0
-#     :param mat_t1: numpy nd array, represents matrix at iteration time = 1
-#     :return: float relative change in Frobenius norms between time 0 and time 1
-#     """
-#     t0_norm = np.linalg.norm(mat_t0)
-#     diff_norm = np.linalg.norm(mat_t0 - mat_t1)
-#
-#     if t0_norm == 0:
-#         return diff_norm
-#
-#     return diff_norm / t0_norm
-
-# def apply_delta_norm(self, mats_t0, mats_t1):
-#     """
-#     Apply self.delta_norm to a list of matrices at time = 0 and a list of matrices at
-#     time = 1.
-#
-#     :param mats_t0: list of numpy nd arrays at time 0
-#     :param mats_t1: list of numpy nd arrays at time 0
-#     :return: 1-d numpy array of relative changes in Frobenius norms between corresponding
-#     matrices in mats_t0 and mats_t1
-#     """
-#     if len(mats_t0) != len(mats_t1):
-#         raise ValueError('len(matsT0) != len(matsT1); cannot find '
-#                          'relative difference in matrix norms.')
-#     return np.array(list(map(self.delta_norm, mats_t0, mats_t1)))

@@ -1,4 +1,5 @@
 from degnorm.utils import *
+from scipy import sparse
 import pickle as pkl
 import re
 import tqdm
@@ -35,17 +36,30 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     for sample_id in coverage_files:
         r = re.compile('sample_{0}_{1}.npz'.format(sample_id, chrom))
         npz_file = list(filter(r.search, coverage_files[sample_id]))[0]
-        cov_vec = np.load(npz_file)['cov']
 
-        # initialize coverage matrix to have nrows == length of chromosome.
+        # load a sample's compressed sparse row coverage array for particular chromosome,
+        # load into a len(chrom) x 1 vector
+        cov_vec_sp = sparse.load_npz(npz_file).transpose()
+
+        # initialize coverage matrix (len(chrom) x p) with copy of first experiment's coverage array.
         if idx == 0:
-            cov_mat = np.zeros([len(cov_vec), len(coverage_files)])
+            cov_mat = cov_vec_sp.copy()
 
-        cov_mat[:, idx] = cov_vec
+        # column-append sparse coverage vector to existing coverage matrix.
+        else:
+            cov_mat = sparse.hstack([cov_mat, cov_vec_sp], dtype=int)
+
         idx += 1
 
     if verbose:
         logging.info('CHROMOSOME {0}: coverage matrix shape: {1}'.format(chrom, cov_mat.shape))
+
+    # clean up coverage array data.
+    del cov_vec_sp
+    gc.collect()
+
+    # convert coverage matrix to dense matrix for speed in splicing (costly memory-wise).
+    cov_mat = cov_mat.asfptype().todense()
 
     # store coverage matrices in a dictionary with gene name keys
     gene_cov_dict = dict()
@@ -68,11 +82,15 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         slicing = np.unique(flatten_2d(slices))
 
         # Save transposed coverage matrix so that shape is p x Li.
-        gene_cov_dict[gene] = cov_mat[slicing, :].T
+        gene_cov_dict[gene] = np.array(cov_mat[slicing, :].T).astype(np.float_)
 
         pbar.update()
 
     pbar.close()
+
+    # free up massive memory allocation for dense coverage matrix.
+    del cov_mat
+    gc.collect()
 
     # if a target location is specified, save {gene: coverage matrix} data per chromosome in a
     # new directory named after the chromosome.

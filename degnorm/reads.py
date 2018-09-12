@@ -3,6 +3,7 @@ from pandas import DataFrame, concat
 from degnorm.utils import *
 from degnorm.loaders import SamLoader
 from joblib import Parallel, delayed
+from scipy import sparse
 
 
 class ReadsProcessor():
@@ -156,10 +157,12 @@ class ReadsProcessor():
             os.makedirs(self.tmp_dir)
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} saving coverage array to {2}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} saving csr-compressed coverage array to {2}'
                          .format(self.sample_id, chrom, out_file))
-        np.savez_compressed(out_file
-                            , cov=cov_vec)
+
+        # save coverage vector as a compressed-sparse row matrix.
+        sparse.save_npz(out_file
+                        , matrix=sparse.csr_matrix(cov_vec))
 
         # free up memory, delete coverage vector (it's saved to disk).
         del cov_vec
@@ -206,7 +209,7 @@ class ReadsProcessor():
         self.load()
 
         if self.verbose:
-            logging.info('Successfully read file {0}. Total transcript reads -- {0}'
+            logging.info('Successfully read file {0}. Total transcript reads -- {1}'
                          .format(self.filename, self.data.shape[0]))
 
         # determine chromosomes whose coverage will be computed.

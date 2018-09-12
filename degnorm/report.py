@@ -28,13 +28,18 @@ def render_report(data_dir, genenmfoa, input_files,
     # Construct table of input experiment files and sample IDs.
     # ---------------------------------------------------------------------------- #
     files_df = DataFrame([input_files, sample_ids]).T
-    files_df.columns = ['Input file', 'Sample ID']
+
+    if (len(input_files) == 1) and (os.path.isdir(input_files[0])):
+        files_df.columns = ['Warm-start directory', 'Sample ID']
+
+    else:
+        files_df.columns = ['Input file', 'Sample ID']
 
     # ---------------------------------------------------------------------------- #
     # Construct table with DegNorm runtime variable configuration information.
     # ---------------------------------------------------------------------------- #
     run_dat = {'NMF-OA SVD iterations': [genenmfoa.nmf_iter]
-               , 'DegNorm iterations': [genenmfoa.iter]
+               , 'DegNorm iterations': [genenmfoa.degnorm_iter]
                , 'Downsample rate': ['1/{0}'.format(str(genenmfoa.downsample_rate))]
                , 'Number of input genes': [genenmfoa.n_genes]
                , 'Baseline selection-eligible genes': [np.sum(genenmfoa.use_baseline_selection)]}
@@ -77,7 +82,7 @@ def render_report(data_dir, genenmfoa, input_files,
     di_gene_means = genenmfoa.rho.mean(axis=1)
 
     fig = plt.figure(figsize=[10, 6])
-    fig.suptitle('Mean degradation index score distributions: by sample, by gene')
+    fig.suptitle('Mean degradation index score distributions: across samples, genes')
     gs = gridspec.GridSpec(2, 1)
 
     with sns.axes_style('darkgrid'):
@@ -153,7 +158,11 @@ def render_report(data_dir, genenmfoa, input_files,
     # if pandoc is installed and available in path, swap out .html report for a .pdf
     pandoc_avail = find_software('pandoc')
     if pandoc_avail:
-        out = subprocess.run(['pandoc {0} -o {1}'.format(html_filename, html_filename.replace('.html', '.pdf'))]
+        pdf_filename = html_filename.replace('.html', '.pdf')
+
+        out = subprocess.run(['pandoc {0} -o {1}'.format(html_filename, pdf_filename)]
                              , shell=True)
 
-        os.remove(html_filename)
+        # if .pdf was created, scrap the .html report.
+        if os.path.isfile(pdf_filename):
+            os.remove(html_filename)
