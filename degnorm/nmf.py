@@ -315,7 +315,7 @@ class GeneNMFOA():
 
         # determine if baseline selection converged: check whether DI scores are still high.
         # if not converged, just use original NMF factorization as K, E factors instead of baseline selected ones.
-        if np.nanmax(rho_vec) < 0.1:
+        if np.nanmax(rho_vec) < 0.1: # baseline selection has converged.
             K, E = self.nmf(F_bin, factors=True)
 
         # quality control: ensure we never divide F by 0.
