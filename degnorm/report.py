@@ -54,18 +54,53 @@ def render_report(data_dir, genenmfoa, input_files,
                                                     , axis=0
                                                     , arr=genenmfoa.rho)))
 
-    fig = plt.figure(figsize=[10, 6])
-    fig.suptitle('Degradation index scores, by sample')
+    fig = plt.figure(figsize=[10, 12])
+    fig.suptitle('Degradation index scores by sample')
 
+    plot_dists = False
+    if genenmfoa.rho.shape[0] > 1:
+        rho_df = DataFrame(genenmfoa.rho
+                           , columns=sample_ids)
+        sample_means = rho_df.mean(axis=0).sort_values()
+        ordered_sample_ids = sample_means.index.tolist()
+        rho_long_df = rho_df[ordered_sample_ids].melt(var_name='sample ID'
+                                                      , value_name='DI score')
+
+        plot_dists = True
+
+    # stacked subplots: top is for sample DI histograms, bottom is for sample DI box-whiskers.
     with sns.axes_style('darkgrid'):
-        if genenmfoa.rho.shape[0] > 1:
 
-            for i in range(genenmfoa.p):
-                sns.distplot(genenmfoa.rho[:, i], label=sample_ids[i])
+        # make per-sample DI histograms subplot.
+        if plot_dists:
 
-            plt.xlim(-0.05, 1.05)
-            plt.ylim(0., y_hist_max)
-            fig.legend(loc='upper right')
+            # initialize stacked subplots.
+            gs = gridspec.GridSpec(2, 1)
+
+            # make per-sample DI histogram plot:
+            ax1 = plt.subplot(gs[0])
+            for sample_id in ordered_sample_ids:
+                sns.distplot(rho_df[sample_id].values
+                             , label=sample_id
+                             , kde=True)
+
+            ax1.set_xlim(-0.05, 1.05)
+            ax1.set_ylim(0., y_hist_max)
+            ax1.legend(loc='upper right')
+            ax1.set_xlabel('DI score')
+
+            # make per-sample DI box-whiskers plot:
+            ax2 = plt.subplot(gs[1])
+            sns.boxplot(x='sample ID'
+                        , y='DI score'
+                        , data=rho_long_df)
+
+            # rotate sample ID labels.
+            ax2.set_xticklabels(ax2.get_xticklabels()
+                                , rotation=30)
+            ax2.set_xlabel('')
+
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
 
         else:
             sns.barplot(sample_ids, y=genenmfoa.rho[0])
@@ -74,35 +109,35 @@ def render_report(data_dir, genenmfoa, input_files,
         fig.savefig(sample_di_dist_plot
                     , dpi=200)
 
+        plt.close(fig)
+
     # ---------------------------------------------------------------------------- #
-    # Box and whiskers: (1) distribution of mean DI score per sample
-    # + (2) distribution of mean DI score per gene
+    # Plot per-sample DI score heatmap.
     # ---------------------------------------------------------------------------- #
-    di_sample_means = genenmfoa.rho.mean(axis=0)
-    di_gene_means = genenmfoa.rho.mean(axis=1)
+    if plot_dists:
 
-    fig = plt.figure(figsize=[10, 6])
-    fig.suptitle('Mean degradation index score distributions: across samples, genes')
-    gs = gridspec.GridSpec(2, 1)
+        fig, ax = plt.subplots(1, 1, figsize=[10, 8])
+        fig.suptitle('Degradation index score heatmap')
 
-    with sns.axes_style('darkgrid'):
+        sns.heatmap(rho_df[ordered_sample_ids]
+                    , cmap='bwr'
+                    , cbar_kws={"shrink": .5})
 
-        ax1 = plt.subplot(gs[0])
-        sns.boxplot(data=di_sample_means, orient='h')
-        ax1.set_title('Samples')
+        n_ticks = int(np.ceil(rho_df.shape[0] / 2000))
+        plt.yticks([i * 2000 for i in range(n_ticks)], [str(i * 2000) for i in range(n_ticks)])
+        ax.set_xticklabels(ax.get_xticklabels()
+                           , rotation=30)
 
-        ax2 = plt.subplot(gs[1])
-        sns.boxplot(data=di_gene_means, orient='h')
-        ax2.set_title('Genes')
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-        for ax in [ax1, ax2]:
-            ax.set_yticklabels('')
+        di_heatmap_plot = os.path.abspath(os.path.join(report_dir, 'di_heatmap.png'))
+        fig.savefig(di_heatmap_plot
+                    , dpi=200)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.close(fig)
 
-    mean_di_dist_plot = os.path.abspath(os.path.join(report_dir, 'di_mean_dists.png'))
-    fig.savefig(mean_di_dist_plot
-                , dpi=200)
+    else:
+        di_heatmap_plot = None
 
     # ---------------------------------------------------------------------------- #
     # Generate and save coverage plots for genes
@@ -144,7 +179,7 @@ def render_report(data_dir, genenmfoa, input_files,
                                                                      , bold_rows=True
                                                                      , header=False)
                      , 'sample_di_dist_plot': sample_di_dist_plot
-                     , 'mean_di_dist_plot': mean_di_dist_plot
+                     , 'di_heatmap_plot': di_heatmap_plot
                      , 'top_n_genes': top_n_genes
                      , 'hi_di_plots': [os.path.abspath(hi_di_imgs[i]) for i in range(n_genes)]
                      , 'lo_di_plots': [os.path.abspath(lo_di_imgs[i]) for i in range(n_genes)]}
