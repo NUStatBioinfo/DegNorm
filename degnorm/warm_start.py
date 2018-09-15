@@ -17,7 +17,6 @@ def load_from_previous(degnorm_dir, new_dir):
     :return: dictionary with the core data required to run the new DegNorm pipeline:
     - chrom_gene_cov_dict: 2-d dictionary {chrom: {gene: coverage matrix}}
     - read_count_df: pandas.DataFrame with chr, gene, <sample ID> fields containing per-experiment read counts
-    - exon_df: pandas.DataFrame with exon positioning within genes within chromosomes
     - genes_df: pandas.DataFrame with just gene positioning within chromosomes
     - sample_ids: list of str names of sample ID's, in the same order as in read_count_df.
     """
@@ -64,7 +63,6 @@ def load_from_previous(degnorm_dir, new_dir):
     output = dict()
     output['chrom_gene_cov_dict'] = chrom_gene_cov_dict
     output['read_count_df'] = read_count_df
-    output['exon_df'] = exon_df
     output['genes_df'] = genes_df
     output['sample_ids'] = sample_ids
 

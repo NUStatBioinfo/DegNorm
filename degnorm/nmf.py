@@ -130,11 +130,12 @@ class GeneNMFOA():
         """
         # construct block rho matrix: len(self.degnorm_genes) x p matrix of DI scores
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
-        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1) # + 1 as per Bin's code.
+        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)  # + 1 as per Bin's code.
 
         # quality control.
-        self.rho[self.rho < 0] = 0.
+        # self.rho[self.rho < 0] = 0.
         self.rho[self.rho >= 1] = 1. - 1e-5
+        self.rho[self.rho < 0.9] = 0.9  # as per Bin's code, https://bit.ly/2OqXUY0 line 50
 
         # scale read count matrix by DI scores.
         scaled_counts_mat = self.x / (1 - self.rho)
@@ -582,7 +583,7 @@ class GeneNMFOA():
 
             # keep track of chromosome-gene mapping.
             chrom_gene_dfs.append(DataFrame({'chr': chrom
-                                          , 'gene': list(chrom_gene_dict[chrom].keys())}))
+                                             , 'gene': list(chrom_gene_dict[chrom].keys())}))
 
             pbar.update()
 
@@ -599,6 +600,7 @@ class GeneNMFOA():
                            , columns=sample_ids)
         rho_df = concat([chrom_gene_df, rho_df]
                         , axis=1)
+        rho_df = rho_df[['chr', 'gene'] + sample_ids]
 
         rho_df.to_csv(os.path.join(output_dir, 'degradation_index_scores.csv')
                       , index=False)
@@ -610,6 +612,7 @@ class GeneNMFOA():
                              , columns=sample_ids)
         x_adj_df = concat([chrom_gene_df, x_adj_df]
                           , axis=1)
+        x_adj_df = x_adj_df[['chr', 'gene'] + sample_ids]
 
         x_adj_df.to_csv(os.path.join(output_dir, 'adjusted_read_counts.csv')
                         , index=False)

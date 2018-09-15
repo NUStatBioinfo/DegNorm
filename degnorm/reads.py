@@ -176,7 +176,8 @@ class ReadsProcessor():
         # iterate over genes, count number of reads (entirely) falling between gene_start and gene_end.
         for i in range(n_genes):
             counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]
-            counts[i] = counts_df.shape[0] / 2
+            # counts[i] = counts_df.shape[0] / 2
+            counts[i] = counts_df.qname_unpaired.unique().shape[0]
 
         # turn read counts into a DataFrame so we can join on genes later.
         read_count_df = DataFrame({'chr': chrom
