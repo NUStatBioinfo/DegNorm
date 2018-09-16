@@ -221,7 +221,7 @@ def parse_args():
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
     parser.add_argument('--minimax-coverage'
                         , type=int
-                        , default=20
+                        , default=1
                         , required=False
                         , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. '
                                'Default is 20.')

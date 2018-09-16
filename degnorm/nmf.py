@@ -133,9 +133,9 @@ class GeneNMFOA():
         self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)  # + 1 as per Bin's code.
 
         # quality control.
-        # self.rho[self.rho < 0] = 0.
+        self.rho[self.rho < 0] = 0.
         self.rho[self.rho >= 1] = 1. - 1e-5
-        self.rho[self.rho < 0.9] = 0.9  # as per Bin's code, https://bit.ly/2OqXUY0 line 50
+        # self.rho[self.rho < 0.9] = 0.9  # as per Bin's code, https://bit.ly/2OqXUY0 line 50
 
         # scale read count matrix by DI scores.
         scaled_counts_mat = self.x / (1 - self.rho)
@@ -316,7 +316,7 @@ class GeneNMFOA():
 
         # determine if baseline selection converged: check whether DI scores are still high.
         # if not converged, just use original NMF factorization as K, E factors instead of baseline selected ones.
-        if np.nanmax(rho_vec) < 0.1: # baseline selection has converged.
+        if np.nanmax(rho_vec) < 0.2:  # baseline selection has converged. Use 0.2 instead of 0.1 as per Bin's code.
             K, E = self.nmf(F_bin, factors=True)
 
         # quality control: ensure we never divide F by 0.
