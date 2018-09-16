@@ -47,6 +47,7 @@ for(iter in 1:5){
   row.names(rho) = row.names(counts)
   colnames(rho) = colnames(counts)
   
+  # TODO: ask Bin - what is this part about? Why isn't min(rho) = 0.9 then?
   rho[rho < 0.9] = 0.9
   adjusted = counts / (1 - rho)
   ratio = 1 - rho
