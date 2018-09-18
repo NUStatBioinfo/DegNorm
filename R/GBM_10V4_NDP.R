@@ -48,7 +48,7 @@ for(iter in 1:5){
   colnames(rho) = colnames(counts)
   
   # TODO: ask Bin - what is this part about? Why isn't min(rho) = 0.9 then?
-  rho[rho < 0.9] = 0.9
+  rho[rho > 0.9] = 0.9
   adjusted = counts / (1 - rho)
   ratio = 1 - rho
   ratio[apply(ratio,1,min)==1,] = 
