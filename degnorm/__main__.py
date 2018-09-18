@@ -36,12 +36,11 @@ def main():
         sample_ids = load_dat['sample_ids']
 
     # ---------------------------------------------------------------------------- #
-    # Path 2: preprocessing path.
+    # Path 2: .sam file preprocessing path.
     # If supplied with .bam files (NOT using a warm-start),
     # convert them to .sam; further, determine intersection of chromosomes across samples.
     # ---------------------------------------------------------------------------- #
     else:
-
         sample_ids = list()
         chroms = list()
         cov_files = OrderedDict()
@@ -242,8 +241,8 @@ def main():
                       , nmf_iter=args.nmf_iter
                       , downsample_rate=args.downsample_rate
                       , n_jobs=n_jobs)
-    nmfoa.fit_transform(gene_cov_dict
-                        , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
+    estimates = nmfoa.run(gene_cov_dict
+                          , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
 
     # restore original environment.
     if not joblib_folder:
@@ -256,7 +255,8 @@ def main():
                  '\t-- degradation index scores --\n'
                  '\t-- adjusted read counts --\n'
                  '\t-- coverage curve estimates --')
-    nmfoa.save_results(genes_df
+    nmfoa.save_results(estimates
+                       , gene_manifest_df=genes_df
                        , output_dir=output_dir
                        , sample_ids=sample_ids)
 

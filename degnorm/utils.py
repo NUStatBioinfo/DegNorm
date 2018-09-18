@@ -223,8 +223,7 @@ def parse_args():
                         , type=int
                         , default=1
                         , required=False
-                        , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. '
-                               'Default is 20.')
+                        , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. ')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
