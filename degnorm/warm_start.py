@@ -1,6 +1,7 @@
 import os
 import shutil
 import pickle as pkl
+from numpy import intersect1d
 from pandas import read_csv
 
 
@@ -38,9 +39,21 @@ def load_from_previous(degnorm_dir, new_dir):
     except FileNotFoundError as e:
         raise e
 
+    genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+
+    # find intersection of reads + gtf genes, keep that subset.
+    intersect_genes = intersect1d(genes_df.gene, read_count_df.gene)
+    genes_df = exon_df[genes_df.gene.isin(intersect_genes)]
+    read_count_df = read_count_df[read_count_df.gene.isin(intersect_genes)]
+
+    # sort transcript and read count data in same order.
+    genes_df.sort_values(['chr', 'gene'], inplace=True)
+    genes_df.reset_index(inplace=True, drop=True)
+    read_count_df.sort_values(['chr', 'gene'], inplace=True)
+    read_count_df.reset_index(inplace=True, drop=True)
+
     # grab required data: sample IDs, gene manifest, chromosomes encompassed in gene manifest.
     sample_ids = read_count_df.columns.tolist()[2:]
-    genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
     chroms = genes_df.chr.unique().tolist()
     chrom_gene_cov_dict = dict()
 

@@ -268,10 +268,14 @@ class GeneNMFOA():
         while (n_bins > self.min_bins) and (np.nanmax(rho_vec) > 0.1):
             n_bins = len(bin_segs)
 
+            # transpose for slightly faster row-index selection.
+            KE_bin = KE_bin.T
+            F_bin = F_bin.T
+
             # compute relative sum of squared errors by bin.
             diff_mat = KE_bin - F_bin
-            ss_r = np.array(list(map(lambda idx: np.linalg.norm(diff_mat[:, bin_segs[idx]]), range(n_bins))))
-            ss_f = np.array(list(map(lambda idx: np.linalg.norm(F_bin[:, bin_segs[idx]]), range(n_bins))))
+            ss_r = np.array(list(map(lambda idx: np.linalg.norm(diff_mat[bin_segs[idx], :]), range(n_bins))))
+            ss_f = np.array(list(map(lambda idx: np.linalg.norm(F_bin[bin_segs[idx], :]), range(n_bins))))
 
             # safely divide binned residual norms by original binned norms.
             with np.errstate(divide='ignore', invalid='ignore'):
@@ -293,9 +297,9 @@ class GeneNMFOA():
             bin_segs = self.shift_bins(bin_segs
                                        , dropped_bin=drop_idx)
 
-            # shrink F matrix to the indices not dropped.
+            # shrink F matrix to the indices not dropped, cast back to wide matrix.
             # estimate coverage curves from said indices.
-            F_bin = F_bin[:, keep_idx]
+            F_bin = F_bin[keep_idx, :].T
             KE_bin = self.nmf(F_bin)
 
             # recompute DI scores: closer to 1 ->> more degradation
@@ -338,7 +342,7 @@ class GeneNMFOA():
         coverage arrays will be adjusted for sequencing-depth.
         :return: list of numpy reads coverage arrays estimates
         """
-        # split up coverage matrices so that no worker gets much more than 100Mb.
+        # split up coverage matrices so that no worker gets much more than 50Mb.
         dat = split_into_chunks(dat, self.mem_splits)
         baseline_ests = Parallel(n_jobs=self.n_jobs
                                  , verbose=0
@@ -447,8 +451,8 @@ class GeneNMFOA():
         # sum coverage per sample, for later.
         self.cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), cov_mats)))
 
-        # determine (integer) number of data splits for parallel workers (100Mb per worker)
-        mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, cov_mats))) / 1e8))
+        # determine (integer) number of data splits for parallel workers (50Mb per worker)
+        mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, cov_mats))) / 5e7))
         self.mem_splits = mem_splits if mem_splits > self.n_jobs else self.n_jobs
 
         # initialize NMF-OA estimates of coverage curves.
