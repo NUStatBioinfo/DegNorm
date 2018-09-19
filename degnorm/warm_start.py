@@ -43,7 +43,7 @@ def load_from_previous(degnorm_dir, new_dir):
 
     # find intersection of reads + gtf genes, keep that subset.
     intersect_genes = intersect1d(genes_df.gene, read_count_df.gene)
-    genes_df = exon_df[genes_df.gene.isin(intersect_genes)]
+    genes_df = genes_df[genes_df.gene.isin(intersect_genes)]
     read_count_df = read_count_df[read_count_df.gene.isin(intersect_genes)]
 
     # sort transcript and read count data in same order.
