@@ -11,10 +11,18 @@ import pkg_resources
 import gc
 
 
-logging.basicConfig(stream=sys.stdout
-                    , level=logging.DEBUG
-                    , format='DegNorm (%(asctime)s) ---- %(message)s'
-                    , datefmt='%m/%d/%Y %I:%M:%S')
+def configure_logger(output_dir):
+    """
+    Configure DegNorm logger. Save log to file in output directory and route to stdout.
+
+    :param output_dir: str path to DegNorm run output dir where degnorm.log file to be written.
+    """
+    logging.basicConfig(level=logging.DEBUG
+                        , format='DegNorm (%(asctime)s) ---- %(message)s'
+                        , handlers=[logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
+            , logging.StreamHandler()]
+                        , datefmt='%m/%d/%Y %I:%M:%S')
+
 
 def welcome():
     """

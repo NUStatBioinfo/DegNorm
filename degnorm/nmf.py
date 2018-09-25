@@ -112,7 +112,7 @@ class GeneNMFOA():
 
         return [est for est1d in nmf_ests for est in est1d]
 
-    def compute_scale_factors(self, estimates):
+    def compute_scale_factors(self, estimates, init=False):
         """
         Update read count scaling factors by computing n x p matrix of degradation index scores from
         a set of NMF-OA estimates.
@@ -126,14 +126,26 @@ class GeneNMFOA():
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
         self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)  # + 1 as per Bin's code.
 
-        # quality control.
+        # quality control: DI scores must be between 0 and (close to) 1.
         self.rho[self.rho < 0.] = 0.
-        self.rho[self.rho > 0.9] = 0.9  # as per Bin's code, https://bit.ly/2OqXUY0 line 50
+        self.rho[self.rho > 1. - 1e-5] = 1. - 1e-5
 
-        # scale read count matrix by DI scores.
-        scaled_counts_mat = self.x / (1 - self.rho)
-        scaled_counts_sums = scaled_counts_mat.sum(axis=0)
-        self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
+        # as per Bin's code, https://bit.ly/2OqXUY0 line 30: for initial iteration, make
+        # scale factors from column sums from genes with low DI scores.
+        low_di_gene = self.rho.max(axis=1) < 0.1
+
+        if init and np.any(low_di_gene):
+            scaled_counts_sums = self.x[low_di_gene].sum(axis=0)
+            self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
+
+        else:
+            # as per Bin's code, https://bit.ly/2OqXUY0 line 50: threshold max DI score.
+            self.rho[self.rho > 0.9] = 0.9
+
+            # scale read count matrix by DI scores.
+            scaled_counts_mat = self.x / (1 - self.rho)
+            scaled_counts_sums = scaled_counts_mat.sum(axis=0)
+            self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
 
     def adjust_coverage_curves(self, dat):
         """
@@ -152,7 +164,6 @@ class GeneNMFOA():
         # From Supplement section 2: "For [genes with insufficient coverage], we adjust
         # the read count based on the average DI score of the corresponding sample.
 
-        # TODO: find out if high-coverage judgement done on original or adjusted coverage matrices.
         # update the genes that had sufficient coverage, or were successfully downsampled.
         adj_standard_idx = np.where(self.use_baseline_selection)[0]
         if len(adj_standard_idx) > 0:
@@ -460,8 +471,9 @@ class GeneNMFOA():
         estimates = self.par_apply_nmf(cov_mats)
 
         # update vector of read count adjustment factors; update rho (DI) matrix.
-        self.compute_scale_factors(estimates)
-        print('Initial reads scale factors -- {0}'.format(', '.join([str(x) for x in self.scale_factors])))
+        self.compute_scale_factors(estimates
+                                   , init=True)
+        logging.info('Initial reads scale factors -- {0}'.format(', '.join([str(x) for x in self.scale_factors])))
 
         # impose 1 / (1 - DI scores) scaling post self.compute_scale_factors.
         self.adjust_read_counts()
@@ -485,8 +497,8 @@ class GeneNMFOA():
             self.compute_scale_factors(estimates)
             self.adjust_read_counts()
 
-            print('NMFOA iteration {0} -- reads scale factors: {1}'
-                  .format(i + 1, ', '.join([str(x) for x in self.scale_factors])))
+            logging.info('NMFOA iteration {0} -- reads scale factors: {1}'
+                         .format(i + 1, ', '.join([str(x) for x in self.scale_factors])))
 
             i += 1
             pbar.update()
@@ -556,7 +568,7 @@ class GeneNMFOA():
             chrom_gene_dict[chrom][gene] = estimates[gene_idx]
 
         # Instantiate results-save progress bar.
-        pbar = tqdm.tqdm(total=(self.n_genes + 2)
+        pbar = tqdm.tqdm(total=(len(manifest_chroms) + 2)
                          , leave=False
                          , desc='GeneNMFOA results save progress')
 
