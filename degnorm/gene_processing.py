@@ -2,6 +2,7 @@ import itertools
 import pandas as pd
 from degnorm.utils import *
 from degnorm.loaders import GeneAnnotationLoader
+from joblib import Parallel, delayed
 
 
 class GeneAnnotationProcessor():
@@ -41,13 +42,14 @@ class GeneAnnotationProcessor():
                 logging.info('Subsetting exon data to {0} chromosomes:\n'
                              '\t{1}'.format(len(self.chroms), ', '.join(self.chroms)))
 
-            exon_df = subset_to_chrom(exon_df, chrom=self.chroms)
+            exon_df = subset_to_chrom(exon_df
+                                      , chrom=self.chroms)
 
         if self.verbose:
             logging.info('Successfully loaded exon data -- shape: {0}'.format(exon_df.shape))
 
         if exon_df.empty:
-            raise ValueError('Exon DataFrame is empty! Perhaps your chromosome or gene subsetting'
+            raise ValueError('Exon DataFrame is empty! Perhaps your chromosome or gene subsetting '
                              'is not going according to plan.')
 
         return exon_df
@@ -94,17 +96,21 @@ class GeneAnnotationProcessor():
         Helper function for multiprocessing pool.apply in remove_multigene_exons. Identifies
         exons within one chromosome that overlap with multiple genes.
 
-        :param exon_df: pandas.DataFrame with fields 'chr', 'gene', 'start', 'end' outlining the transcriptome
-        on a chromosome; there are multiple rows (so, multiple exons) per (chr, gene) combination
+        :param exon_df: pandas.DataFrame with fields 'chr', 'gene', 'start', 'end' outlining exons in a
+        chromosome; genes with >1 exon are represented across multiple rows.
         :param gene_df: pandas.DataFrame with fields 'chr', 'gene', 'gene_start', 'gene_end', and 'exon_id'
          outlining the positions of genes on a chromosome
         :param chrom: str name of chromosome
         :return: list of exon identifiers for exons that intersect with > 1 genes
         """
         # subset range DataFrames to relevant chromosome.
-        exon_chrom_df = subset_to_chrom(exon_df, chrom=chrom, reindex=True)
+        exon_chrom_df = subset_to_chrom(exon_df
+                                        , chrom=chrom
+                                        , reindex=True)
         exon_chrom_df = exon_chrom_df[['start', 'end', 'exon_id']]
-        gene_chrom_df = subset_to_chrom(gene_df, chrom=chrom, reindex=True)
+        gene_chrom_df = subset_to_chrom(gene_df
+                                        , chrom=chrom
+                                        , reindex=True)
 
         # store list of exons that need to be removed.
         rm_exon_list = list()
@@ -115,7 +121,7 @@ class GeneAnnotationProcessor():
             # for particular exon, get get exon start/end locations and exon_id
             exon_start, exon_end, exon_id = exon_chrom_df.iloc[exon_idx].values
 
-            # subset to genes that have overlap with this exon
+            # subset to genes that overlap with this exon.
             gene_match_df = gene_chrom_df[(gene_chrom_df.gene_start.between(exon_start, exon_end)) |
                                           (gene_chrom_df.gene_end.between(exon_start, exon_end)) |
                                           ((gene_chrom_df.gene_start > exon_start) & (gene_chrom_df.gene_end < exon_end))]
@@ -143,10 +149,12 @@ class GeneAnnotationProcessor():
         chroms = gene_df.chr.unique()
 
         # Iterating over chromosomes in parallel.
-        p = mp.Pool(processes=self.n_jobs)
-        rm_exons = [p.apply_async(self.find_overlapping_exons, args=(exon_df, gene_df, chrom)) for chrom in chroms]
-        p.close()
-        rm_exons = [x.get() for x in rm_exons]
+        rm_exons = Parallel(n_jobs=self.n_jobs
+                            , verbose=0
+                            , backend='threading')(delayed(self.find_overlapping_exons)(
+            exon_df=exon_df,
+            gene_df=gene_df,
+            chrom=chrom) for chrom in chroms)
 
         # collapse 2-d list of lists into 1-d list
         rm_exons = list(itertools.chain.from_iterable(rm_exons))
@@ -187,7 +195,8 @@ class GeneAnnotationProcessor():
         if self.verbose:
             logging.info('Multiple-chromosome genes were removed.')
 
-        exon_df = exon_df.merge(gene_df, on=['chr', 'gene'])
+        exon_df = exon_df.merge(gene_df
+                                , on=['chr', 'gene'])
         exon_df.drop_duplicates(inplace=True)
 
         if self.verbose:

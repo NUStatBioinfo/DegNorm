@@ -12,12 +12,13 @@ import sys
 def main():
 
     # ---------------------------------------------------------------------------- #
-    # Load CLI arguments and create output directory
+    # Load CLI arguments, display welcome message, create output directory
     # ---------------------------------------------------------------------------- #
     args = parse_args()
     n_jobs = args.cpu
     output_dir = create_output_dir(args.output_dir)
     configure_logger(output_dir)
+    logging.info(welcome())
     logging.info('DegNorm output directory -- {0}'.format(output_dir))
 
     # ---------------------------------------------------------------------------- #

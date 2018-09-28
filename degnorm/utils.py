@@ -365,8 +365,6 @@ def parse_args():
                                        'samtools is required to convert .bam -> .sam files'
                                        'Either use .sam files or install samtools.')
 
-    welcome()
-
     return args
 
 

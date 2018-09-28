@@ -141,15 +141,8 @@ THIS PACKAGE NOT YET ON PYPI.
     $ conda create -n degnorm python=3.6
     $ source activate degnorm
 
-3. Install requirements:
+3. Run the install script:
 
 .. code-block:: bash
 
-    $ pip install -r requirements.txt
-
-
-4. Install DegNorm package:
-
-.. code-block:: bash
-
-    $ python setup.py install
+    $ ./install
