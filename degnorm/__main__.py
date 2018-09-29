@@ -18,7 +18,7 @@ def main():
     n_jobs = args.cpu
     output_dir = create_output_dir(args.output_dir)
     configure_logger(output_dir)
-    logging.info(welcome())
+    welcome()
     logging.info('DegNorm output directory -- {0}'.format(output_dir))
 
     # ---------------------------------------------------------------------------- #

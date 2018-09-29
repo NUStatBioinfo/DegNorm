@@ -107,8 +107,8 @@ class GeneNMFOA():
         # split up list of coverage matrices to feed to workers.
         dat = split_into_chunks(dat, self.mem_splits)
         nmf_ests = Parallel(n_jobs=self.n_jobs
-                                 , verbose=0
-                                 , backend='threading')(map(delayed(self.run_nmf_serial), dat))
+                            , verbose=0
+                            , backend='threading')(map(delayed(self.run_nmf_serial), dat))
 
         return [est for est1d in nmf_ests for est in est1d]
 
@@ -479,7 +479,7 @@ class GeneNMFOA():
         self.adjust_read_counts()
 
         # Instantiate progress bar.
-        pbar = tqdm.tqdm(total = self.degnorm_iter
+        pbar = tqdm.tqdm(total=self.degnorm_iter
                          , leave=False
                          , desc='NMF-OA iteration progress')
 
