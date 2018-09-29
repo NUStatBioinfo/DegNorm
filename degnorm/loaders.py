@@ -153,7 +153,7 @@ class SamLoader(Loader):
         # share the same un-paired QNAME
         df['qname_unpaired'] = df.qname.apply(lambda x: '.'.join(x.split('.')[:-1]))
 
-        # sort the reads so that pairs are grouped together.
+        # sort the reads so that pairs are grouped together. very important!
         df.sort_values('qname_unpaired', inplace=True)
 
         df_dict['data'] = df.reset_index(drop=True)

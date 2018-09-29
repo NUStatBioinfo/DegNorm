@@ -12,11 +12,13 @@ import sys
 def main():
 
     # ---------------------------------------------------------------------------- #
-    # Load CLI arguments and create output directory
+    # Load CLI arguments, display welcome message, create output directory
     # ---------------------------------------------------------------------------- #
     args = parse_args()
     n_jobs = args.cpu
     output_dir = create_output_dir(args.output_dir)
+    configure_logger(output_dir)
+    welcome()
     logging.info('DegNorm output directory -- {0}'.format(output_dir))
 
     # ---------------------------------------------------------------------------- #
@@ -32,20 +34,18 @@ def main():
                                       , new_dir=output_dir)
         chrom_gene_cov_dict = load_dat['chrom_gene_cov_dict']
         read_count_df = load_dat['read_count_df']
-        exon_df = load_dat['exon_df']
         genes_df = load_dat['genes_df']
         sample_ids = load_dat['sample_ids']
 
     # ---------------------------------------------------------------------------- #
-    # Path 2: preprocessing path.
+    # Path 2: .sam file preprocessing path.
     # If supplied with .bam files (NOT using a warm-start),
     # convert them to .sam; further, determine intersection of chromosomes across samples.
     # ---------------------------------------------------------------------------- #
     else:
-
         sample_ids = list()
         chroms = list()
-        cov_files = dict()
+        cov_files = OrderedDict()
         read_count_dict = dict()
         n_samples = len(args.input_files)
 
@@ -198,7 +198,7 @@ def main():
         cov_mat = chrom_gene_cov_dict[chrom][gene]
 
         # do not add gene if there are any 100%-zero coverage samples.
-        # do not add gene if maximum coverage is < minimum coverage threshold.
+        # do not add gene if maximum coverage is < minimum maximum coverage threshold.
         # do not add gene if downsample rate low enough s.t. take-every > length of gene.
         if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
                 or (cov_mat.shape[1] <= args.downsample_rate):
@@ -243,8 +243,8 @@ def main():
                       , nmf_iter=args.nmf_iter
                       , downsample_rate=args.downsample_rate
                       , n_jobs=n_jobs)
-    nmfoa.fit_transform(gene_cov_dict
-                        , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
+    estimates = nmfoa.run(gene_cov_dict
+                          , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
 
     # restore original environment.
     if not joblib_folder:
@@ -254,10 +254,11 @@ def main():
     # Save results.
     # ---------------------------------------------------------------------------- #
     logging.info('Saving NMF-OA output:\n'
-                 '-- degradation index scores --\n'
-                 '-- adjusted read counts --\n'
-                 '-- coverage curve estimates --')
-    nmfoa.save_results(genes_df
+                 '\t-- degradation index scores --\n'
+                 '\t-- adjusted read counts --\n'
+                 '\t-- coverage curve estimates --')
+    nmfoa.save_results(estimates
+                       , gene_manifest_df=genes_df
                        , output_dir=output_dir
                        , sample_ids=sample_ids)
 

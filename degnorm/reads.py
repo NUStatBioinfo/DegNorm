@@ -70,7 +70,7 @@ class ReadsProcessor():
         :param cigar: str a read's cigar string, e.g. "49M165N51M"
         :param start: int a read's start position on a chromosome
         :return: tuple
-            list: a list of integers representing cigar match start,end points, e.g.
+            list: a list of integers representing cigar match start, end points, e.g.
             50M25N50M starting from 100 -> [100, 149, 175, 224]. Note that start and end integers
             are inclusive, i.e. all positions at or between 100 and 149 and at or between 175 and 224
             are covered by reads.
@@ -79,18 +79,20 @@ class ReadsProcessor():
         if cigar == '100M':
             return [start, start + 99], 1
 
+        # break up cigar string into list of 2-tuples (letter indicative of match/no match, run length integer).
         cigar_split = [(v, int(k)) for k, v in re.findall(r'(\d+)([A-Z]?)', cigar)]
 
+        # num_match_segs: number matching segments from cigar string.
         num_match_segs = 0
-        match_idx_list = list()
+        match_idx_list = list()  # output storage.
 
         for idx in range(len(cigar_split)):
             segment = cigar_split[idx]
 
             if segment[0] == 'M':
-                extension = segment[1] - 1
+                extension = segment[1] - 1  # end of a match run is inclusive.
                 augment = True
-                match_idx_list += [start, start + extension]
+                match_idx_list += [start, start + extension]  # append a match run to output.
                 num_match_segs += 1
 
             else:
@@ -111,15 +113,20 @@ class ReadsProcessor():
 
         Saves compressed coverage array to self.tmp_dir with file name 'sample_[sample_id]_[chrom].npz'
 
-        :param reads_sub_df: pandas.DataFrame of paired reads data with `cigar` and `pos` fields,
-        must be subsetted to the chromosome in study.
+        :param reads_sub_df: pandas.DataFrame of ordered paired reads data with `cigar` and `pos` fields,
+        must be subset to the chromosome in study.
         :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome, must be
-        subsetted to the chromosome in study.
+        subset to the chromosome in study.
         :param chrom: str chromosome name
         :param chrom_len: int length of chromosome from reference genome
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
+        # first, ensure that we've sequestered paired reads (eliminate any query names occurring once).
+        qname_counts = reads_sub_df.qname_unpaired.value_counts()
+        paired_occ_reads = qname_counts[qname_counts == 2].index.values.tolist()
+        reads_sub_df = reads_sub_df[reads_sub_df.qname_unpaired.isin(paired_occ_reads)]
+
         # grab cigar string and read starting position. Initialize coverage array.
         dat = reads_sub_df[['cigar', 'pos']].values
         cov_vec = np.zeros([chrom_len])
@@ -175,8 +182,8 @@ class ReadsProcessor():
 
         # iterate over genes, count number of reads (entirely) falling between gene_start and gene_end.
         for i in range(n_genes):
-            counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]
-            counts[i] = counts_df.shape[0] / 2
+            counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]  # must entire read fall w/in gene start/end?
+            counts[i] = counts_df.qname_unpaired.unique().shape[0]
 
         # turn read counts into a DataFrame so we can join on genes later.
         read_count_df = DataFrame({'chr': chrom

@@ -11,10 +11,18 @@ import pkg_resources
 import gc
 
 
-logging.basicConfig(stream=sys.stdout
-                    , level=logging.DEBUG
-                    , format='DegNorm (%(asctime)s) ---- %(message)s'
-                    , datefmt='%m/%d/%Y %I:%M:%S')
+def configure_logger(output_dir):
+    """
+    Configure DegNorm logger. Save log to file in output directory and route to stdout.
+
+    :param output_dir: str path to DegNorm run output dir where degnorm.log file to be written.
+    """
+    logging.basicConfig(level=logging.DEBUG
+                        , format='DegNorm (%(asctime)s) ---- %(message)s'
+                        , handlers=[logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
+            , logging.StreamHandler()]
+                        , datefmt='%m/%d/%Y %I:%M:%S')
+
 
 def welcome():
     """
@@ -26,6 +34,7 @@ def welcome():
         welcome += '\nversion {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
     sys.stdout.write(''.join(welcome) + '\n'*4)
+    logging.info(''.join(welcome) + '\n'*4)
 
 
 def create_output_dir(output_dir):
@@ -221,10 +230,9 @@ def parse_args():
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
     parser.add_argument('--minimax-coverage'
                         , type=int
-                        , default=20
+                        , default=1
                         , required=False
-                        , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. '
-                               'Default is 20.')
+                        , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. ')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
@@ -357,8 +365,6 @@ def parse_args():
                 raise EnvironmentError('samtools is not installed or is not in your PATH.'
                                        'samtools is required to convert .bam -> .sam files'
                                        'Either use .sam files or install samtools.')
-
-    welcome()
 
     return args
 

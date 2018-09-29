@@ -13,8 +13,8 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     :param exon_df: pandas.DataFrame outlining exon positions in a gene; has columns 'chr',
     'start' (exon start), 'end' (exon end), 'gene' (gene name), 'gene_end', and 'gene_start'
     :param chrom: str name of chromosome to break up for gene-level coverage matrices
-    :param coverage_files: dict of {sample ID: list of .npz files} specifying, per RNA-seq experiment, the paths to
-    compressed numpy chromosome coverage array files.
+    :param coverage_files: OrderedDict of {sample ID: list of .npz files} specifying, per RNA-seq experiment,
+     the paths to compressed numpy chromosome coverage array files.
     :param output_dir: str if specified save gene-level coverage matrices to binary .pkl files.
     :param verbose: bool indicator should progress be written with logger?
     Default is None (do not save)

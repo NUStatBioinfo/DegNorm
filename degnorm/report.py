@@ -58,7 +58,7 @@ def render_report(data_dir, genenmfoa, input_files,
     fig.suptitle('Degradation index scores by sample')
 
     plot_dists = False
-    if genenmfoa.rho.shape[0] > 1:
+    if genenmfoa.rho.shape[0] > 1 and np.linalg.matrix_rank(genenmfoa.rho) > 1:
         rho_df = DataFrame(genenmfoa.rho
                            , columns=sample_ids)
         sample_means = rho_df.mean(axis=0).sort_values()
@@ -103,7 +103,8 @@ def render_report(data_dir, genenmfoa, input_files,
             fig.tight_layout(rect=[0, 0, 1, 0.95])
 
         else:
-            sns.barplot(sample_ids, y=genenmfoa.rho[0])
+            sns.barplot(sample_ids
+                        , y=genenmfoa.rho[0])
 
         sample_di_dist_plot = os.path.abspath(os.path.join(report_dir, 'di_dists_samples.png'))
         fig.savefig(sample_di_dist_plot

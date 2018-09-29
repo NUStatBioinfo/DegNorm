@@ -11,7 +11,7 @@ setup(
     package_data={
         'degnorm': ['resources/*', 'tests/data/*']
     },
-    license='GNU',
+    license='MIT',
     url='https://github.com/ffineis/DegNorm',
     author='Frank Fineis',
     author_email='frankfineis2022@u.northwestern.edu',
