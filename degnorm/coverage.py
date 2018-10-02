@@ -79,6 +79,8 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         # Slice up cov_mat based on relative exon positions within a gene.
         e_starts, e_ends = single_gene_df.start.values, single_gene_df.end.values
         slices = [np.arange(e_starts[i], e_ends[i]) for i in range(len(e_starts))]
+
+        # in case exons are overlapping, take union of their covered regions.
         slicing = np.unique(flatten_2d(slices))
 
         # Save transposed coverage matrix so that shape is p x Li.

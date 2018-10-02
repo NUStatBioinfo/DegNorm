@@ -147,7 +147,7 @@ class ReadsProcessor():
 
             bounds = bounds_1 + bounds_2
             for j in np.arange(1, len(bounds), 2):
-                cov_vec[(bounds[j - 1]) : (bounds[j] + 1)] += 1
+                cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
 
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} length: {2}'.format(self.sample_id, chrom, len(cov_vec)))

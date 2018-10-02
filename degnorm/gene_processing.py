@@ -93,7 +93,7 @@ class GeneAnnotationProcessor():
     @staticmethod
     def find_overlapping_exons(exon_df, gene_df, chrom):
         """
-        Helper function for multiprocessing pool.apply in remove_multigene_exons. Identifies
+        Helper function for parallel execution in remove_multigene_exons. Identifies
         exons within one chromosome that overlap with multiple genes.
 
         :param exon_df: pandas.DataFrame with fields 'chr', 'gene', 'start', 'end' outlining exons in a
@@ -126,6 +126,7 @@ class GeneAnnotationProcessor():
                                           (gene_chrom_df.gene_end.between(exon_start, exon_end)) |
                                           ((gene_chrom_df.gene_start > exon_start) & (gene_chrom_df.gene_end < exon_end))]
 
+            # if exons overlapping multiple genes found, append their IDs to a list.
             if gene_match_df.shape[0] > 1:
                 rm_exon_list.append(exon_id)
 

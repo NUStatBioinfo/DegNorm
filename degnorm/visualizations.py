@@ -4,11 +4,60 @@ import matplotlib.gridspec as gridspec
 from matplotlib.patches import Rectangle
 import matplotlib.pylab as plt
 import seaborn as sns
-from pandas import read_csv
 import numpy as np
 import os
 import pickle as pkl
+from pandas import read_csv
+from degnorm.utils import flatten_2d
 plt.rcParams.update({'figure.max_open_warning': 0})
+
+
+def get_exon_unions(x):
+    """
+    Helper function to take union of intersecting exons, for visualization purposes.
+    For example, suppose we have two intersecting exons:
+
+    [14563, 14600]
+    [14590, 14640]
+
+    They will be reduced into a single exon:
+    [14563, 14640]
+
+    :param x: n x 2 numpy array of exon (start, end) pairs
+    :return: m x 2 numpy array of unioned exon (start, end) pairs, m <= n.
+    """
+    if x.shape[0] == 1:
+        return x
+
+    # sort exons according to start position.
+    x = x[np.argsort(x[:, 0]), :]
+    concat_exons = list()
+
+    # determine if exons bleed into any succeeding exons.
+    # this happens if exon i's end position >= exon j's start position, j > i.
+    for i in range(x.shape[0] - 1):
+        bleeding = np.where(x[i, 1] >= x[(i + 1):, 0])[0]
+        if len(bleeding) > 0:
+            concat_exons.append([i, max(bleeding) + (i + 1)])
+
+    if concat_exons:
+        drop_exons = np.unique(flatten_2d(concat_exons))
+        union_exons = list()
+
+        # take min(start), max(end) for exons with overlap.
+        for j in np.unique([z[1] for z in concat_exons]):
+            bleed_start = np.min(np.where([z[1] == j for z in concat_exons])[0])
+            start = x[concat_exons[bleed_start][0]][0]
+            end = x[j][1]
+            union_exons.append([start, end])
+
+        # drop old intersecting exons and stack up newly unioned exons.
+        x = np.delete(x, obj=drop_exons, axis=0)
+        x = np.vstack([x, np.vstack(union_exons)])
+        x = np.unique(x, axis=0)
+        x = x[np.argsort(x[:, 0]), :]
+
+    return x
 
 
 def plot_gene_coverage(ke, f, x_exon, gene
@@ -41,13 +90,21 @@ def plot_gene_coverage(ke, f, x_exon, gene
     else:
         sample_ids = ['sample_{0}'.format(i + 1) for i in range(ke.shape[0])]
 
-    # establish exon positioning on chromosome and break points.
-    x_exon = x_exon[x_exon[:, 0].argsort()]
-    diffs = x_exon[:, 1] - x_exon[:, 0]
+    # get union of intersecting exons to prevent confusion when plotting exon junctions.
+    x_exon = get_exon_unions(x_exon)
+
+    # establish exon positioning on chromosome and junction break points.
     rel_start = x_exon.min()
-    rel_end = rel_start + np.sum(diffs)
     start = rel_start
-    end = x_exon.max()
+
+    if x_exon.shape[0] > 1:
+        diffs = x_exon[:, 1] - x_exon[:, 0]
+        rel_end = rel_start + np.sum(diffs)
+        end = x_exon.max()
+
+    else:
+        rel_end = x_exon.max()
+        end = rel_end
 
     fig = plt.figure(**kwargs)
     fig.suptitle('Gene {0} coverage -- chromosome {1}'.format(gene, chrom))

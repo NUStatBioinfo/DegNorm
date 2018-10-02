@@ -158,6 +158,9 @@ def main():
         read_count_df.to_csv(read_count_file
                              , index=False)
 
+        # ensure chromosomes still reflective of genes to be processed.
+        chroms = read_count_df.chr.unique().tolist()
+
         # ---------------------------------------------------------------------------- #
         # Slice up genome coverage matrix for each gene according to exon positioning.
         # Run in parallel over chromosomes.
