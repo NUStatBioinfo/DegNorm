@@ -93,26 +93,40 @@ class GeneNMFOA():
 
         return est
 
-    def run_nmf_serial(self, x, factors=False):
-        return list(map(lambda z: self.nmf(z, factors), x))
-
-    def par_apply_nmf(self, dat):
+    def ratio_svd(self, x):
         """
-        Apply NMF-OA to a list of coverage matrices.
+        One-iteration SVD over-approximation, but not the NMFOA algorithm.
+        See https://bit.ly/2zR4XEn.
 
-        :param dat: list of numpy reads coverage arrays, shapes are (Li x p)
-        :return: list of dict output from self.nmf, one per numpy.array in dat
+        :param x: 2-d numpy array
+        :return: 2-d numpy array estimate, elements are at least as large as those in x.
         """
+        K, E = self.rank_one_approx(x)
+        est = np.abs(K.dot(E))
+        est[est < x] = x[est < x]
 
+        return est
+
+    def run_ratio_svd_serial(self, x):
+        return list(map(self.ratio_svd, x))
+
+    def par_apply(self, fun, dat):
+        """
+        Apply a function to a list in parallel with threading.
+
+        :param fun: function to be applied to elements of list.
+        :param dat: list of elements to be chunked up, distributed to threads, and hit with fun.
+        :return: list of output from fun
+        """
         # split up list of coverage matrices to feed to workers.
         dat = split_into_chunks(dat, self.mem_splits)
-        nmf_ests = Parallel(n_jobs=self.n_jobs
-                            , verbose=0
-                            , backend='threading')(map(delayed(self.run_nmf_serial), dat))
+        par_output = Parallel(n_jobs=self.n_jobs
+                              , verbose=0
+                              , backend='threading')(map(delayed(fun), dat))
 
-        return [est for est1d in nmf_ests for est in est1d]
+        return [est for est1d in par_output for est in est1d]
 
-    def compute_scale_factors(self, estimates, init=False):
+    def compute_scale_factors(self, estimates):
         """
         Update read count scaling factors by computing n x p matrix of degradation index scores from
         a set of NMF-OA estimates.
@@ -126,26 +140,14 @@ class GeneNMFOA():
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
         self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)  # + 1 as per Bin's code.
 
-        # quality control: DI scores must be between 0 and (close to) 1.
+        # quality control: s per Bin's code, https://bit.ly/2OqXUY0 line 50: threshold max DI score.
         self.rho[self.rho < 0.] = 0.
-        self.rho[self.rho > 1. - 1e-5] = 1. - 1e-5
+        self.rho[self.rho > 0.9] = 0.9
 
-        # as per Bin's code, https://bit.ly/2OqXUY0 line 30: for initial iteration, make
-        # scale factors from column sums from genes with low DI scores.
-        low_di_gene = self.rho.max(axis=1) < 0.1
-
-        if init and np.any(low_di_gene):
-            scaled_counts_sums = self.x[low_di_gene].sum(axis=0)
-            self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
-
-        else:
-            # as per Bin's code, https://bit.ly/2OqXUY0 line 50: threshold max DI score.
-            self.rho[self.rho > 0.9] = 0.9
-
-            # scale read count matrix by DI scores.
-            scaled_counts_mat = self.x / (1 - self.rho)
-            scaled_counts_sums = scaled_counts_mat.sum(axis=0)
-            self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
+        # scale read count matrix by DI scores.
+        scaled_counts_mat = self.x / (1 - self.rho)
+        scaled_counts_sums = scaled_counts_mat.sum(axis=0)
+        self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
 
     def adjust_coverage_curves(self, dat):
         """
@@ -462,21 +464,39 @@ class GeneNMFOA():
         # sum coverage per sample, for later.
         self.cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), cov_mats)))
 
-        # determine (integer) number of data splits for parallel workers (50Mb per worker)
+        # determine (integer) number of data splits for parallel workers (50Mb per worker).
         mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, cov_mats))) / 5e7))
         self.mem_splits = mem_splits if mem_splits > self.n_jobs else self.n_jobs
 
-        # initialize NMF-OA estimates of coverage curves.
-        # Only use on genes that meet baseline selection criteria.
-        estimates = self.par_apply_nmf(cov_mats)
+        # ---------------------------------------------------------------------------- #
+        # DegNorm initialization: https://bit.ly/2OqXUY0 lines 18-31
+        # 1. initialize scale factors based on sample read counts
+        # 2. scale coverage matrices by factors from 1.
+        # 3. re-estimate initial scale factors from estimated DI scores, but try
+        #    to base this estimation only from genes with low degradation.
+        # ---------------------------------------------------------------------------- #
+        # compute initial scale factors: colsum(sample counts) / median(sample counts).
+        reads_sums = self.x.sum(axis=0)
+        self.scale_factors = reads_sums / np.median(reads_sums)
 
-        # update vector of read count adjustment factors; update rho (DI) matrix.
-        self.compute_scale_factors(estimates
-                                   , init=True)
+        # initialize NMF-OA estimates of initially-scaled coverage curves.
+        # Use "ratio_svd" instead of nmf approximations to get first DI scores.
+        estimates = self.par_apply(fun=self.run_ratio_svd_serial
+                                   , dat=self.adjust_coverage_curves(cov_mats))
+
+        est_sums = list(map(lambda x: x.sum(axis=1), estimates))
+        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)
+
+        # re-estimate initial scale factors.
+        low_di_gene = self.rho.max(axis=1) < 0.1
+        if np.any(low_di_gene):
+            counts_sums = self.x[low_di_gene].sum(axis=0)
+            self.scale_factors = counts_sums / np.median(counts_sums)
+
+        else:
+            self.compute_scale_factors(estimates)
+
         logging.info('Initial reads scale factors -- {0}'.format(', '.join([str(x) for x in self.scale_factors])))
-
-        # impose 1 / (1 - DI scores) scaling post self.compute_scale_factors.
-        self.adjust_read_counts()
 
         # Instantiate progress bar.
         pbar = tqdm.tqdm(total=self.degnorm_iter
