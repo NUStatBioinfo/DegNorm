@@ -470,28 +470,22 @@ class GeneNMFOA():
 
         # ---------------------------------------------------------------------------- #
         # DegNorm initialization: https://bit.ly/2OqXUY0 lines 18-31
-        # 1. initialize scale factors based on sample read counts
-        # 2. scale coverage matrices by factors from 1.
-        # 3. re-estimate initial scale factors from estimated DI scores, but try
+        # 1. Estimate initial scale factors from estimated DI scores, but try
         #    to base this estimation only from genes with low degradation.
         # ---------------------------------------------------------------------------- #
-        # compute initial scale factors: colsum(sample counts) / median(sample counts).
-        reads_sums = self.x.sum(axis=0)
-        self.scale_factors = reads_sums / np.median(reads_sums)
 
         # initialize NMF-OA estimates of initially-scaled coverage curves.
         # Use "ratio_svd" instead of nmf approximations to get first DI scores.
         estimates = self.par_apply(fun=self.run_ratio_svd_serial
-                                   , dat=self.adjust_coverage_curves(cov_mats))
-
+                                   , dat=cov_mats)
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
         self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)
 
-        # re-estimate initial scale factors.
+        # get initial scale factors from ratio_svd function.
         low_di_gene = self.rho.max(axis=1) < 0.1
         if np.any(low_di_gene):
-            counts_sums = self.x[low_di_gene].sum(axis=0)
-            self.scale_factors = counts_sums / np.median(counts_sums)
+            count_sums = self.x[low_di_gene].sum(axis=0)
+            self.scale_factors = count_sums / np.median(count_sums)
 
         else:
             self.compute_scale_factors(estimates)
