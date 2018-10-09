@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 class GeneNMFOA():
 
     def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
-                 nmf_iter=100, bins=20, n_jobs=max_cpu()):
+                 nmf_iter=100, bins=20, n_jobs=max_cpu(), random_state=123):
         """
         Initialize an NMF-over-approximator object.
 
@@ -24,23 +24,31 @@ class GeneNMFOA():
         :param nmf_iter: int number of iterations to run per NMF-OA approximation per gene's coverage matrix.
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
         :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
+        :param random_state: int seed for random number generator, useful if downsampling coverage matrices.
         """
         self.degnorm_iter = np.abs(int(degnorm_iter))
         self.nmf_iter = np.abs(int(nmf_iter))
         self.n_jobs = np.abs(int(n_jobs))
         self.bins = np.abs(int(bins))
         self.min_high_coverage = np.abs(int(min_high_coverage))
-        self.min_bins = np.ceil(self.bins * 0.3)
+        self.min_bins = np.ceil(self.bins * 0.2)
         self.use_baseline_selection = None
         self.downsample_rate = np.abs(int(downsample_rate))
         self.mem_splits = None
         self.x = None
+        self.x_weighted = None
         self.x_adj = None
         self.p = None
         self.n_genes = None
+        self.norm_factors = None
         self.scale_factors = None
         self.rho = None
         self.fitted = False
+        self.random_state = random_state
+
+        # no minimum number of high-coverage indices if downsampling.
+        if self.downsample_rate > 1:
+            self.min_high_coverage = 1
 
     def rank_one_approx(self, x):
         """
@@ -102,7 +110,7 @@ class GeneNMFOA():
         :return: 2-d numpy array estimate, elements are at least as large as those in x.
         """
         K, E = self.rank_one_approx(x)
-        est = np.abs(K.dot(E))
+        est = K.dot(E)
         est[est < x] = x[est < x]
 
         return est
@@ -126,58 +134,37 @@ class GeneNMFOA():
 
         return [est for est1d in par_output for est in est1d]
 
-    def compute_scale_factors(self, estimates):
-        """
-        Update read count scaling factors by computing n x p matrix of degradation index scores from
-        a set of NMF-OA estimates.
-
-        Compute s_{j} = \frac{sum_{i=1}^{n}\tilde{X}_{ij}}{median_{j}(\sum_{i=1}^{n}\tilde{X}_{ij})}
-        vector (p x 1) of read count adjustment factors.
-
-        :param estimates: list of rank-one approximations of coverage curves
-        """
-        # construct block rho matrix: len(self.degnorm_genes) x p matrix of DI scores
-        est_sums = list(map(lambda x: x.sum(axis=1), estimates))
-        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)  # + 1 as per Bin's code.
-
-        # quality control: s per Bin's code, https://bit.ly/2OqXUY0 line 50: threshold max DI score.
-        self.rho[self.rho < 0.] = 0.
-        self.rho[self.rho > 0.9] = 0.9
-
-        # scale read count matrix by DI scores.
-        scaled_counts_mat = self.x / (1 - self.rho)
-        scaled_counts_sums = scaled_counts_mat.sum(axis=0)
-        self.scale_factors = scaled_counts_sums / np.median(scaled_counts_sums)
-
     def adjust_coverage_curves(self, dat):
         """
-        Adjust coverage curves by dividing the coverage values by corresponding adjustment factor, s_{j}
+        Adjust coverage curves by dividing the coverage values by corresponding scale factor, s_{j}
         """
         return [(F.T / self.scale_factors).T for F in dat]
 
-    def adjust_read_counts(self):
+    def compute_di_scores(self, estimates):
         """
-        Adjust read counts by scale factors, while being mindful of
+        Compute degradation index (DI) scores, i.e. the rho matrix, while being mindful of
         which genes were run through baseline algorithm and which ones were excluded.
+
+        :param estimates: list of rank-one approximations of coverage curves
         """
+        est_sums = list(map(lambda x: x.sum(axis=1), estimates))
+        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)
 
-        # determine which genes will be adjusted by self.scale_factors, and which will
-        # be updated by 1 - average(DI score) per sample.
-        # From Supplement section 2: "For [genes with insufficient coverage], we adjust
-        # the read count based on the average DI score of the corresponding sample.
+        # quality control: threshold max DI score, as per Bin for stability.
+        self.rho[self.rho < 0.] = 0.
+        self.rho[self.rho > 0.9] = 0.9
 
-        # update the genes that had sufficient coverage, or were successfully downsampled.
-        adj_standard_idx = np.where(self.use_baseline_selection)[0]
-        if len(adj_standard_idx) > 0:
-            self.x_adj[adj_standard_idx, :] = self.x[adj_standard_idx, :] / (1 - self.rho[adj_standard_idx, :])
+        # adjust norm-factor-weighted read counts by DI scores.
+        self.x_adj = self.x_weighted / (1 - self.rho)
 
-        # update the genes that had insufficient coverage by 1 - sample-average DI score.
-        adj_low_idx = np.where(~self.use_baseline_selection)[0]
-        if len(adj_low_idx) > 0:
-            avg_di_score = self.rho.mean(axis=0)
-            self.x_adj[adj_low_idx, :] = self.x[adj_low_idx, :] / (1 - avg_di_score)
+        # for baseline-selection-filtered-out genes, assign them the sample-average DI score.
+        non_baseline_idx = np.where(~self.use_baseline_selection)[0]
+        if len(non_baseline_idx) > 0:
+            sample_avg_di_scores = 1 - (self.x_weighted.sum(axis=0) / self.x_adj.sum(axis=0))
+            self.rho[non_baseline_idx, :] = sample_avg_di_scores
 
-    def shift_bins(self, bins, dropped_bin):
+    @staticmethod
+    def shift_bins(bins, dropped_bin):
         """
         Shift bins of consecutive numbers after a bin has been dropped.
         Example:
@@ -213,7 +200,8 @@ class GeneNMFOA():
 
         This is typically applied once coverage curves have been scaled by 1 / s_{j}.
 
-        :param F: numpy 2-d array, gene coverage curves, a numpy 2-dimensional array
+        :param F: numpy 2-d array, gene coverage curve matrix, a numpy 2-dimensional array, perferrably
+        the coverage curves have been scaled by the degradation normalization scale factor.
         :return: 2-tuple (numpy 2-d array, estimate of F post baseline-selection algorithm, boolean
         indicator for whether or not baseline selection algorithm exited early).
         """
@@ -227,27 +215,21 @@ class GeneNMFOA():
         # 4. Subset coverage curve to (possibly downsampled) high-coverage regions.
         # 5. Bin-up consecutive regions of high-coverage regions.
         # ------------------------------------------------------------------------- #
-        bin_me = True
         ran = False
-
-        # Run systematic downsample if desired, prior to filtering out low-coverage regions.
-        if self.downsample_rate > 1:
-            _, downsample_idx = self.downsample_2d(F, by_row=False)
-            bin_me = False
 
         hi_cov_idx = self.get_high_coverage_idx(F)
         n_hi_cov = len(hi_cov_idx)
 
-        if bin_me:
-            if n_hi_cov < self.min_high_coverage:
-                return F, ran
+        # Run systematic downsample if desired, prior to filtering out low-coverage regions.
+        if self.downsample_rate > 1:
+            _, downsample_idx = self.downsample_2d(F, by_row=False)
 
-        else:
-            # intersect downsampled indices with high-coverage indices.
+            # intersect sampled indices with the high-coverage indices.
             hi_cov_idx = np.intersect1d(downsample_idx, hi_cov_idx)
             n_hi_cov = len(hi_cov_idx)
-            if n_hi_cov <= 1:
-                return F, ran
+
+        if n_hi_cov < self.min_high_coverage:
+            return F, ran
 
         # select high-coverage positions from (possibly downsampled) coverage matrix.
         hi_cov_idx.sort()
@@ -352,7 +334,7 @@ class GeneNMFOA():
         Apply baseline selection algorithm to all gene coverage curve matrices in parallel.
 
         :param dat: list of numpy reads coverage arrays, shapes are (Li x p). Ideally
-        coverage arrays will be adjusted for sequencing-depth.
+        coverage arrays will have been already adjusted for sequencing-depth by scale factors.
         :return: list of numpy reads coverage arrays estimates
         """
         # split up coverage matrices so that no worker gets much more than 50Mb.
@@ -367,6 +349,7 @@ class GeneNMFOA():
         # update indicators for whether or not baseline selection ran.
         self.use_baseline_selection = np.array([x[1] for x in baseline_ests])
 
+        # return NMF-OA coverage matrix estimates.
         return [x[0] for x in baseline_ests]
 
     @staticmethod
@@ -416,37 +399,20 @@ class GeneNMFOA():
 
         return x[:, downsample_idx], downsample_idx
 
-    def run(self, cov_dat, reads_dat):
+    def check_input(self, cov_mats):
         """
-        Run DegNorm iterations - adjust read counts, compute degradation index scores,
-        and compute normalized coverage curve estimates.
+        Run data checks:
+        1. Check that read count matrix has same number of rows as number of coverage arrays.
+        2. Check that all coverage arrays are 2-d matrices.
+        3. Check that all coverage arrays are wider than they are tall.
+        4. Check that downsample rate < length(gene) for all genes, if downsampling.
 
-        :param cov_dat: OrderedDict of {gene: coverage matrix} pairs;
-        coverage matrix shapes are (p x Li) (wide matrices). For each coverage matrix,
-        row index is sample number, column index is gene's relative base position on chromosome.
-        :param reads_dat: n (genes) x p (samples) numpy array of gene read counts
-
-        :returnL list of 2-d numpy arrays, estimated coverage matrices. In same order as self.genes.
+        :param cov_mats: list of gene coverage matrices, i.e. p x Li 2-d numpy arrays
+        :return: None
         """
-        self.n_genes = len(cov_dat)
-        self.genes = list(cov_dat.keys())
-        self.p = next(iter(cov_dat.values())).shape[0]
-        self.x = np.copy(reads_dat)
-        self.x_adj = np.copy(reads_dat)
-        self.use_baseline_selection = np.array([True]*self.n_genes)
-
-        cov_mats = list(cov_dat.values())
-
         # Store array of gene transcript lengths.
         li_vec = np.array(list(map(lambda x: x.shape[1], cov_mats)))
 
-        # ---------------------------------------------------------------------------- #
-        # Run data checks:
-        # 1. Check that read count matrix has same number of rows as number of coverage arrays.
-        # 2. Check that all coverage arrays are 2-d matrices.
-        # 3. Check that all coverage arrays are wider than they are tall.
-        # 4. Check that downsample rate < length(gene) for all genes, if downsampling.
-        # ---------------------------------------------------------------------------- #
         if self.x.shape[0] != self.n_genes:
             raise ValueError('Number of genes in read count matrix not equal to number of coverage matrices!')
 
@@ -454,14 +420,37 @@ class GeneNMFOA():
             raise ValueError('Not all coverage matrices are 2-d arrays!')
 
         if np.sum(li_vec / self.p < 1) > 0:
-            warnings.warn('At least one coverage matrix slotted for DegNorm is longer than it is wide.'
+            warnings.warn('At least one coverage matrix is longer than it is wide.'
                           'Ensure that coverage matrices are (p x Li).')
 
         if self.downsample_rate > 1:
             if not np.min(li_vec) >= self.downsample_rate:
                 raise ValueError('downsample_rate is too large; take-every size > at least one gene.')
 
-        # sum coverage per sample, for later.
+    def run(self, cov_dat, reads_dat):
+        """
+        Run DegNorm degradation normalization pipeline: adjust read counts, compute degradation index scores,
+        and compute normalized coverage curve estimates.
+
+        :param cov_dat: OrderedDict of {gene: coverage matrix} pairs;
+        coverage matrix shapes are (p x Li) (wide matrices). For each coverage matrix,
+        row index is sample number, column index is gene's relative base position on chromosome.
+        :param reads_dat: n (genes) x p (samples) numpy array of gene read counts
+
+        :return: list of 2-d numpy arrays, estimated coverage matrices. In same order as self.genes.
+        """
+        self.n_genes = len(cov_dat)
+        self.genes = list(cov_dat.keys())
+        self.p = next(iter(cov_dat.values())).shape[0]
+        self.x = np.copy(reads_dat)
+        self.use_baseline_selection = np.array([True]*self.n_genes)
+
+        cov_mats = list(cov_dat.values())
+
+        # check validity of input data.
+        out = self.check_input(cov_mats)
+
+        # sum coverage per gene per sample, get n x p matrix self.cov_sums.
         self.cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), cov_mats)))
 
         # determine (integer) number of data splits for parallel workers (50Mb per worker).
@@ -469,33 +458,49 @@ class GeneNMFOA():
         self.mem_splits = mem_splits if mem_splits > self.n_jobs else self.n_jobs
 
         # ---------------------------------------------------------------------------- #
-        # DegNorm initialization: https://bit.ly/2OqXUY0 lines 18-31
-        # 1. Estimate initial scale factors from estimated DI scores, but try
-        #    to base this estimation only from genes with low degradation.
+        # DegNorm initialization:
+        # 1. Estimate initial scale factors from single-iteration rank-1 SVD estimates,
+        #    obtain initial DI scores.
+        # 2. Use initial DI scores to compute initial normalization factors.
+        # 3. Normalize read counts by initial normalization factors.
+        # 4. Initialize coverage scale factors with initial normalization factors.
         # ---------------------------------------------------------------------------- #
 
-        # initialize NMF-OA estimates of initially-scaled coverage curves.
-        # Use "ratio_svd" instead of nmf approximations to get first DI scores.
+        # use self.ratio_svd to obtain first coverage matrix estimates, use to compute initial DI scores.
         estimates = self.par_apply(fun=self.run_ratio_svd_serial
                                    , dat=cov_mats)
         est_sums = list(map(lambda x: x.sum(axis=1), estimates))
         self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)
 
-        # get initial scale factors from ratio_svd function.
+        # estimate normalization factors from initial DI scores.
         low_di_gene = self.rho.max(axis=1) < 0.1
-        if np.any(low_di_gene):
-            count_sums = self.x[low_di_gene].sum(axis=0)
-            self.scale_factors = count_sums / np.median(count_sums)
+        count_sums = self.x[low_di_gene].sum(axis=0) if np.any(low_di_gene) else self.x.sum(axis=0)
+        self.norm_factors = count_sums / np.median(count_sums)
 
-        else:
-            self.compute_scale_factors(estimates)
+        # adjust read counts by initial normalization factors, set initial scale factors.
+        self.x_weighted = self.x / self.norm_factors
+        self.scale_factors = np.copy(self.norm_factors)
 
-        logging.info('Initial reads scale factors -- {0}'.format(', '.join([str(x) for x in self.scale_factors])))
+        logging.info('Initial sequencing depth scale factors -- \n\t{0}'
+                     .format(', '.join([str(x) for x in self.scale_factors])))
 
-        # Instantiate progress bar.
+        # ---------------------------------------------------------------------------- #
+        # DegNorm iterations:
+        # 1. Scale coverage curves by scale factors from iteration t-1.
+        # 2. Run baseline selection, obtain degradation-normalized over-approximated coverage curves.
+        # 3. Compute DI scores from NMF-OA estimates, treating genes that went through
+        #    baseline selection differently than those who did not.
+        # 4. Re-normalize read counts based on DI scores at time t.
+        # 5. Update sequencing depth scale factors based on re-normalized read counts.
+        # ---------------------------------------------------------------------------- #
+
+        # instantiate progress bar.
         pbar = tqdm.tqdm(total=self.degnorm_iter
                          , leave=False
                          , desc='NMF-OA iteration progress')
+
+        # set random number generator seed.
+        np.random.seed(self.random_state)
 
         # Run DegNorm iterations.
         i = 0
@@ -508,10 +513,21 @@ class GeneNMFOA():
             estimates = self.par_apply_baseline_selection(cov_mats_adj)
 
             # update scale factors, adjust read counts.
-            self.compute_scale_factors(estimates)
-            self.adjust_read_counts()
+            self.compute_di_scores(estimates)
 
-            logging.info('NMFOA iteration {0} -- reads scale factors: {1}'
+            # adjust norm-factor-weighted read counts by DI scores.
+            self.x_adj = self.x_weighted / (1 - self.rho)
+
+            # get new norm factors.
+            self.norm_factors = self.x_adj.sum(axis=0) / np.median(self.x_adj.sum(axis=0))
+
+            # update read counts by adjusting degradation effect into sequencing depth
+            self.x_weighted /= self.norm_factors
+
+            # increment new scale_factors.
+            self.scale_factors *= self.norm_factors
+
+            logging.info('DegNorm iteration {0} -- sequencing depth scale factors: \n\t{1}'
                          .format(i + 1, ', '.join([str(x) for x in self.scale_factors])))
 
             i += 1
