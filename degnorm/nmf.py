@@ -30,7 +30,7 @@ class GeneNMFOA():
         self.nmf_iter = np.abs(int(nmf_iter))
         self.n_jobs = np.abs(int(n_jobs))
         self.bins = np.abs(int(bins))
-        self.min_high_coverage = np.abs(int(min_high_coverage))
+        self.min_high_coverage = max(2, np.abs(int(min_high_coverage)))
         self.min_bins = np.ceil(self.bins * 0.2)
         self.use_baseline_selection = None
         self.downsample_rate = np.abs(int(downsample_rate))
@@ -46,9 +46,9 @@ class GeneNMFOA():
         self.fitted = False
         self.random_state = random_state
 
-        # no minimum number of high-coverage indices if downsampling.
+        # must have at least 2 high-coverage indices if downsampling (svds function limitation).
         if self.downsample_rate > 1:
-            self.min_high_coverage = 1
+            self.min_high_coverage = 2
 
     def rank_one_approx(self, x):
         """
