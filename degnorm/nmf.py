@@ -238,8 +238,10 @@ class GeneNMFOA():
         K, E = self.nmf(F_bin
                         , factors=True)
         KE_bin = K.dot(E)
+
+        # keep original NMFOA-estimated coverage in case we do not run baseline selection.
         K_start, E_start = np.abs(np.copy(K)), np.copy(E)
-        estimate = np.copy(KE_bin)  # keep original NMFOA-estimated coverage.
+        estimate = np.copy(KE_bin)
 
         # compute DI scores. High score ->> high degradation.
         rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)
@@ -337,6 +339,11 @@ class GeneNMFOA():
         # problem: estimate most likely not the same length as original gene transcript if baseline selection ran.
         # current solution: use best K estimate to back out E = F / K; use K^{T}E as estimate for visual purposes.
         if estimate.shape[1] < F.shape[1]:
+
+            # quality control: ensure we never divide F by 0.
+            K[K < 1.e-5] = np.min(K[K >= 1.e-5])
+            K = np.abs(K)
+
             E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1).T
             estimate = np.abs(K.dot(E))
             estimate[estimate < F] = F[estimate < F]
