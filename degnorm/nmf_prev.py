@@ -8,12 +8,10 @@ from joblib import Parallel, delayed
 
 
 class GeneNMFOA():
-
     def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
                  nmf_iter=100, bins=20, n_jobs=max_cpu(), random_state=123):
         """
         Initialize an NMF-over-approximator object.
-
         :param degnorm_iter: int maximum number of NMF-OA iterations to run.
         :param downsample_rate: int reciprocal of downsample rate; a "take every" systematic sampling rate. Use to
         down-sample coverage matrices by taking every r-th nucleotide. When downsample_rate == 1 this is equivalent
@@ -53,19 +51,17 @@ class GeneNMFOA():
     def rank_one_approx(self, x):
         """
         Decompose a matrix X via truncated SVD into (K)(E^t) = U_{1} \cdot \sigma_{1}V_{1}
-
         :param x: numpy 2-d array
         :return: 2-tuple (K, E) matrix factorization
         """
         u, s, v = svds(x, k=1)
-        return u*s, v
+        return u * s, v
 
     def get_high_coverage_idx(self, x):
         """
         Find positions of high coverage in a gene's coverage matrix, defined
         as positions where the sample-wise maximum coverage is at least 10%
         the maximum of the entire coverage array.
-
         :param x: numpy 2-d array: coverage matrix (p x Li)
         :return: numpy 1-d array of integer base positions
         """
@@ -75,7 +71,6 @@ class GeneNMFOA():
         """
         Run NMF-OA approximation. See "Normalization of generalized transcript degradation
         improves accuracy in RNA-seq analysis" supplement section 1.2.
-
         :param x: numpy 2-d array
         :param factors: boolean return 2-tuple of K, E matrix factorization? If False,
         return K.dot(E)
@@ -105,7 +100,6 @@ class GeneNMFOA():
         """
         One-iteration SVD over-approximation, but not the NMFOA algorithm.
         See https://bit.ly/2zR4XEn.
-
         :param x: 2-d numpy array
         :return: 2-d numpy array estimate, elements are at least as large as those in x.
         """
@@ -121,7 +115,6 @@ class GeneNMFOA():
     def par_apply(self, fun, dat):
         """
         Apply a function to a list in parallel with threading.
-
         :param fun: function to be applied to elements of list.
         :param dat: list of elements to be chunked up, distributed to threads, and hit with fun.
         :return: list of output from fun
@@ -140,14 +133,24 @@ class GeneNMFOA():
         """
         return [(F.T / self.scale_factors).T for F in dat]
 
-    def correct_di_scores(self):
+    def compute_di_scores(self, estimates):
         """
-        Correct degradation index (DI) scores, i.e. the rho matrix, by assigning the sample average DI
-        score to genes that were not run through baseline selection.
+        Compute degradation index (DI) scores, i.e. the rho matrix, while being mindful of
+        which genes were run through baseline algorithm and which ones were excluded.
+        :param estimates: list of rank-one approximations of coverage curves
         """
+        est_sums = list(map(lambda x: x.sum(axis=1), estimates))
+        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)
 
-        # determine indices of genes that were not sent through baseline selection; if they exist, do the swap.
-        non_baseline_idx = np.where(self.rho.max(axis=1) == 0)[0]
+        # quality control: threshold max DI score, as per Bin for stability.
+        self.rho[self.rho < 0.] = 0.
+        self.rho[self.rho > 0.9] = 0.9
+
+        # adjust norm-factor-weighted read counts by DI scores.
+        self.x_adj = self.x_weighted / (1 - self.rho)
+
+        # for baseline-selection-filtered-out genes, assign them the sample-average DI score.
+        non_baseline_idx = np.where(~self.use_baseline_selection)[0]
         if len(non_baseline_idx) > 0:
             sample_avg_di_scores = 1 - (self.x_weighted.sum(axis=0) / self.x_adj.sum(axis=0))
             self.rho[non_baseline_idx, :] = sample_avg_di_scores
@@ -157,11 +160,8 @@ class GeneNMFOA():
         """
         Shift bins of consecutive numbers after a bin has been dropped.
         Example:
-
         shift_bins([[0, 1], [2, 3], [4, 5], [6, 7]], dropped_bin=1)
-
         [[0, 1], [2, 3], [4, 5]]
-
         :param bins: list of list of int
         :param dropped_bin: int, the bin that has been deleted from bins.
         :return: list of consecutive integer bins, preserving to the fullest extent
@@ -185,16 +185,12 @@ class GeneNMFOA():
         """
         Find "baseline" region for a gene's coverage curves - a region where it is
         suspected that degradation is minimal, so that the coverage envelope function
-        may be estimated more accurately, in addition to finding the gene's DI scores
-        across the samples.
-
+        may be estimated more accurately.
         This is typically applied once coverage curves have been scaled by 1 / s_{j}.
-
         :param F: numpy 2-d array, gene coverage curve matrix, a numpy 2-dimensional array, perferrably
         the coverage curves have been scaled by the degradation normalization scale factor.
-        :return: 2-tuple --
-        (numpy 1-d array (DI scores)
-        , numpy 2-d array (estimate of F post baseline-selection algorithm))
+        :return: 2-tuple (numpy 2-d array, estimate of F post baseline-selection algorithm, boolean
+        indicator for whether or not baseline selection algorithm exited early).
         """
 
         # ------------------------------------------------------------------------- #
@@ -206,11 +202,10 @@ class GeneNMFOA():
         # 4. Subset coverage curve to (possibly downsampled) high-coverage regions.
         # 5. Bin-up consecutive regions of high-coverage regions.
         # ------------------------------------------------------------------------- #
-        output = dict()
-        output['rho'] = np.zeros(self.p)  # default degradation scores are 0.
-        output['estimate'] = F
+        ran = False
 
         hi_cov_idx = self.get_high_coverage_idx(F)
+        n_hi_cov = len(hi_cov_idx)
 
         # Run systematic downsample if desired, prior to filtering out low-coverage regions.
         if self.downsample_rate > 1:
@@ -218,173 +213,136 @@ class GeneNMFOA():
 
             # intersect sampled indices with the high-coverage indices.
             hi_cov_idx = np.intersect1d(downsample_idx, hi_cov_idx)
+            n_hi_cov = len(hi_cov_idx)
 
-        n_hi_cov = len(hi_cov_idx)
-
-        # if there are not sufficiently-many high-coverage base pairs, return null degradation.
         if n_hi_cov < self.min_high_coverage:
-            return output['rho'], output['estimate']
+            return F, ran
 
         # select high-coverage positions from (possibly downsampled) coverage matrix.
         hi_cov_idx.sort()
         F_start = np.copy(F)[:, hi_cov_idx]
         F_bin = np.copy(F_start)
+        ran = True
 
-        # if any sample sans coverage after filtering, return defaults.
-        if np.sum(F_bin.sum(axis=1) > 0) < self.p:
-            return output['rho'], output['estimate']
+        # obtain initial coverage curve estimate.
+        K, E = self.nmf(F_bin, factors=True)
+        KE_bin = np.abs(K.dot(E))
 
-        # run NMF on filtered coverage, obtain initial coverage curve estimate.
-        K, E = self.nmf(F_bin
-                        , factors=True)
-        KE_bin = K.dot(E)
-        K_start, E_start = np.abs(np.copy(K)), np.copy(E)
-        estimate = np.copy(KE_bin)  # keep original NMFOA-estimated coverage.
+        # split up consecutive regions of the high-coverage gene.
+        # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
+        bin_segs = split_into_chunks(list(range(F_bin.shape[1]))
+                                     , n=self.bins)
+        n_bins = len(bin_segs)
 
         # compute DI scores. High score ->> high degradation.
-        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)
-
-        # exclude extreme cases where NMF result doesn't converge.
-        if np.median(1 - rho_vec) > 1:
-            return output['rho'], output['estimate']
-
-        # decide whether to search for a gene's baseline regions.
-        # If any of these criteria are satisfied, do not run baseline selection and return what we have.
-        if (n_hi_cov >= 200) and (np.nanmin(rho_vec) <= 0.2):
-
-            # split up consecutive regions of the high-coverage gene.
-            # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
-            bin_segs = split_into_chunks(list(range(F_bin.shape[1]))
-                                         , n=self.bins)
-            n_bins = len(bin_segs)
-
-            while np.nanmax(rho_vec) > 0.1:
-
-                # compute relative residuals from NMF output,
-                # then compute average weighted squared relative residual.
-                res_vec = np.apply_along_axis(lambda z: np.nanmax(z ** 2)
-                                              , axis=0
-                                              , arr=(KE_bin - F_bin) / (F_bin + 1))
-                ss_r = np.array(list(map(lambda idx: np.nanmean(res_vec[bin_segs[idx]]), range(n_bins))))
-
-                # if perfect approximation, exit loop.
-                if np.nanmax(ss_r) == 0:
-                    break
-
-                # drop the bin corresponding to the bin with the maximum normalized residual,
-                # along with corresponding indices of F.
-                drop_idx = np.nanargmax(ss_r)
-                F_bin = np.delete(F_bin
-                                  , obj=bin_segs[drop_idx]
-                                  , axis=1)
-                del bin_segs[drop_idx]
-
-                n_hi_cov = F_bin.shape[1]
-
-                # update binned segments so that all bins are referencing indices in newly shrunken coverage matrices.
-                bin_segs = self.shift_bins(bin_segs
-                                           , dropped_bin=drop_idx)
-                n_bins = len(bin_segs)
-
-                # shrink F matrix to the indices not dropped, cast back to wide matrix.
-                # estimate coverage curves from said indices with NMFOA.
-                K, E = self.nmf(F_bin
-                                , factors=True)
-                KE_bin = K.dot(E)
-                KE_bin[KE_bin < F_bin] = F_bin[KE_bin < F_bin]
-
-                # stop is fitted values are all zero for any sample (extreme cases).
-                if np.min(KE_bin.sum(axis=1)) == 0:
-                    break
-
-                # recompute DI scores: closer to 1 ->> more degradation. Then run quality control.
-                rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
-                rho_vec[rho_vec < 0] = 0.
-                rho_vec[rho_vec >= 1] = 1. - 1e-5
-
-                if (n_bins <= self.min_bins) or (n_hi_cov < 200):
-                    break
-
-            # quality control: ensure we never divide F by 0.
-            K[K < 1.e-5] = np.min(K[K >= 1.e-5])
-            K = np.abs(K)
-
-            # determine whether a baseline region has been identified.
-            if np.nanmax(rho_vec) < 0.2:  # baseline region successfully converged upon
-                # Use refined estimate of K (p x 1 vector) to refine the envelope estimate.
-                E = np.true_divide(F_start.T, K.ravel()).max(axis=1).reshape(-1, 1).T
-                estimate = K.dot(E)
-
-                # update DI scores based on whole filtered gene transcript.
-                rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
-
-                # eliminate extreme cases with high degradation but where it's unlikely
-                # that this degradation is more than just noise. Typically happens for long
-                # genes with low sequencing depth.
-                if np.nanmax(rho_vec) > 0.9:
-                    K, E = K_start, E_start
-                    estimate = K.dot(E)
-                    estimate[estimate < F_start] = F_start[estimate < F_start]
-                    rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
-
-            # otherwise when baseline has not been identified, use the original NMF results.
-            else:
-                K, E = K_start, E_start
-                estimate = K.dot(E)
-                estimate[estimate < F_start] = F_start[estimate < F_start]
-                rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
-
-        # problem: estimate most likely not the same length as original gene transcript if baseline selection ran.
-        # current solution: use best K estimate to back out E = F / K; use K^{T}E as estimate for visual purposes.
-        if estimate.shape[1] < F.shape[1]:
-            E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1).T
-            estimate = np.abs(K.dot(E))
-            estimate[estimate < F] = F[estimate < F]
-
-        # assemble final output data.
+        rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
         rho_vec[rho_vec < 0] = 0.
         rho_vec[rho_vec >= 1] = 1. - 1e-5
-        output['rho'] = rho_vec
-        output['estimate'] = estimate
 
-        # return DI vector and estimate of F.
-        return output['rho'], output['estimate']
+        # ------------------------------------------------------------------------- #
+        # Heavy lifting: run baseline selection iterations.
+        # Run while the degradation index score is still high.
+        # or while there are still non-baseline regions left to trim, before
+        # too-many bins have been dropped.
+        # If max DI score is <= 0.1, then the baseline selection algorithm has converged; if >= min_bins
+        # have been dropped, still exit baseline selection, although this is not convergence in a true sense.
+        # ------------------------------------------------------------------------- #
+        while (n_bins > self.min_bins) and (np.nanmax(rho_vec) > 0.1):
+            n_bins = len(bin_segs)
+
+            # transpose for slightly faster row-index selection.
+            KE_bin = KE_bin.T
+            F_bin = F_bin.T
+
+            # compute relative sum of squared errors by bin.
+            diff_mat = KE_bin - F_bin
+            ss_r = np.array(list(map(lambda idx: np.linalg.norm(diff_mat[bin_segs[idx], :]), range(n_bins))))
+            ss_f = np.array(list(map(lambda idx: np.linalg.norm(F_bin[bin_segs[idx], :]), range(n_bins))))
+
+            # safely divide binned residual norms by original binned norms.
+            with np.errstate(divide='ignore', invalid='ignore'):
+                res_norms = np.true_divide(ss_r, ss_f)
+                res_norms[~np.isfinite(res_norms)] = 0
+
+            # if perfect approximation, exit loop.
+            if np.nanmax(res_norms) == 0:
+                break
+
+            # drop the bin corresponding to the bin with the maximum normalized residual.
+            drop_idx = np.nanargmax(res_norms)
+            del bin_segs[drop_idx]
+
+            # collapse the remaining bins into an array of indices to keep.
+            keep_idx = np.unique(flatten_2d(bin_segs))
+
+            # update binned segments so that all bins are referencing indices in newly shrunken coverage matrices.
+            bin_segs = self.shift_bins(bin_segs
+                                       , dropped_bin=drop_idx)
+
+            # shrink F matrix to the indices not dropped, cast back to wide matrix.
+            # estimate coverage curves from said indices.
+            F_bin = F_bin[keep_idx, :].T
+            KE_bin = self.nmf(F_bin)
+
+            # recompute DI scores: closer to 1 ->> more degradation
+            rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
+
+            # quality control.
+            rho_vec[rho_vec < 0] = 0.
+            rho_vec[rho_vec >= 1] = 1. - 1e-5
+
+        # determine if baseline selection converged: check whether DI scores are still high.
+        # if not converged, just use original NMF factorization as K, E factors instead of baseline selected ones.
+        if np.nanmax(rho_vec) < 0.1:  # baseline selection has converged. Use 0.2 instead of 0.1 as per Bin's code.
+            K, E = self.nmf(F_bin, factors=True)
+
+        # quality control: ensure we never divide F by 0.
+        K[K < 1.e-5] = np.min(K[K >= 1.e-5])
+
+        # Use refined estimate of K (p x 1 vector) to refine the envelope estimate,
+        # return refined estimate of KE^{T}.
+        E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1)
+
+        if np.any(np.isnan(E)):
+            raise ValueError('E factor matrix contains np.nans. Aborting.')
+
+        # quality control: ensure a final over-approximation.
+        est = np.abs(K.dot(E.T))
+        est[est < F] = F[est < F]
+
+        # return estimate of F.
+        return est, ran
 
     def run_baseline_selection_serial(self, x):
         return list(map(self.baseline_selection, x))
 
     def par_apply_baseline_selection(self, dat):
         """
-        Apply baseline selection algorithm to all gene coverage matrices in parallel,
-        building the DI score matrix (rho) in the process and
-        returning the estimated coverage matrices for visualization purposes.
-
+        Apply baseline selection algorithm to all gene coverage curve matrices in parallel.
         :param dat: list of numpy reads coverage arrays, shapes are (Li x p). Ideally
         coverage arrays will have been already adjusted for sequencing-depth by scale factors.
-        :return: list of 2-d numpy arrays used to visualize DegNorm estimated coverage matrices.
+        :return: list of numpy reads coverage arrays estimates
         """
         # split up coverage matrices so that no worker gets much more than 50Mb.
         dat = split_into_chunks(dat, self.mem_splits)
-        baseline_dat = Parallel(n_jobs=self.n_jobs
+        baseline_ests = Parallel(n_jobs=self.n_jobs
                                  , verbose=0
                                  , backend='threading')(map(delayed(self.run_baseline_selection_serial), dat))
 
         # flatten results.
-        baseline_dat = [est for est1d in baseline_dat for est in est1d]
+        baseline_ests = [est for est1d in baseline_ests for est in est1d]
 
-        # extract DI score matrix, apply thresholding.
-        self.rho = np.vstack([x[0] for x in baseline_dat])
-        self.rho[self.rho > 0.9] = 0.9
+        # update indicators for whether or not baseline selection ran.
+        self.use_baseline_selection = np.array([x[1] for x in baseline_ests])
 
-        # return coverage curve estimates; for visualization purposes (not currently for DI score calculations).
-        return [x[1] for x in baseline_dat]
+        # return NMF-OA coverage matrix estimates.
+        return [x[0] for x in baseline_ests]
 
     @staticmethod
     def _systematic_sample(n, take_every):
         """
         Take an honest to goodness systematic sample of n objects using a take_every gap.
         Randomly initialize a starting point < take every.
-
         :param n: int size of population to sample from
         :param take_every: int, preferably < n
         :return: 1-d numpy array of sampled integers, length ceiling(n / take_every)
@@ -402,7 +360,6 @@ class GeneNMFOA():
     def downsample_2d(self, x, by_row=True):
         """
         Downsample a coverage matrix at evenly spaced base position indices via systematic sampling.
-
         :param x: 2-d numpy array; a coverage matrix
         :param by_row: bool indicator - downsample by rows or columns?
         :return: 2-d numpy array with self.grid_points columns
@@ -433,7 +390,6 @@ class GeneNMFOA():
         2. Check that all coverage arrays are 2-d matrices.
         3. Check that all coverage arrays are wider than they are tall.
         4. Check that downsample rate < length(gene) for all genes, if downsampling.
-
         :param cov_mats: list of gene coverage matrices, i.e. p x Li 2-d numpy arrays
         :return: None
         """
@@ -458,24 +414,25 @@ class GeneNMFOA():
         """
         Run DegNorm degradation normalization pipeline: adjust read counts, compute degradation index scores,
         and compute normalized coverage curve estimates.
-
         :param cov_dat: OrderedDict of {gene: coverage matrix} pairs;
         coverage matrix shapes are (p x Li) (wide matrices). For each coverage matrix,
         row index is sample number, column index is gene's relative base position on chromosome.
         :param reads_dat: n (genes) x p (samples) numpy array of gene read counts
-
         :return: list of 2-d numpy arrays, estimated coverage matrices. In same order as self.genes.
         """
         self.n_genes = len(cov_dat)
         self.genes = list(cov_dat.keys())
+        self.p = next(iter(cov_dat.values())).shape[0]
         self.x = np.copy(reads_dat)
-        self.use_baseline_selection = np.array([True]*self.n_genes)
+        self.use_baseline_selection = np.array([True] * self.n_genes)
 
         cov_mats = list(cov_dat.values())
-        self.p = cov_mats[0].shape[0]
 
         # check validity of input data.
         out = self.check_input(cov_mats)
+
+        # sum coverage per gene per sample, get n x p matrix self.cov_sums.
+        self.cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), cov_mats)))
 
         # determine (integer) number of data splits for parallel workers (50Mb per worker).
         mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, cov_mats))) / 5e7))
@@ -493,9 +450,8 @@ class GeneNMFOA():
         # use self.ratio_svd to obtain first coverage matrix estimates, use to compute initial DI scores.
         estimates = self.par_apply(fun=self.run_ratio_svd_serial
                                    , dat=cov_mats)
-        est_sums = np.vstack(list(map(lambda x: x.sum(axis=1), estimates)))
-        cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), cov_mats)))
-        self.rho = 1 - (cov_sums / (est_sums + 1))
+        est_sums = list(map(lambda x: x.sum(axis=1), estimates))
+        self.rho = 1 - self.cov_sums / (np.vstack(est_sums) + 1)
 
         # estimate normalization factors from initial DI scores.
         low_di_gene = self.rho.max(axis=1) < 0.1
@@ -530,18 +486,14 @@ class GeneNMFOA():
         # Run DegNorm iterations.
         i = 0
         while i < self.degnorm_iter:
-
             # scale baseline_cov coverage curves by 1 / (updated adjustment factors).
             cov_mats_adj = self.adjust_coverage_curves(cov_mats)
 
-            # run NMF-OA + baseline selection; obtain refined estimates of F; update rho matrix.
+            # run NMF-OA + baseline selection; obtain refined estimates of F.
             estimates = self.par_apply_baseline_selection(cov_mats_adj)
 
-            # adjust (already weighted) read counts.
-            self.x_adj = self.x_weighted / (1 - self.rho)
-
             # update scale factors, adjust read counts.
-            self.correct_di_scores()
+            self.compute_di_scores(estimates)
 
             # adjust norm-factor-weighted read counts by DI scores.
             self.x_adj = self.x_weighted / (1 - self.rho)
@@ -577,7 +529,6 @@ class GeneNMFOA():
             - self.rho: save degradation index scores to "degradation_index_scores.csv" using sample_ids
             as the header.
             - self.x_adj: save adjusted read counts to "adjusted_read_counts.csv" using sample_ids as the header.
-
         :param estimates: list of 2-d numpy arrays, estimated coverage matrices. In same order as self.genes.
         :param gene_manifest_df: pandas.DataFrame establishing chromosome-gene map. Must contain,
         at a minimum, the columns `chr` (str, chromosome) and `gene` (str, gene name).
@@ -643,7 +594,7 @@ class GeneNMFOA():
 
             # keep track of chromosome-gene mapping.
             chrom_gene_dfs.append(DataFrame({'chr': chrom
-                                             , 'gene': list(chrom_gene_dict[chrom].keys())}))
+                                                , 'gene': list(chrom_gene_dict[chrom].keys())}))
 
             pbar.update()
 
