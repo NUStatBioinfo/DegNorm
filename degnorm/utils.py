@@ -34,7 +34,7 @@ def welcome():
         welcome += '\nversion {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
     sys.stdout.write('\n' + ''.join(welcome) + '\n'*4)
-    logging.info(''.join(welcome) + '\n'*4)
+    logging.info('\n' + ''.join(welcome) + '\n'*4)
 
 
 def create_output_dir(output_dir):

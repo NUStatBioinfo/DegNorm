@@ -45,7 +45,7 @@ class GeneNMFOA():
         self.fitted = False
         self.random_state = random_state
 
-        # must have at least 2 high-coverage indices if downsampling (svds function limitation).
+        # all coverage matrices must have >= 2 high-coverage indices if downsampling (svds function limitation).
         if self.downsample_rate > 1:
             self.min_high_coverage = 2
 
@@ -93,10 +93,11 @@ class GeneNMFOA():
             est = K.dot(E)
 
         if factors:
-            return np.abs(K), np.abs(E)
+            # return np.abs(K), np.abs(E)
+            return K, E
 
         # quality control - ensure an over-approximation.
-        est[est < x] = x[est < x]
+        # est[est < x] = x[est < x]
 
         return est
 
@@ -206,7 +207,7 @@ class GeneNMFOA():
         # 5. Bin-up consecutive regions of high-coverage regions.
         # ------------------------------------------------------------------------- #
         output = dict()
-        output['rho'] = np.zeros(self.p)  # default degradation scores are 0.
+        output['rho'] = np.zeros(self.p)  # default degradation scores are all 0.
         output['estimate'] = F
 
         hi_cov_idx = self.get_high_coverage_idx(F)
@@ -226,7 +227,7 @@ class GeneNMFOA():
 
         # select high-coverage positions from (possibly downsampled) coverage matrix.
         hi_cov_idx.sort()
-        F_start = np.copy(F)[:, hi_cov_idx]
+        F_start = np.copy(F[:, hi_cov_idx])
         F_bin = np.copy(F_start)
 
         # if any sample sans coverage after filtering, return defaults.
@@ -246,7 +247,7 @@ class GeneNMFOA():
         rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)
 
         # exclude extreme cases where NMF result doesn't converge.
-        if np.median(1 - rho_vec) > 1:
+        if np.nanmedian(1 - rho_vec) > 1:
             return output['rho'], output['estimate']
 
         # decide whether to search for a gene's baseline regions.
@@ -300,18 +301,16 @@ class GeneNMFOA():
 
                 # recompute DI scores: closer to 1 ->> more degradation. Then run quality control.
                 rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
-                rho_vec[rho_vec < 0] = 0.
-                rho_vec[rho_vec >= 1] = 1. - 1e-5
 
                 if (n_bins <= self.min_bins) or (n_hi_cov < 200):
                     break
 
-            # quality control: ensure we never divide F by 0.
-            K[K < 1.e-5] = np.min(K[K >= 1.e-5])
-            K = np.abs(K)
-
             # determine whether a baseline region has been identified.
             if np.nanmax(rho_vec) < 0.2:  # baseline region successfully converged upon
+                # quality control: ensure we never divide F by 0.
+                K = np.abs(K)
+                K[K < 1.e-5] = np.min(K[K >= 1.e-5])
+
                 # Use refined estimate of K (p x 1 vector) to refine the envelope estimate.
                 E = np.true_divide(F_start.T, K.ravel()).max(axis=1).reshape(-1, 1).T
                 estimate = K.dot(E)
@@ -324,6 +323,7 @@ class GeneNMFOA():
                 # genes with low sequencing depth.
                 if np.nanmax(rho_vec) > 0.9:
                     K, E = K_start, E_start
+                    K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                     estimate = K.dot(E)
                     estimate[estimate < F_start] = F_start[estimate < F_start]
                     rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -331,18 +331,19 @@ class GeneNMFOA():
             # otherwise when baseline has not been identified, use the original NMF results.
             else:
                 K, E = K_start, E_start
+                K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                 estimate = K.dot(E)
                 estimate[estimate < F_start] = F_start[estimate < F_start]
                 rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
 
         # problem: estimate most likely not the same length as original gene transcript if baseline selection ran.
         # current solution: use best K estimate to back out E = F / K; use K^{T}E as estimate for visual purposes.
+        # TODO: determine best way get final estimate of entire transcript after baseline selection.
         if estimate.shape[1] < F.shape[1]:
 
             # quality control: ensure we never divide F by 0.
-            K[K < 1.e-5] = np.min(K[K >= 1.e-5])
             K = np.abs(K)
-
+            K[K < 1.e-5] = np.min(K[K >= 1.e-5])
             E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1).T
             estimate = np.abs(K.dot(E))
             estimate[estimate < F] = F[estimate < F]
