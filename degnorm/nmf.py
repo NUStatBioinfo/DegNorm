@@ -32,7 +32,6 @@ class GeneNMFOA():
         self.bins = np.abs(int(bins))
         self.min_high_coverage = max(2, np.abs(int(min_high_coverage)))
         self.min_bins = np.ceil(self.bins * 0.2)
-        self.use_baseline_selection = None
         self.downsample_rate = np.abs(int(downsample_rate))
         self.mem_splits = None
         self.x = None
@@ -84,13 +83,13 @@ class GeneNMFOA():
         K, E = self.rank_one_approx(x)
         est = K.dot(E)
         lmbda = np.zeros(shape=x.shape)
-        c = np.sqrt(self.nmf_iter)
+        c = 1. / np.sqrt(self.nmf_iter)
 
         for _ in range(self.nmf_iter):
             res = est - x
-            lmbda -= res * (1 / c)
+            lmbda -= c * res
             lmbda[lmbda < 0.] = 0.
-            K, E = self.rank_one_approx(est + lmbda)
+            K, E = self.rank_one_approx(x + lmbda)
             est = K.dot(E)
 
         if factors:
@@ -147,10 +146,10 @@ class GeneNMFOA():
         """
 
         # determine indices of genes that were not sent through baseline selection; if they exist, do the swap.
-        non_baseline_idx = np.where(self.rho.max(axis=1) == 0)[0]
-        if len(non_baseline_idx) > 0:
+        non_baseline_gene = self.rho.max(axis=1) == 0
+        if np.sum(non_baseline_gene) > 0:
             sample_avg_di_scores = 1 - (self.x_weighted.sum(axis=0) / self.x_adj.sum(axis=0))
-            self.rho[non_baseline_idx, :] = sample_avg_di_scores
+            self.rho[non_baseline_gene, :] = sample_avg_di_scores
 
     @staticmethod
     def shift_bins(bins, dropped_bin):
@@ -382,6 +381,7 @@ class GeneNMFOA():
         # extract DI score matrix, apply thresholding.
         self.rho = np.vstack([x[0] for x in baseline_dat])
         self.rho[self.rho > 0.9] = 0.9
+        self.rho[self.rho < 0.] = 0.
 
         # return coverage curve estimates; for visualization purposes (not currently for DI score calculations).
         return [x[1] for x in baseline_dat]
@@ -476,7 +476,6 @@ class GeneNMFOA():
         self.n_genes = len(cov_dat)
         self.genes = list(cov_dat.keys())
         self.x = np.copy(reads_dat)
-        self.use_baseline_selection = np.array([True]*self.n_genes)
 
         cov_mats = list(cov_dat.values())
         self.p = cov_mats[0].shape[0]
@@ -506,7 +505,7 @@ class GeneNMFOA():
 
         # estimate normalization factors from initial DI scores.
         low_di_gene = self.rho.max(axis=1) < 0.1
-        count_sums = self.x[low_di_gene].sum(axis=0) if np.any(low_di_gene) else self.x.sum(axis=0)
+        count_sums = self.x[low_di_gene, :].sum(axis=0) if np.any(low_di_gene) else self.x.sum(axis=0)
         self.norm_factors = count_sums / np.median(count_sums)
 
         # adjust read counts by initial normalization factors, set initial scale factors.
@@ -544,7 +543,7 @@ class GeneNMFOA():
             # run NMF-OA + baseline selection; obtain refined estimates of F; update rho matrix.
             estimates = self.par_apply_baseline_selection(cov_mats_adj)
 
-            # adjust (already weighted) read counts.
+            # adjust (weighted) read counts.
             self.x_adj = self.x_weighted / (1 - self.rho)
 
             # update scale factors, adjust read counts.
@@ -557,10 +556,10 @@ class GeneNMFOA():
             self.norm_factors = self.x_adj.sum(axis=0) / np.median(self.x_adj.sum(axis=0))
 
             # update read counts by adjusting degradation effect into sequencing depth
-            self.x_weighted /= self.norm_factors
+            self.x_weighted = self.x_weighted / self.norm_factors
 
             # increment new scale_factors.
-            self.scale_factors *= self.norm_factors
+            self.scale_factors = self.scale_factors * self.norm_factors
 
             logging.info('DegNorm iteration {0} -- sequencing depth scale factors: \n\t{1}'
                          .format(i + 1, ', '.join([str(x) for x in self.scale_factors])))
