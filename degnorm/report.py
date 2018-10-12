@@ -41,8 +41,7 @@ def render_report(data_dir, genenmfoa, input_files,
     run_dat = {'NMF-OA SVD iterations': [genenmfoa.nmf_iter]
                , 'DegNorm iterations': [genenmfoa.degnorm_iter]
                , 'Downsample rate': ['1/{0}'.format(str(genenmfoa.downsample_rate))]
-               , 'Number of input genes': [genenmfoa.n_genes]
-               , 'Baseline selection-eligible genes': [np.sum(genenmfoa.use_baseline_selection)]}
+               , 'Number of input genes': [genenmfoa.n_genes]}
     degnorm_info_df = DataFrame(run_dat).transpose()
 
     # ---------------------------------------------------------------------------- #

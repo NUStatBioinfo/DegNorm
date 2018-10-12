@@ -6,7 +6,7 @@ DegNorm: Normalizing RNA degradation in RNA-Seq experiments
    :height: 150px
    :width: 500px
    :scale: 50 %
-   :align: left
+   :align: center
 
 RNA-Seq transcriptome sequencing experiments often undergo gene- *and* sample-specific transcript degradation, thus
 potentially biasing results in standard RNA-Seq analysis (e.g. differential expression analysis). The DegNorm pipeline
