@@ -78,7 +78,6 @@ def plot_gene_coverage(ke, f, x_exon, gene
     :param kwargs: keyword arguments to pass to matplotlib.pylab.figure (e.g. figsize)
     :return: matplotlib.figure.Figure if save_dir is not specified, otherwise, a filepath to saved .png file
     """
-
     # quality control.
     if ke.shape != f.shape:
         raise ValueError('ke and f arrays do not have the same shape.')
@@ -106,6 +105,7 @@ def plot_gene_coverage(ke, f, x_exon, gene
         rel_end = x_exon.max()
         end = rel_end
 
+    # before/after plot consists of 4 subplots, establish them.
     fig = plt.figure(**kwargs)
     fig.suptitle('Gene {0} coverage -- chromosome {1}'.format(gene, chrom))
     gs = gridspec.GridSpec(2, 2,
@@ -182,17 +182,189 @@ def plot_gene_coverage(ke, f, x_exon, gene
         return fig
 
     else:
-
         if not os.path.isdir(os.path.join(save_dir, chrom)):
             os.makedirs(os.path.join(save_dir, chrom))
 
-        fig_path = os.path.join(save_dir, chrom, '{0}_coverage.png'.format(gene))
+        fig_path = os.path.abspath(os.path.join(save_dir, chrom, '{0}_coverage.png'.format(gene)))
         fig.savefig(fig_path
                     , dpi=150
                     , bbox_inches='tight')
         plt.close(fig)
 
         return fig_path
+
+
+def check_for_files(data_dir, file_names):
+    """
+    Check that certain files exist within a DegNorm output directory.
+
+    :param data_dir: str path to DegNorm pipeline run output directory
+    :param file_names: str or list of str files output from DegNorm pipeline, contained in data_dir
+    """
+    if not os.path.isdir(data_dir):
+        raise IOError('data_dir {0} is not a directory!'.format(data_dir))
+
+    if not isinstance(file_names, list):
+        file_names = [file_names]
+
+    are_files = [os.path.isfile(os.path.join(data_dir, f_name)) for f_name in file_names]
+    if not all(are_files):
+        raise ValueError('Missing requested files. Check that {0} is a '
+                         ' DegNorm output directory.'.format(data_dir))
+
+
+def load_di_scores(data_dir, order=False):
+    """
+    Load degradation index (DI) scores into a pandas.DataFrame from a .csv file
+    in a DegNorm pipeline run output directory. The index column is `gene`, and the
+    genes will be ordered alphabetically.
+
+    :param data_dir: str path to DegNorm pipeline run output directory
+    :param order: Boolean should samples be ordered (increasing order) according to mean DI score?
+    :return: pandas.DataFrame with `gene` as the index, with `chr`, and sample ID columns.
+    """
+    # load and format DI score data.
+    di_file = 'degradation_index_scores.csv'
+    out = check_for_files(data_dir
+                          , file_names=di_file)
+    rho_df = read_csv(os.path.join(data_dir, di_file)
+                      , index_col='gene')
+
+    # organize genes in alphabetical order.
+    genes = rho_df.index.values
+    genes.sort()
+    rho_df = rho_df.loc[genes]
+
+    # order sample ids in ascending order of mean DI score.
+    ordered_sample_means = rho_df.mean(axis=0).sort_values()
+    ordered_sample_ids = ordered_sample_means.index.tolist()
+
+    return rho_df if not order else rho_df[['chr'] + ordered_sample_ids]
+
+
+def get_di_heatmap(data_dir, save_dir=None, figsize=[10, 8]):
+    """
+    Generate an n x p (genes x samples) heatmap of degradation index (DI) scores, in ascending order of mean sample
+    DI score. Red -> higher DI score, blue -> lower DI score.
+
+    :param data_dir: str path to DegNorm pipeline run output directory
+    :param figsize: list or 2-tuple of int [width, height]
+    :param save_dir: str directory to save heatmap plot, and then return str filepath of saved plots.
+    If None (default), return a matplotlib.figure.Figure.
+    :return: See save parameter.
+    """
+    # load up (ordered) DI scores, drop chromosome column.
+    rho_df = load_di_scores(data_dir
+                            , order=True)
+    rho_df.drop('chr'
+                , axis=1
+                , inplace=True)
+
+    # make DI score heatmap.
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    fig.suptitle('DI score heatmap')
+
+    sns.heatmap(rho_df
+                , cmap='bwr'
+                , cbar_kws={"shrink": .5})
+
+    ax.set_xticklabels(ax.get_xticklabels()
+                       , rotation=45)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+    if save_dir:
+        save_path = os.path.abspath(os.path.join(save_dir, 'di_heatmap.png'))
+        fig.savefig(save_path
+                    , dpi=200)
+        plt.close(fig)
+
+        return save_path
+
+    return fig
+
+
+def get_di_correlation(data_dir, save_dir=None, figsize=[8, 6]):
+    """
+    Generate a p x p (sample-wise) heatmap of the between-sample correlation matrix.
+
+    :param data_dir: str path to DegNorm pipeline run output directory
+    :param figsize: list or 2-tuple of int [width, height]
+    :param save_dir: str directory to save heatmap plot, and then return str filepath of saved plots.
+    If None (default), return a matplotlib.figure.Figure.
+    :return: See save parameter.
+    """
+    # load up (ordered) DI scores, drop chromosome column.
+    rho_df = load_di_scores(data_dir
+                            , order=True)
+    rho_df.drop('chr'
+                , axis=1
+                , inplace=True)
+
+    # make DI score correlation matrix heatmap.
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    fig.suptitle('DI score correlation')
+
+    corr = rho_df.corr()
+    sns.heatmap(corr
+                , xticklabels=corr.columns.values
+                , yticklabels=corr.columns.values
+                , cmap='YlGnBu'
+                , cbar_kws={"shrink": .5})
+
+    if save_dir:
+        save_path = os.path.abspath(os.path.join(save_dir, 'di_correlation.png'))
+        fig.savefig(save_path
+                    , dpi=200)
+        plt.close(fig)
+
+        return save_path
+
+    return fig
+
+
+def get_di_boxplots(data_dir, save_dir=None, figsize=[12, 8]):
+    """
+    Generate DI score boxplots (one for each of the p samples).
+
+    :param data_dir: str path to DegNorm pipeline run output directory
+    :param figsize: list or 2-tuple of int [width, height]
+    :param save_dir: str directory to save heatmap plot, and then return str filepath of saved plots.
+    If None (default), return a matplotlib.figure.Figure.
+    :return: See save parameter.
+    """
+    # load up (ordered) DI scores, drop chromosome column.
+    rho_df = load_di_scores(data_dir
+                            , order=True)
+    rho_df.drop('chr'
+                , axis=1
+                , inplace=True)
+
+    rho_long_df = rho_df.melt(var_name='sample ID'
+                              , value_name='DI score')
+
+    # make DI score boxplots
+    with sns.axes_style('darkgrid'):
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        fig.suptitle('DI scores')
+        sns.boxplot(x='sample ID'
+                    , y='DI score'
+                    , data=rho_long_df)
+
+        # rotate sample ID labels.
+        ax.set_xticklabels(ax.get_xticklabels()
+                           , rotation=30)
+        ax.set_xlabel('')
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+        if save_dir:
+            save_path = os.path.abspath(os.path.join(save_dir, 'di_boxplots.png'))
+            fig.savefig(save_path
+                        , dpi=200)
+            plt.close(fig)
+
+            return save_path
+
+        return fig
 
 
 def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
@@ -207,21 +379,16 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
     :param data_dir: str path to DegNorm pipeline run output directory
     :param figsize: [width (int), height (int)] dimensions of coverage curve plots.
     :param save: Bool if True save each plot to <chromosome name>/<gene name>_coverage.png and return
-    string filenames of saved plots. If False (default) return list of matplotlib.figure.Figures.
+    str filepaths of saved plots. If False (default) return a matplotlib.figure.Figures.
     :return: See save parameter.
     """
     # genes should be a list.
     if isinstance(genes, str):
         genes = [genes]
 
-    # quality control: make sure output_dir (and save_dir, if specified) are both real directories.
-    if not os.path.isdir(data_dir):
-        raise IOError('data_dir {0} is not a directory!'.format(data_dir))
-
-    if not os.path.isfile(os.path.join(data_dir, 'gene_exon_metadata.csv')) \
-        or not os.path.isfile(os.path.join(data_dir, 'read_counts.csv')):
-        raise ValueError('Missing gene/exon metadata or read count file. Check that {0} is a '
-                         ' DegNorm output directory.'.format(data_dir))
+    # check that data_dir contains the files associated with a DegNorm output dir.
+    out = check_for_files(data_dir
+                         , file_names=['gene_exon_metadata.csv', 'read_counts.csv', 'degradation_index_scores.csv'])
 
     # read in required data: exon positioning data and sample ID's (saved in DI score data).
     exon_df = read_csv(os.path.join(data_dir, 'gene_exon_metadata.csv'))
