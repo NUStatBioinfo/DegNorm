@@ -22,12 +22,16 @@
 <center>{{ degnorm_info_table }}</center>
 
 <br>
-<h2>Degradation Index score distributions </h2>
+<h2>Degradation Index score visualizations</h2>
 <br>
 <img src="{{ sample_di_dist_plot }}" class="center">
 <br>
 {% if di_heatmap_plot is not none %}
 <img src="{{ di_heatmap_plot }}" class="center">
+{% endif %}
+<br>
+{% if di_corr_plot is not none %}
+<img src="{{ di_corr_plot }}" class="center">
 {% endif %}
 <br>
 
