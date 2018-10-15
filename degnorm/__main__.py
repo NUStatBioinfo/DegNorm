@@ -229,8 +229,8 @@ def main():
     del chrom_gene_cov_dict
     gc.collect()
 
-    logging.info('DegNorm will run on {0} genes with downsampling rate = 1 / {1}'
-                 .format(len(gene_cov_dict), args.downsample_rate))
+    logging.info('DegNorm will run on {0} genes with downsampling rate = 1 / {1} {2} baseline selection algorithm.'
+                 .format(len(gene_cov_dict), args.downsample_rate, 'WITHOUT' if args.skip_baseline_selection else 'WITH'))
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
