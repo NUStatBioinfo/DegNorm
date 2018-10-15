@@ -245,7 +245,8 @@ def main():
     nmfoa = GeneNMFOA(degnorm_iter=args.iter
                       , nmf_iter=args.nmf_iter
                       , downsample_rate=args.downsample_rate
-                      , n_jobs=n_jobs)
+                      , n_jobs=n_jobs
+                      , skip_baseline_selection=args.skip_baseline_selection)
     estimates = nmfoa.run(gene_cov_dict
                           , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
 

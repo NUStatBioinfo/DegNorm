@@ -233,6 +233,12 @@ def parse_args():
                         , default=1
                         , required=False
                         , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. ')
+    parser.add_argument('-s'
+                        , '--skip-baseline-selection'
+                        , action='store_true'
+                        , help='Skip baseline selection while computing coverage matrix estimates. '
+                               'This will speed up degradation index score computation but may make '
+                               'scores less accurate.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int

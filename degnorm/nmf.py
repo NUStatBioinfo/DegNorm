@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 class GeneNMFOA():
 
     def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
-                 nmf_iter=100, bins=20, n_jobs=max_cpu(), random_state=123):
+                 nmf_iter=100, bins=20, n_jobs=max_cpu(), skip_baseline_selection=False, random_state=123):
         """
         Initialize an NMF-over-approximator object.
 
@@ -24,6 +24,7 @@ class GeneNMFOA():
         :param nmf_iter: int number of iterations to run per NMF-OA approximation per gene's coverage matrix.
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
         :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
+        :param skip_baseline_selection: Boolean should DegNorm skip baseline selection process?
         :param random_state: int seed for random number generator, useful if downsampling coverage matrices.
         """
         self.degnorm_iter = np.abs(int(degnorm_iter))
@@ -43,6 +44,8 @@ class GeneNMFOA():
         self.scale_factors = None
         self.rho = None
         self.fitted = False
+        self.skip_baseline_selection = skip_baseline_selection
+        self.skipped_genes = None
         self.random_state = random_state
 
         # all coverage matrices must have >= 2 high-coverage indices if downsampling (svds function limitation).
@@ -140,7 +143,7 @@ class GeneNMFOA():
         """
         return [(F.T / self.scale_factors).T for F in dat]
 
-    def correct_di_scores(self):
+    def correct_di_scores(self, save=False):
         """
         Correct degradation index (DI) scores, i.e. the rho matrix, by assigning the sample average DI
         score to genes that were not run through baseline selection.
@@ -151,6 +154,9 @@ class GeneNMFOA():
         if np.sum(non_baseline_gene) > 0:
             sample_avg_di_scores = 1 - (self.x_weighted.sum(axis=0) / self.x_adj.sum(axis=0))
             self.rho[non_baseline_gene, :] = sample_avg_di_scores
+
+            # save set of genes skipped for baseline selection.
+            self.skipped_genes = [self.genes[idx] for idx in np.where(non_baseline_gene)[0]]
 
     @staticmethod
     def shift_bins(bins, dropped_bin):
@@ -240,7 +246,7 @@ class GeneNMFOA():
         KE_bin = K.dot(E)
 
         # keep original NMFOA-estimated coverage in case we do not run baseline selection.
-        K_start, E_start = np.abs(np.copy(K)), np.copy(E)
+        K_start, E_start = np.copy(K), np.copy(E)
         estimate = np.copy(KE_bin)
 
         # compute DI scores. High score ->> high degradation.
@@ -252,7 +258,7 @@ class GeneNMFOA():
 
         # decide whether to search for a gene's baseline regions.
         # If any of these criteria are satisfied, do not run baseline selection and return what we have.
-        if (n_hi_cov >= 200) and (np.nanmin(rho_vec) <= 0.2):
+        if (n_hi_cov >= 200) and (np.nanmin(rho_vec) <= 0.2) and (not self.skip_baseline_selection):
 
             # split up consecutive regions of the high-coverage gene.
             # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
@@ -293,11 +299,12 @@ class GeneNMFOA():
                 K, E = self.nmf(F_bin
                                 , factors=True)
                 KE_bin = K.dot(E)
-                KE_bin[KE_bin < F_bin] = F_bin[KE_bin < F_bin]
 
                 # stop is fitted values are all zero for any sample (extreme cases).
                 if np.min(KE_bin.sum(axis=1)) == 0:
                     break
+
+                KE_bin[KE_bin < F_bin] = F_bin[KE_bin < F_bin]
 
                 # recompute DI scores: closer to 1 ->> more degradation. Then run quality control.
                 rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
@@ -323,7 +330,8 @@ class GeneNMFOA():
                 # genes with low sequencing depth.
                 if np.nanmax(rho_vec) > 0.9:
                     K, E = K_start, E_start
-                    K[K < 1.e-5] = np.min(K[K >= 1.e-5])
+                    # K = np.abs(K)
+                    # K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                     estimate = K.dot(E)
                     estimate[estimate < F_start] = F_start[estimate < F_start]
                     rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -331,7 +339,8 @@ class GeneNMFOA():
             # otherwise when baseline has not been identified, use the original NMF results.
             else:
                 K, E = K_start, E_start
-                K[K < 1.e-5] = np.min(K[K >= 1.e-5])
+                # K = np.abs(K)
+                # K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                 estimate = K.dot(E)
                 estimate[estimate < F_start] = F_start[estimate < F_start]
                 rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -345,12 +354,10 @@ class GeneNMFOA():
             K = np.abs(K)
             K[K < 1.e-5] = np.min(K[K >= 1.e-5])
             E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1).T
-            estimate = np.abs(K.dot(E))
+            estimate = K.dot(E)
             estimate[estimate < F] = F[estimate < F]
 
         # assemble final output data.
-        rho_vec[rho_vec < 0] = 0.
-        rho_vec[rho_vec >= 1] = 1. - 1e-5
         output['rho'] = rho_vec
         output['estimate'] = estimate
 
@@ -598,6 +605,12 @@ class GeneNMFOA():
 
         if not os.path.isdir(output_dir):
             raise IOError('Directory {0} not found.'.format(output_dir))
+
+        # write genes not sent through coverage matrix estimation process to disk.
+        if self.skipped_genes is not None:
+            with open(os.path.join(output_dir, 'skipped_genes.txt'), 'w') as f:
+                for gene in self.skipped_genes:
+                    f.write(gene + '\n')
 
         # ensure that gene_manifest_df has `chr` and `gene` columns to establish chromosome-gene map.
         if not all([col in gene_manifest_df.columns.tolist() for col in ['chr', 'gene']]):
