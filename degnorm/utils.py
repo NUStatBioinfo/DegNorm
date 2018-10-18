@@ -31,7 +31,7 @@ def welcome():
     resources_dir = pkg_resources.resource_filename('degnorm', 'resources')
     with open(os.path.join(resources_dir, 'welcome.txt'), 'r') as f:
         welcome = f.readlines()
-        welcome += '\nversion {0}'.format(pkg_resources.get_distribution('degnorm').version)
+        welcome += '\n' + 'version {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
     sys.stdout.write('\n' + ''.join(welcome) + '\n'*4)
     logging.info('\n' + ''.join(welcome) + '\n'*4)

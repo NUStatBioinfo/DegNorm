@@ -310,6 +310,7 @@ def get_di_correlation(data_dir, save_dir=None, figsize=[8, 6]):
                 , yticklabels=corr.columns.values
                 , cmap='YlGnBu'
                 , cbar_kws={"shrink": .5})
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
 
     if save_dir:
         save_path = os.path.abspath(os.path.join(save_dir, 'di_correlation.png'))
