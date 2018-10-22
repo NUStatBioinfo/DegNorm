@@ -63,7 +63,8 @@ class GeneNMFOA():
         u, s, v = svds(x, k=1)
         return u*s, v
 
-    def get_high_coverage_idx(self, x):
+    @staticmethod
+    def get_high_coverage_idx(x):
         """
         Find positions of high coverage in a gene's coverage matrix, defined
         as positions where the sample-wise maximum coverage is at least 10%
