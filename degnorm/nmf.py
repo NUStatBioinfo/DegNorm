@@ -229,7 +229,7 @@ class GeneNMFOA():
 
         # if there are not sufficiently-many high-coverage base pairs, return null degradation.
         if n_hi_cov < self.min_high_coverage:
-            return output['rho'], output['estimate']
+            return output['rho'], output['estimate'], output['ran_baseline_selection']
 
         # select high-coverage positions from (possibly downsampled) coverage matrix.
         hi_cov_idx.sort()
@@ -238,7 +238,7 @@ class GeneNMFOA():
 
         # if any sample sans coverage after filtering, return defaults.
         if np.sum(F_bin.sum(axis=1) > 0) < self.p:
-            return output['rho'], output['estimate']
+            return output['rho'], output['estimate'], output['ran_baseline_selection']
 
         # run NMF on filtered coverage, obtain initial coverage curve estimate.
         K, E = self.nmf(F_bin
@@ -254,7 +254,7 @@ class GeneNMFOA():
 
         # exclude extreme cases where NMF result doesn't converge.
         if np.nanmedian(1 - rho_vec) > 1:
-            return output['rho'], output['estimate']
+            return output['rho'], output['estimate'], output['ran_baseline_selection']
 
         # decide whether to search for a gene's baseline regions.
         # If any of these criteria are satisfied, do not run baseline selection and return what we have.
@@ -333,8 +333,6 @@ class GeneNMFOA():
                 # genes with low sequencing depth.
                 if np.nanmax(rho_vec) > 0.9:
                     K, E = K_start, E_start
-                    # K = np.abs(K)
-                    # K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                     estimate = K.dot(E)
                     estimate[estimate < F_start] = F_start[estimate < F_start]
                     rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -342,8 +340,6 @@ class GeneNMFOA():
             # otherwise when baseline has not been identified, use the original NMF results.
             else:
                 K, E = K_start, E_start
-                # K = np.abs(K)
-                # K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                 estimate = K.dot(E)
                 estimate[estimate < F_start] = F_start[estimate < F_start]
                 rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -496,7 +492,7 @@ class GeneNMFOA():
         self.p = cov_mats[0].shape[0]
 
         # initialize baseline selection tracker entirely False (no genes have gone through baseline selection yet).
-        self.ran_baseline_selection = np.zeros([self.n_genes, self.degnorm_iter]).astype(bool)
+        self.ran_baseline_selection = np.zeros(shape=[self.n_genes, self.degnorm_iter]).astype(bool)
 
         # check validity of input data.
         out = self.check_input(cov_mats)
