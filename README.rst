@@ -2,6 +2,9 @@
 DegNorm: Normalizing RNA degradation in RNA-Seq experiments
 ===========================================================
 
+.. image:: https://travis-ci.org/ffineis/DegNorm.svg?branch=master
+    :target: https://travis-ci.org/ffineis/DegNorm
+
 .. image:: degnorm_logo.png
    :height: 150px
    :width: 500px
@@ -32,8 +35,7 @@ and exons occurring on multiple genes are removed. In total, DegNorm will map ``
 3. **Assess gene read counts** from coverage curves - count the number of unique paired reads falling entirely within
 the start and end position of every gene. The read counts matrix is ``n x p`` (2-d array).
 
-4. **Break up chromosome coverage matrices into gene coverage matrices**. Matrices are saved to pickle file (a serialized
-data format for Python), one per chromosome.
+4. **Break up chromosome coverage matrices into gene coverage matrices**. Matrices are saved to pickle file (a serialized data format for Python), one per chromosome.
 
 5. **Fit a non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
 
