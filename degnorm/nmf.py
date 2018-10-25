@@ -145,7 +145,7 @@ class GeneNMFOA():
         """
         return [(F.T / self.scale_factors).T for F in dat]
 
-    def correct_di_scores(self, save=False):
+    def correct_di_scores(self):
         """
         Correct degradation index (DI) scores, i.e. the rho matrix, by assigning the sample average DI
         score to genes that were not run through baseline selection.
