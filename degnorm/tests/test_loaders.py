@@ -19,24 +19,40 @@ def test_loader_file_dne_error():
 # SamLoader tests
 # ----------------------------------------------------- #
 @pytest.fixture
-def sam_loader():
-    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
+def sam_loader_paired():
+    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')  # paired reads subsample dataset.
     sam_loader = SamLoader(sam_file)
     return sam_loader.get_data()
 
 
-def test_sam_header(sam_loader):
-    header = sam_loader['header']
-    assert isinstance(header, DataFrame)
-    assert not header.empty
-    assert all([col in header.columns.tolist() for col in ['chr', 'length']])
+@pytest.fixture
+def sam_loader_unpaired():
+    sam_file = os.path.join(THIS_DIR, 'data', 'ff_small.sam')  # unpaired reads subsample dataset.
+    sam_loader = SamLoader(sam_file)
+    return sam_loader.get_data()
 
 
-def test_sam_data(sam_loader):
-    dat = sam_loader['data']
-    assert isinstance(dat, DataFrame)
-    assert not dat.empty
-    assert all([col in dat.columns.tolist() for col in ['qname', 'chr', 'pos', 'cigar', 'rnext', 'qname_unpaired']])
+# check that paired and unpaired reads files are classified as such.
+def test_sam_pairedness(sam_loader_paired, sam_loader_unpaired):
+    assert sam_loader_paired['paired']
+    assert not sam_loader_unpaired['paired']
+
+
+# check that headers from .sam files are parsed properly for chromosome name and length metadata.
+def test_sam_header(sam_loader_paired, sam_loader_unpaired):
+    for header in [sam_loader_paired['header'], sam_loader_unpaired['header']]:
+        assert isinstance(header, DataFrame)
+        assert not header.empty
+        assert all([col in header.columns.tolist() for col in ['chr', 'length']])
+
+# check that the reads contents of .sam files are parsed properly dep on paired/unpaired status.
+def test_sam_data(sam_loader_paired, sam_loader_unpaired):
+    dat_paired = sam_loader_paired['data']
+    dat_unpaired = sam_loader_unpaired['data']
+    assert all([isinstance(df, DataFrame) for df in [dat_paired, dat_unpaired]])
+    assert all([not df.empty for df in [dat_paired, dat_unpaired]])
+    assert all([col in dat_paired.columns.tolist() for col in ['qname', 'chr', 'pos', 'cigar', 'rnext', 'qname_unpaired']])
+    assert all([col in dat_unpaired.columns.tolist() for col in ['qname', 'chr', 'pos', 'cigar', 'rnext']])
 
 # ----------------------------------------------------- #
 # GeneAnnotationLoader tests

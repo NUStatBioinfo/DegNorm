@@ -33,6 +33,7 @@ class ReadsProcessor():
         self.loader = None
         self.data = None
         self.header = None
+        self.paired = None
         self.chroms = chroms
 
     def load(self):
@@ -52,12 +53,13 @@ class ReadsProcessor():
             logging.error('No header was found in {0}!'.format(self.filename))
             raise
 
-        # hack: drop nonunique paired reads. TODO: look into why there are nonunique qname pairs.
+        # hack: drop nonunique paired reads. TODO: look into why there are nonunique (chr, qname) pairs.
         df.drop_duplicates(subset=['chr', 'qname']
                            , inplace=True)
 
         self.data = df
         self.header = header_df
+        self.paired = df_dict['paired']
 
     @staticmethod
     def _cigar_segment_bounds(cigar, start):
@@ -69,22 +71,24 @@ class ReadsProcessor():
 
         :param cigar: str a read's cigar string, e.g. "49M165N51M"
         :param start: int a read's start position on a chromosome
-        :return: tuple
-            list: a list of integers representing cigar match start, end points, e.g.
+        :return: list of integers representing cigar match start, end points, e.g.
             50M25N50M starting from 100 -> [100, 149, 175, 224]. Note that start and end integers
             are inclusive, i.e. all positions at or between 100 and 149 and at or between 175 and 224
             are covered by reads.
-            int: number of matching segments found within the cigar string. E.g. "100M" is one matching segment.
         """
-        if cigar == '100M':
-            return [start, start + 99], 1
+        # if CIGAR string is a single full match (i.e. "<positive integer>M")
+        # extract length of the match, return match segment.
+        full_match = re.match('(\d+)M$', cigar)
+        if full_match is not None:
+            extension = int(cigar[:(full_match.span()[-1] - 1)]) - 1
+
+            return [start, start + extension]
 
         # break up cigar string into list of 2-tuples (letter indicative of match/no match, run length integer).
         cigar_split = [(v, int(k)) for k, v in re.findall(r'(\d+)([A-Z]?)', cigar)]
 
-        # num_match_segs: number matching segments from cigar string.
-        num_match_segs = 0
-        match_idx_list = list()  # output storage.
+        # output storage.
+        match_idx_list = list()
 
         for idx in range(len(cigar_split)):
             segment = cigar_split[idx]
@@ -93,7 +97,6 @@ class ReadsProcessor():
                 extension = segment[1] - 1  # end of a match run is inclusive.
                 augment = True
                 match_idx_list += [start, start + extension]  # append a match run to output.
-                num_match_segs += 1
 
             else:
                 if augment:
@@ -104,7 +107,7 @@ class ReadsProcessor():
 
             start += extension
 
-        return match_idx_list, num_match_segs
+        return match_idx_list
 
     def chromosome_coverage_read_counts(self, reads_sub_df, gene_sub_df, chrom, chrom_len=0):
         """
@@ -122,32 +125,44 @@ class ReadsProcessor():
         :param chrom_len: int length of chromosome from reference genome
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
-        # first, ensure that we've sequestered paired reads (eliminate any query names occurring once).
-        qname_counts = reads_sub_df.qname_unpaired.value_counts()
-        paired_occ_reads = qname_counts[qname_counts == 2].index.values.tolist()
-        reads_sub_df = reads_sub_df[reads_sub_df.qname_unpaired.isin(paired_occ_reads)]
+        # first, if working with paired reads,
+        # ensure that we've sequestered paired reads (eliminate any query names only occurring once).
+        if self.paired:
+            qname_counts = reads_sub_df.qname_unpaired.value_counts()
+            paired_occ_reads = qname_counts[qname_counts == 2].index.values.tolist()
+            reads_sub_df = reads_sub_df[reads_sub_df.qname_unpaired.isin(paired_occ_reads)]
 
         # grab cigar string and read starting position. Initialize coverage array.
         dat = reads_sub_df[['cigar', 'pos']].values
         cov_vec = np.zeros([chrom_len])
 
-        for i in np.arange(1, dat.shape[0], 2):
-            bounds_1, _ = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
-            bounds_2, _ = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
+        # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
+        if self.paired:
+            for i in np.arange(1, dat.shape[0], 2):
+                bounds_1 = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
+                bounds_2 = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
 
-            # leverage nature of alignments of paired reads to find disjoint coverage ranges.
-            min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
-            min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
+                # leverage nature of alignments of paired reads to find disjoint coverage ranges.
+                min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
+                min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
 
-            if max_bounds_2 > max_bounds_1:
-                bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
-            else:
-                bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
-                bounds_2.sort()
+                if max_bounds_2 > max_bounds_1:
+                    bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
+                else:
+                    bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
+                    bounds_2.sort()
 
-            bounds = bounds_1 + bounds_2
-            for j in np.arange(1, len(bounds), 2):
-                cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
+                bounds = bounds_1 + bounds_2
+                for j in np.arange(1, len(bounds), 2):
+                    cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
+
+        # for single-read RNA-Seq experiments, we do not need such special consideration.
+        else:
+            for i in np.arange(0, dat.shape[0]):
+                bounds = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
+
+                for j in np.arange(1, len(bounds), 2):
+                    cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
 
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} length: {2}'.format(self.sample_id, chrom, len(cov_vec)))
@@ -181,9 +196,11 @@ class ReadsProcessor():
         dat = gene_sub_df[['gene_start', 'gene_end']].values
 
         # iterate over genes, count number of reads (entirely) falling between gene_start and gene_end.
+        qname_col = 'qname_unpaired' if self.paired else 'qname'
         for i in range(n_genes):
-            counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]  # must entire read fall w/in gene start/end?
-            counts[i] = counts_df.qname_unpaired.unique().shape[0]
+            # entire read must fall w/in gene start/end
+            counts_df = reads_sub_df[reads_sub_df.pos.between(dat[i, 0], dat[i, 1])]
+            counts[i] = counts_df[qname_col].unique().shape[0]
 
         # turn read counts into a DataFrame so we can join on genes later.
         read_count_df = DataFrame({'chr': chrom
