@@ -229,8 +229,10 @@ def main():
     del chrom_gene_cov_dict
     gc.collect()
 
-    logging.info('DegNorm will run on {0} genes with downsampling rate = 1 / {1}'
-                 .format(len(gene_cov_dict), args.downsample_rate))
+    # briefly summarize DegNorm input and settings.
+    logging.info('RNA sample identifiers: \n\t' + ', '.join(sample_ids))
+    logging.info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection algorithm.'
+                 .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
@@ -245,7 +247,8 @@ def main():
     nmfoa = GeneNMFOA(degnorm_iter=args.iter
                       , nmf_iter=args.nmf_iter
                       , downsample_rate=args.downsample_rate
-                      , n_jobs=n_jobs)
+                      , n_jobs=n_jobs
+                      , skip_baseline_selection=args.skip_baseline_selection)
     estimates = nmfoa.run(gene_cov_dict
                           , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
 

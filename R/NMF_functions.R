@@ -32,12 +32,13 @@ NMF <- function(f, loop = 100){
 # output: DI scores (rho), baseline status (convergence) and abundance level (K).
 ################################################################################################################
 
-optiNMF <- function(f, norm.factor){
+optiNMF <- function(f, norm.factor, loop=100){
   
   # initialize the output with default values
   output = list(rho = NULL, convergence = FALSE, K = NULL)
   num.sample = dim(f)[2]
   output$rho = rep(0, num.sample)
+  output$ran_baseline_selection <- FALSE
   
   f = t(as.matrix(f))
   # normalize sequencing depth based on the norm.factor
@@ -64,13 +65,14 @@ optiNMF <- function(f, norm.factor){
     }
 
     # run NMF to the filtered coverage and obtain the fitted values and the Lagrangian multiplier
-    NMF.output = NMF(f)
+    NMF.output = NMF(f, loop=loop)
     fitted = NMF.output$fitted
     lambda = NMF.output$Lambda
     
     # calculate the DI scores and the ratio
     rho = 1 - rowSums(f) / (rowSums(fitted) + 1) # fitted sum coverages are added by 1 to avoid 0 in the denominator
     ratio = 1 - rho
+    # print(paste('iter = 0 -- rho = ', rho))
 
     # decide whether to search for baseline regions of a gene.
     # if min(rho, na.rm = TRUE) > 0.2: skip baseline selection because there aren't samples with consistent degradation patterns;
@@ -93,7 +95,9 @@ optiNMF <- function(f, norm.factor){
       bin.num = gene.length %/% bin.size + 1
 
       # Continue while degradation is high.
+      itr <- 1
       while(max(rho, na.rm = TRUE) > 0.1){
+        output$ran_baseline_selection <- TRUE
         
         # calculate relative residual from NMF output
         res.std = NMF.output$res / (f + 1) # add 1 to avoid 0 in the denominator
@@ -102,6 +106,7 @@ optiNMF <- function(f, norm.factor){
         
         # bin average
         bin.mean = apply(dat.res, 2, mean, na.rm=TRUE)
+        # print(paste('iter = ', itr, '-- ss_r =', bin.mean))
         
         # drop the bin with maximum average weighted squared relative residual
         drop.bin = which.max(bin.mean)
@@ -115,7 +120,7 @@ optiNMF <- function(f, norm.factor){
         lambda = lambda[,-drop.bp]
         
         # run NMF again with updated coverage matrix
-        NMF.output = NMF(f)
+        NMF.output = NMF(f, loop=loop)
         fitted = NMF.output$fitted
         fitted[f>fitted] = f[f>fitted]
         
@@ -127,12 +132,15 @@ optiNMF <- function(f, norm.factor){
         # update the DI scores
         rho = 1 - rowSums(f) / (rowSums(fitted) + 1) 
         ratio = 1 - rho
+        # print(paste('iter = ', itr, '-- rho = ', rho))
         
         # Stop while there are only 20% of the bins remaining (4 out of 20)
         # Stop while the remaining transcript length is less than 200 bp (imposed by Bin)
         if((bin.num == 4) || (dim(f)[2] < 200)){
+          # print('Exiting for number of dropped bins or length of remaining gene.')
           break
         }
+        itr <- itr + 1
       }
       
       # After baseline selection loop, determine whether the baseline is identified based on the NMF output from the last iteration
@@ -149,24 +157,27 @@ optiNMF <- function(f, norm.factor){
         # update the DI scores and the ratio based on the whole filtered transcript
         rho = 1 - rowSums(f.check) / (rowSums(fitted) + 1) 
         ratio = 1 - rho
+        # print(paste('Post baseline, max(rho) < 0.2. -- rho = ', rho))
 
         # eliminate extreme cases where there's high degradation, but it's unlikely that
         # the degradation comes from "degradation," degradation is just from noise. Prevents overinflating due to noise.
         # Happens typically for larger genes with low sequencing depth.
         if(max(rho, na.rm = TRUE) > 0.9){
-          NMF.output = NMF(f.check)      
+          NMF.output = NMF(f.check, loop=loop)      
           K = abs(NMF.output$svd$u) * NMF.output$svd$d[1]
           fitted = NMF.output$fitted
           fitted[f.check>fitted] = f.check[f.check>fitted]
           rho = 1 - rowSums(f.check) / (rowSums(fitted) + 1) 
+          # print(paste('Post baseline, max(rho) < 0.2, then max(rho) > 0.9 -- rho = ', rho))
         }
         
       }else{ # when the baseline is not identified, use the NMF-OA results instead
-        NMF.output = NMF(f.check)      
+        NMF.output = NMF(f.check, loop=loop)      
         K = abs(NMF.output$svd$u) * NMF.output$svd$d[1]
         fitted = NMF.output$fitted
         fitted[f.check>fitted] = f.check[f.check>fitted]
-        rho = 1 - rowSums(f.check) / (rowSums(fitted) + 1) 
+        rho = 1 - rowSums(f.check) / (rowSums(fitted) + 1)
+        # print(paste('Post baseline, max(rho) > 0.2. -- rho = ', rho))
       }
     }
     

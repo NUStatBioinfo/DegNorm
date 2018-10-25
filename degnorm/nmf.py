@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 class GeneNMFOA():
 
     def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
-                 nmf_iter=100, bins=20, n_jobs=max_cpu(), random_state=123):
+                 nmf_iter=100, bins=20, n_jobs=max_cpu(), skip_baseline_selection=False, random_state=123):
         """
         Initialize an NMF-over-approximator object.
 
@@ -24,6 +24,7 @@ class GeneNMFOA():
         :param nmf_iter: int number of iterations to run per NMF-OA approximation per gene's coverage matrix.
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
         :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
+        :param skip_baseline_selection: Boolean should DegNorm skip baseline selection process?
         :param random_state: int seed for random number generator, useful if downsampling coverage matrices.
         """
         self.degnorm_iter = np.abs(int(degnorm_iter))
@@ -43,13 +44,16 @@ class GeneNMFOA():
         self.scale_factors = None
         self.rho = None
         self.fitted = False
+        self.ran_baseline_selection = None
+        self.skip_baseline_selection = skip_baseline_selection
         self.random_state = random_state
 
         # all coverage matrices must have >= 2 high-coverage indices if downsampling (svds function limitation).
         if self.downsample_rate > 1:
             self.min_high_coverage = 2
 
-    def rank_one_approx(self, x):
+    @staticmethod
+    def rank_one_approx(x):
         """
         Decompose a matrix X via truncated SVD into (K)(E^t) = U_{1} \cdot \sigma_{1}V_{1}
 
@@ -59,7 +63,8 @@ class GeneNMFOA():
         u, s, v = svds(x, k=1)
         return u*s, v
 
-    def get_high_coverage_idx(self, x):
+    @staticmethod
+    def get_high_coverage_idx(x):
         """
         Find positions of high coverage in a gene's coverage matrix, defined
         as positions where the sample-wise maximum coverage is at least 10%
@@ -192,9 +197,10 @@ class GeneNMFOA():
 
         :param F: numpy 2-d array, gene coverage curve matrix, a numpy 2-dimensional array, perferrably
         the coverage curves have been scaled by the degradation normalization scale factor.
-        :return: 2-tuple --
+        :return: 3-tuple --
         (numpy 1-d array (DI scores)
-        , numpy 2-d array (estimate of F post baseline-selection algorithm))
+        , numpy 2-d array (estimate of F post baseline-selection algorithm)
+        , Boolean indicator of whether gene was sent through baseline selection)
         """
 
         # ------------------------------------------------------------------------- #
@@ -209,6 +215,7 @@ class GeneNMFOA():
         output = dict()
         output['rho'] = np.zeros(self.p)  # default degradation scores are all 0.
         output['estimate'] = F
+        output['ran_baseline_selection'] = False
 
         hi_cov_idx = self.get_high_coverage_idx(F)
 
@@ -223,7 +230,7 @@ class GeneNMFOA():
 
         # if there are not sufficiently-many high-coverage base pairs, return null degradation.
         if n_hi_cov < self.min_high_coverage:
-            return output['rho'], output['estimate']
+            return output['rho'], output['estimate'], output['ran_baseline_selection']
 
         # select high-coverage positions from (possibly downsampled) coverage matrix.
         hi_cov_idx.sort()
@@ -232,7 +239,7 @@ class GeneNMFOA():
 
         # if any sample sans coverage after filtering, return defaults.
         if np.sum(F_bin.sum(axis=1) > 0) < self.p:
-            return output['rho'], output['estimate']
+            return output['rho'], output['estimate'], output['ran_baseline_selection']
 
         # run NMF on filtered coverage, obtain initial coverage curve estimate.
         K, E = self.nmf(F_bin
@@ -240,7 +247,7 @@ class GeneNMFOA():
         KE_bin = K.dot(E)
 
         # keep original NMFOA-estimated coverage in case we do not run baseline selection.
-        K_start, E_start = np.abs(np.copy(K)), np.copy(E)
+        K_start, E_start = np.copy(K), np.copy(E)
         estimate = np.copy(KE_bin)
 
         # compute DI scores. High score ->> high degradation.
@@ -248,11 +255,11 @@ class GeneNMFOA():
 
         # exclude extreme cases where NMF result doesn't converge.
         if np.nanmedian(1 - rho_vec) > 1:
-            return output['rho'], output['estimate']
+            return output['rho'], output['estimate'], output['ran_baseline_selection']
 
         # decide whether to search for a gene's baseline regions.
         # If any of these criteria are satisfied, do not run baseline selection and return what we have.
-        if (n_hi_cov >= 200) and (np.nanmin(rho_vec) <= 0.2):
+        if (n_hi_cov >= 200) and (np.nanmin(rho_vec) <= 0.2) and (not self.skip_baseline_selection):
 
             # split up consecutive regions of the high-coverage gene.
             # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
@@ -261,6 +268,9 @@ class GeneNMFOA():
             n_bins = len(bin_segs)
 
             while np.nanmax(rho_vec) > 0.1:
+
+                # identify gene as having gone through baseline selection.
+                output['ran_baseline_selection'] = True
 
                 # compute relative residuals from NMF output,
                 # then compute average weighted squared relative residual.
@@ -293,11 +303,12 @@ class GeneNMFOA():
                 K, E = self.nmf(F_bin
                                 , factors=True)
                 KE_bin = K.dot(E)
-                KE_bin[KE_bin < F_bin] = F_bin[KE_bin < F_bin]
 
                 # stop is fitted values are all zero for any sample (extreme cases).
                 if np.min(KE_bin.sum(axis=1)) == 0:
                     break
+
+                KE_bin[KE_bin < F_bin] = F_bin[KE_bin < F_bin]
 
                 # recompute DI scores: closer to 1 ->> more degradation. Then run quality control.
                 rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
@@ -323,7 +334,6 @@ class GeneNMFOA():
                 # genes with low sequencing depth.
                 if np.nanmax(rho_vec) > 0.9:
                     K, E = K_start, E_start
-                    K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                     estimate = K.dot(E)
                     estimate[estimate < F_start] = F_start[estimate < F_start]
                     rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -331,7 +341,6 @@ class GeneNMFOA():
             # otherwise when baseline has not been identified, use the original NMF results.
             else:
                 K, E = K_start, E_start
-                K[K < 1.e-5] = np.min(K[K >= 1.e-5])
                 estimate = K.dot(E)
                 estimate[estimate < F_start] = F_start[estimate < F_start]
                 rho_vec = 1 - F_start.sum(axis=1) / (estimate.sum(axis=1) + 1)
@@ -345,22 +354,20 @@ class GeneNMFOA():
             K = np.abs(K)
             K[K < 1.e-5] = np.min(K[K >= 1.e-5])
             E = np.true_divide(F.T, K.ravel()).max(axis=1).reshape(-1, 1).T
-            estimate = np.abs(K.dot(E))
+            estimate = K.dot(E)
             estimate[estimate < F] = F[estimate < F]
 
         # assemble final output data.
-        rho_vec[rho_vec < 0] = 0.
-        rho_vec[rho_vec >= 1] = 1. - 1e-5
         output['rho'] = rho_vec
         output['estimate'] = estimate
 
-        # return DI vector and estimate of F.
-        return output['rho'], output['estimate']
+        # return DI vector, estimate of F, True/False whether gene sent through baseline selection.
+        return output['rho'], output['estimate'], output['ran_baseline_selection']
 
     def run_baseline_selection_serial(self, x):
         return list(map(self.baseline_selection, x))
 
-    def par_apply_baseline_selection(self, dat):
+    def par_apply_baseline_selection(self, dat, degnorm_iter):
         """
         Apply baseline selection algorithm to all gene coverage matrices in parallel,
         building the DI score matrix (rho) in the process and
@@ -373,16 +380,20 @@ class GeneNMFOA():
         # split up coverage matrices so that no worker gets much more than 50Mb.
         dat = split_into_chunks(dat, self.mem_splits)
         baseline_dat = Parallel(n_jobs=self.n_jobs
-                                 , verbose=0
-                                 , backend='threading')(map(delayed(self.run_baseline_selection_serial), dat))
+                                , verbose=0
+                                , backend='threading')(map(delayed(self.run_baseline_selection_serial), dat))
 
         # flatten results.
         baseline_dat = [est for est1d in baseline_dat for est in est1d]
 
-        # extract DI score matrix, apply thresholding.
+        # Assemble DI score matrix, apply QA thresholding on output.
         self.rho = np.vstack([x[0] for x in baseline_dat])
         self.rho[self.rho > 0.9] = 0.9
         self.rho[self.rho < 0.] = 0.
+
+        # Update current column of baseline selection tracker matrix for which genes were
+        # sent through baseline selection algorithm.
+        self.ran_baseline_selection[:, degnorm_iter] = np.array([x[2] for x in baseline_dat])
 
         # return coverage curve estimates; for visualization purposes (not currently for DI score calculations).
         return [x[1] for x in baseline_dat]
@@ -481,6 +492,9 @@ class GeneNMFOA():
         cov_mats = list(cov_dat.values())
         self.p = cov_mats[0].shape[0]
 
+        # initialize baseline selection tracker entirely False (no genes have gone through baseline selection yet).
+        self.ran_baseline_selection = np.zeros(shape=[self.n_genes, self.degnorm_iter]).astype(bool)
+
         # check validity of input data.
         out = self.check_input(cov_mats)
 
@@ -542,7 +556,13 @@ class GeneNMFOA():
             cov_mats_adj = self.adjust_coverage_curves(cov_mats)
 
             # run NMF-OA + baseline selection; obtain refined estimates of F; update rho matrix.
-            estimates = self.par_apply_baseline_selection(cov_mats_adj)
+            estimates = self.par_apply_baseline_selection(cov_mats_adj
+                                                          , degnorm_iter=i)
+
+            # declare number of genes sent through baseline selection on this iteration.
+            if not self.skip_baseline_selection:
+                logging.info('DegNorm iteration {0} -- {1} genes sent through baseline selection'
+                             .format(i + 1, np.sum(self.ran_baseline_selection[:, i])))
 
             # adjust (weighted) read counts.
             self.x_adj = self.x_weighted / (1 - self.rho)
@@ -632,11 +652,6 @@ class GeneNMFOA():
             gene_idx = np.where(np.array(self.genes) == gene)[0][0]
             chrom_gene_dict[chrom][gene] = estimates[gene_idx]
 
-        # Instantiate results-save progress bar.
-        pbar = tqdm.tqdm(total=(len(manifest_chroms) + 2)
-                         , leave=False
-                         , desc='GeneNMFOA results save progress')
-
         # save estimated coverage matrices to genes nested within chromosomes.
         chrom_gene_dfs = list()
         for chrom in manifest_chroms:
@@ -652,8 +667,6 @@ class GeneNMFOA():
             chrom_gene_dfs.append(DataFrame({'chr': chrom
                                              , 'gene': list(chrom_gene_dict[chrom].keys())}))
 
-            pbar.update()
-
         # order chromosome-gene index according to nmfoa gene order.
         chrom_gene_df = concat(chrom_gene_dfs)
         chrom_gene_df.set_index('gene'
@@ -668,11 +681,8 @@ class GeneNMFOA():
         rho_df = concat([chrom_gene_df, rho_df]
                         , axis=1)
         rho_df = rho_df[['chr', 'gene'] + sample_ids]
-
         rho_df.to_csv(os.path.join(output_dir, 'degradation_index_scores.csv')
                       , index=False)
-
-        pbar.update()
 
         # append chromosome-gene index to adjusted read counts and save.
         x_adj_df = DataFrame(self.x_adj
@@ -680,7 +690,15 @@ class GeneNMFOA():
         x_adj_df = concat([chrom_gene_df, x_adj_df]
                           , axis=1)
         x_adj_df = x_adj_df[['chr', 'gene'] + sample_ids]
-
         x_adj_df.to_csv(os.path.join(output_dir, 'adjusted_read_counts.csv')
                         , index=False)
-        pbar.close()
+
+        # append chromosome-gene index to ran-through-baseline-selection tracker and save.
+        iter_names = ['iter_{0}'.format(i) for i in range(self.degnorm_iter)]
+        ran_baseline_selection_df = DataFrame(self.ran_baseline_selection
+                                              , columns=iter_names)
+        ran_baseline_selection_df = concat([chrom_gene_df, ran_baseline_selection_df]
+                                           , axis=1)
+        ran_baseline_selection_df = ran_baseline_selection_df[['chr', 'gene'] + iter_names]
+        ran_baseline_selection_df.to_csv(os.path.join(output_dir, 'ran_baseline_selection.csv')
+                                         , index=False)
