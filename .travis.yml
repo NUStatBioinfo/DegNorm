@@ -1,0 +1,10 @@
+matrix:
+  include:
+    ################
+    # Python build #
+    ################
+    - language: python
+      python: 3.6
+      script:
+        - ./install
+        - degnorm_test

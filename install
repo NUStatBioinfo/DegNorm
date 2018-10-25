@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# check for pip3.
+# check for pip.
 if ! [ -x "$(command -v pip)" ]; then
   echo 'Error: pip is not available.' >&2
   exit 1
@@ -8,14 +8,6 @@ fi
 
 # install pip-able requirements.
 pip install -r config/requirements.txt
-
-# # build pypropack.
-# python config/pypropack/setup.py build_ext --inplace
-
-# # move pypropack package to site-packages dir.
-# SITEPKGS=$(python -c 'import numpy; print(numpy.__file__)')
-# SITEPKGS=${SITEPKGS//numpy\/__init__.py/}
-# cp -r config/pypropack/pypropack $SITEPKGS
 
 # install degnorm.
 python setup.py install
