@@ -8,13 +8,14 @@ from scipy import sparse
 
 class ReadsProcessor():
     def __init__(self, sam_file=None, chroms=None, n_jobs=max_cpu(),
-                 tmp_dir=None, unique_alignment=False, verbose=True):
+                 output_dir=None, unique_alignment=False, verbose=True):
         """
         Genome coverage reader for a single RNA-seq experiment, contained in a .sam file.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
 
         :param sam_file: str .sam filename
-        :param tmp_dir: str path to directory where coverage array files are saved.
+        :param output_dir: str path to DegNorm output directory where coverage array files will be saved.
+        If not specified, will use directory where RNA Seq experiment file is located.
         :param chroms: list of str names of chromosomes to load.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
         is number of CPUs on machine - 1.
@@ -23,12 +24,12 @@ class ReadsProcessor():
         """
         self.filename = sam_file
 
-        # determine where to dump .txt files from cigar string parse.
-        if not tmp_dir:
-            tmp_dir = os.path.join(os.path.dirname(self.filename), 'tmp')
+        # determine where to dump coverage .npz files.
+        if not output_dir:
+            output_dir = os.path.join(os.path.dirname(self.filename), 'tmp')
 
         file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
-        self.tmp_dir = os.path.join(tmp_dir, file_basename)
+        self.save_dir = os.path.join(output_dir, file_basename)
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.sample_id = file_basename
@@ -119,7 +120,7 @@ class ReadsProcessor():
         Determine per-chromosome reads coverage and per-gene read counts from an RNA-seq experiment.
         The cigar scores from single and paired reads are parsed according to _cigar_segment_bounds.
 
-        Saves compressed coverage array to self.tmp_dir with file name 'sample_[sample_id]_[chrom].npz'
+        Saves compressed coverage array to self.save_dir with file name 'sample_[sample_id]_[chrom].npz'
 
         :param reads_sub_df: pandas.DataFrame of ordered paired reads data with `cigar` and `pos` fields,
         must be subset to the chromosome in study.
@@ -179,9 +180,7 @@ class ReadsProcessor():
                          .format(self.sample_id, chrom, str(np.mean(cov_vec > 0))))
 
         # create output directory if it does not exist, and then make output file name.
-        out_file = os.path.join(self.tmp_dir, 'sample_' + self.sample_id + '_' + chrom + '.npz')
-        if not os.path.isdir(self.tmp_dir):
-            os.makedirs(self.tmp_dir)
+        out_file = os.path.join(self.save_dir, 'sample_' + self.sample_id + '_' + chrom + '.npz')
 
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} saving csr-compressed coverage array to {2}'
@@ -245,12 +244,17 @@ class ReadsProcessor():
         chroms = self.data.chr.unique()
         header_df = self.header[self.header.chr.isin(chroms)]
 
+        # create directory in DegNorm output dir where sample coverage vecs are saved.
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+
         if self.verbose:
-            logging.info('SAMPLE {0}: determining read coverage and read counts for {1} chromosomes.'
-                         .format(self.sample_id, len(chroms)))
+            logging.info('SAMPLE {0}: determining read coverage and read counts for {1} chromosomes.\n'
+                         'Saving output to directory {2}'
+                         .format(self.sample_id, len(chroms), self.save_dir))
 
         # distribute work with joblib.Parallel:
-        par_output = Parallel(n_jobs=self.n_jobs
+        par_output = Parallel(n_jobs=min(self.n_jobs, len(chroms))
                               , verbose=0
                               , backend='threading')(delayed(self.chromosome_coverage_read_counts)(
             reads_sub_df=subset_to_chrom(self.data, chrom=chrom),

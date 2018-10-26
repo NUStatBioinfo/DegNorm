@@ -22,7 +22,7 @@ def rp_setup(request):
     request.addfinalizer(teardown)
 
     sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')  # sample paired reads data
-    rp = ReadsProcessor(sam_file, n_jobs=1, tmp_dir=outdir)
+    rp = ReadsProcessor(sam_file, n_jobs=1, output_dir=outdir)
     return rp
 
 
