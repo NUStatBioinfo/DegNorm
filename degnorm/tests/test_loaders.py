@@ -29,7 +29,7 @@ def sam_loader_paired():
 def sam_loader_unpaired():
     sam_file = os.path.join(THIS_DIR, 'data', 'ff_small.sam')  # unpaired reads subsample dataset.
     sam_loader = SamLoader(sam_file)
-    return sam_loader.get_data()
+    return sam_loader.get_data(unique_alignment=True)  # run with NH:i:1 only.
 
 
 # check that paired and unpaired reads files are classified as such.

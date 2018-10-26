@@ -239,19 +239,17 @@ def parse_args():
                         , help='Skip baseline selection while computing coverage matrix estimates. '
                                'This will speed up degradation index score computation but may make '
                                'scores less accurate.')
+    parser.add_argument('-u'
+                        , '--unique-alignments'
+                        , action='store_true'
+                        , help='Only retain reads that were uniquely aligned. All reads with '
+                               'the flag "NH:i:<x>" with x > 1 will be dropped.')
     parser.add_argument('-c'
                         , '--cpu'
                         , type=int
                         , default=max_cpu()
                         , help='Number of cores for running DegNorm pipeline in parallel.'
                                'Defaults to the number of available cores - 1.')
-    parser.add_argument('-t'
-                        , '--input-type'
-                        , default='sam'
-                        , required=False
-                        , choices=['bam', 'sam']
-                        , help='Input RNA-seq experiment file type. Can be one of "bam" or "sam".'
-                               'Only in coordination with --input-dir, i.e. when specifying an input data directory.')
     parser.add_argument('-v'
                         , '--version'
                         , action='version'
@@ -337,9 +335,6 @@ def parse_args():
             for f in os.listdir(args.input_dir):
                 if f.endswith('.sam'):
                     input_files.append(os.path.join(args.input_dir, f))
-
-            if not input_files:
-                raise FileNotFoundError('No {0} files found in input-dir {1}'.format(args.input_type, args.input_dir))
 
             # if user used -i/--input-files, append contents of directory to individually specified files.
             if args.input_files:

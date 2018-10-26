@@ -7,7 +7,8 @@ from scipy import sparse
 
 
 class ReadsProcessor():
-    def __init__(self, sam_file=None, chroms=None, n_jobs=max_cpu(), tmp_dir=None, verbose=True):
+    def __init__(self, sam_file=None, chroms=None, n_jobs=max_cpu(),
+                 tmp_dir=None, unique_alignment=False, verbose=True):
         """
         Genome coverage reader for a single RNA-seq experiment, contained in a .sam file.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
@@ -16,7 +17,8 @@ class ReadsProcessor():
         :param tmp_dir: str path to directory where coverage array files are saved.
         :param chroms: list of str names of chromosomes to load.
         :param n_jobs: int number of CPUs to use for determining genome coverage. Default
-        is number of CPUs on machine - 1
+        is number of CPUs on machine - 1.
+        :param unique_alignment: bool indicator - drop reads with NH:i:<x> flag where x > 1.
         :param verbose: bool indicator should progress be written to logger?
         """
         self.filename = sam_file
@@ -35,6 +37,7 @@ class ReadsProcessor():
         self.header = None
         self.paired = None
         self.chroms = chroms
+        self.unique_alignment = unique_alignment
 
     def load(self):
         """
@@ -42,7 +45,9 @@ class ReadsProcessor():
         """
         self.loader = SamLoader(self.filename)
 
-        df_dict = self.loader.get_data(chrom=self.chroms)
+        # load up .sam file.
+        df_dict = self.loader.get_data(chrom=self.chroms
+                                       , unique_alignment=self.unique_alignment)
         df = df_dict['data']
 
         # .sam file must have valid header.
