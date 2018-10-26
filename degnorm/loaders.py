@@ -152,7 +152,7 @@ class SamLoader(Loader):
             nh_col_idxs = list()
 
             # determine sample distribution of column index position of NH:i:<x> flag.
-            for row in np.random.choice(range(header_idx, len(lines)), size=100, replace=False):
+            for row in np.random.choice(range(header_idx, len(lines)), size=min(100, len(lines)), replace=False):
                 splt = lines[row].split('\t')
                 nh_col_idx = np.where([re.match(r'NH:i:(\d+)', splt[i]) is not None for i in range(len(splt))])[0]
 
