@@ -164,8 +164,8 @@ class ReadsProcessor():
 
         # for single-read RNA-Seq experiments, we do not need such special consideration.
         else:
-            for i in np.arange(0, dat.shape[0]):
-                bounds = self._cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
+            for i in np.arange(dat.shape[0]):
+                bounds = self._cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
 
                 for j in np.arange(1, len(bounds), 2):
                     cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
@@ -250,7 +250,7 @@ class ReadsProcessor():
 
         if self.verbose:
             logging.info('SAMPLE {0}: determining read coverage and read counts for {1} chromosomes.\n'
-                         'Saving output to directory {2}'
+                         'Output will be saved to directory {2}.'
                          .format(self.sample_id, len(chroms), self.save_dir))
 
         # distribute work with joblib.Parallel:
@@ -264,7 +264,6 @@ class ReadsProcessor():
             for chrom in chroms)
 
         # parse output from parallel workers.
-        # par_output = [x.get() for x in par_output]
         cov_filepaths = [x[0] for x in par_output]
         read_count_dfs = [x[1] for x in par_output]
 
