@@ -7,7 +7,9 @@ import seaborn as sns
 import numpy as np
 import os
 import pickle as pkl
-from pandas import read_csv
+import gc
+import tqdm
+from pandas import read_csv, DataFrame
 from degnorm.utils import flatten_2d
 plt.rcParams.update({'figure.max_open_warning': 0})
 
@@ -213,14 +215,15 @@ def check_for_files(data_dir, file_names):
                          ' DegNorm output directory.'.format(data_dir))
 
 
-def load_di_scores(data_dir, order=False):
+def load_di_scores(data_dir, drop_chroms=True, order=False):
     """
     Load degradation index (DI) scores into a pandas.DataFrame from a .csv file
     in a DegNorm pipeline run output directory. The index column is `gene`, and the
     genes will be ordered alphabetically.
 
     :param data_dir: str path to DegNorm pipeline run output directory
-    :param order: Boolean should samples be ordered (increasing order) according to mean DI score?
+    :param drop_chroms: Bool should 'chr' (chromosome) column be dropped from DI scores?
+    :param order: Bool should samples be ordered (increasing order) according to mean DI score?
     :return: pandas.DataFrame with `gene` as the index, with `chr`, and sample ID columns.
     """
     # load and format DI score data.
@@ -236,10 +239,22 @@ def load_di_scores(data_dir, order=False):
     rho_df = rho_df.loc[genes]
 
     # order sample ids in ascending order of mean DI score.
-    ordered_sample_means = rho_df.mean(axis=0).sort_values()
+    sample_ids = rho_df.columns.tolist()[1:]
+    ordered_sample_means = rho_df[sample_ids].mean(axis=0).sort_values()
     ordered_sample_ids = ordered_sample_means.index.tolist()
 
-    return rho_df if not order else rho_df[['chr'] + ordered_sample_ids]
+    # determine order of sample ids in returned DI score DataFrame.
+    output_cols = ordered_sample_ids if order else sample_ids
+
+    # drop chromosome column if desired. Otherwise, return it.
+    if drop_chroms:
+        rho_df.drop('chr'
+                    , axis=1
+                    , inplace=True)
+    else:
+        output_cols = ['chr'] + output_cols
+
+    return rho_df[output_cols]
 
 
 def get_di_heatmap(data_dir, save_dir=None, figsize=[10, 8]):
@@ -253,19 +268,16 @@ def get_di_heatmap(data_dir, save_dir=None, figsize=[10, 8]):
     If None (default), return a matplotlib.figure.Figure.
     :return: See save parameter.
     """
-    # load up (ordered) DI scores, drop chromosome column.
+    # load up (ordered) DI scores, sans chromosome column.
     rho_df = load_di_scores(data_dir
                             , order=True)
-    rho_df.drop('chr'
-                , axis=1
-                , inplace=True)
 
     # make DI score heatmap.
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     fig.suptitle('DI score heatmap')
 
     sns.heatmap(rho_df
-                , cmap='bwr'
+                , cmap='RdBu'
                 , cbar_kws={"shrink": .5})
 
     ax.set_xticklabels(ax.get_xticklabels()
@@ -293,12 +305,9 @@ def get_di_correlation(data_dir, save_dir=None, figsize=[8, 6]):
     If None (default), return a matplotlib.figure.Figure.
     :return: See save parameter.
     """
-    # load up (ordered) DI scores, drop chromosome column.
+    # load up (ordered) DI scores, sans chromosome column.
     rho_df = load_di_scores(data_dir
                             , order=True)
-    rho_df.drop('chr'
-                , axis=1
-                , inplace=True)
 
     # make DI score correlation matrix heatmap.
     fig, ax = plt.subplots(1, 1, figsize=figsize)
@@ -333,12 +342,9 @@ def get_di_boxplots(data_dir, save_dir=None, figsize=[12, 8]):
     If None (default), return a matplotlib.figure.Figure.
     :return: See save parameter.
     """
-    # load up (ordered) DI scores, drop chromosome column.
+    # load up (ordered) DI scores, sans chromosome column.
     rho_df = load_di_scores(data_dir
                             , order=True)
-    rho_df.drop('chr'
-                , axis=1
-                , inplace=True)
 
     rho_long_df = rho_df.melt(var_name='sample ID'
                               , value_name='DI score')
@@ -368,9 +374,100 @@ def get_di_boxplots(data_dir, save_dir=None, figsize=[12, 8]):
         return fig
 
 
-def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
+class CoverageLoader(object):
+    def __init__(self, data_dir):
+        """
+        Initialize a CoverageLoader object for loading coverage arrays from a DegNorm output directory.
+
+        :param data_dir: str path to a DegNorm output directory
+        """
+        self.genes = None
+        self.chroms = None
+        self.sample_ids = None
+        self.exon_df = None
+        self.cov_dict = dict()
+
+        # check that DegNorm dir exists.
+        if not os.path.isdir(data_dir):
+            raise NotADirectoryError('{0} is not a directory, cannot find DegNorm output.'.format(data_dir))
+
+        self.data_dir = data_dir
+
+        # check that data_dir contains the files associated with a DegNorm output dir.
+        out = check_for_files(self.data_dir
+                              , file_names=['gene_exon_metadata.csv', 'read_counts.csv', 'degradation_index_scores.csv'])
+
+    def load(self, genes):
+        """
+        Load coverage arrays and exon positioning data for a set of genes from a DegNorm output directory,
+        data to be used by other functions for saving arrays to .txt or plotting pre/post-Degnorm coverage.
+
+        :param genes: str or list of str, names of genes for which to load up coverage arrays
+        """
+        # genes should be a list.
+        if isinstance(genes, str):
+            genes = [genes]
+
+        self.genes = genes
+
+        # read in required data: exon positioning data and sample ID's (saved in DI score data).
+        self.exon_df = read_csv(os.path.join(self.data_dir, 'gene_exon_metadata.csv'))
+        with open(os.path.join(self.data_dir, 'degradation_index_scores.csv'), 'r') as di:
+            self.sample_ids = di.readline().strip().split(',')[2:]
+
+        # make genes case-insensitive: cast to uppercase.
+        genes = [x.upper() for x in genes]
+        self.exon_df.gene = self.exon_df.gene.apply(lambda x: x.upper())
+
+        # check that all input genes are available in gene/exon metadata.
+        avail_genes = self.exon_df.gene.unique()
+        gene_diff = list(set(genes) - set(avail_genes))
+
+        # error out if some genes are not available.
+        if gene_diff:
+            raise ValueError('Genes {0} were not found in DegNorm output. Check that they were run through pipeline.'
+                             .format(', '.join(gene_diff)))
+
+        # subset exon data those requested.
+        self.exon_df = self.exon_df[self.exon_df.gene.isin(genes)]
+        chroms = self.exon_df.chr.unique()
+
+        # iterate over unique chromosomes corresponding to genes requested.
+        for chrom in chroms:
+
+            raw_file = os.path.join(self.data_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
+            ests_file = os.path.join(self.data_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
+
+            # load the payload: gene dictionaries with coverage curve numpy arrays.
+            with open(raw_file, 'rb') as raw, open(ests_file, 'rb') as est:
+                raw_dat = pkl.load(raw)
+                est_dat = pkl.load(est)
+
+            # cast gene keys of dictionaries to uppercase.
+            raw_dat = {k.upper(): v for k, v in raw_dat.items()}
+            est_dat = {k.upper(): v for k, v in est_dat.items()}
+
+            # determine genes in this chromosome.
+            chrom_genes = self.exon_df[self.exon_df.chr == chrom].gene.unique()
+
+            # if gene is available in both raw + estimated coverage, append those matrices.
+            for gene in chrom_genes:
+                raw_cov = raw_dat.get(gene)
+                est_cov = est_dat.get(gene)
+
+                if (raw_cov is not None) and (est_cov is not None):
+                    self.cov_dict[gene] = dict()
+                    self.cov_dict[gene]['raw'] = raw_cov
+                    self.cov_dict[gene]['estimate'] = est_cov
+
+        # clean up (coverage dicts are large)
+        del raw_dat, est_dat
+        gc.collect()
+
+
+def get_coverage_plots(genes, data_dir, figsize=[10, 6], save=False):
     """
-    Generate gene coverage plots on demand from DegNorm output directory.
+    Generate pre- and post-DegNorm gene coverage plots on demand from a DegNorm output directory.
 
     By default, returns a list of matplotlib.figure.Figures, but save=True will
     cause gene coverage plots to be saved into corresponding chromosome directory and
@@ -383,75 +480,121 @@ def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
     str filepaths of saved plots. If False (default) return a matplotlib.figure.Figures.
     :return: See save parameter.
     """
-    # genes should be a list.
-    if isinstance(genes, str):
-        genes = [genes]
+    cov_ldr = CoverageLoader(data_dir)
+    cov_ldr.load(genes)
 
-    # check that data_dir contains the files associated with a DegNorm output dir.
-    out = check_for_files(data_dir
-                         , file_names=['gene_exon_metadata.csv', 'read_counts.csv', 'degradation_index_scores.csv'])
-
-    # read in required data: exon positioning data and sample ID's (saved in DI score data).
-    exon_df = read_csv(os.path.join(data_dir, 'gene_exon_metadata.csv'))
-    with open(os.path.join(data_dir, 'degradation_index_scores.csv'), 'r') as di:
-        sample_ids = di.readline().strip().split(',')[2:]
-
-    # make genes case-insensitive: cast to uppercase
-    genes = [x.upper() for x in genes]
-    exon_df.gene = exon_df.gene.apply(lambda x: x.upper())
-
-    # check that all input genes are available in gene/exon metadata.
-    avail_genes = exon_df.gene.unique()
-    gene_diff = list(set(genes) - set(avail_genes))
-
-    # error out if some genes are not available.
-    if gene_diff:
-        raise ValueError('Genes {0} were not found in DegNorm output. Check that they were run through pipeline.'
-                         .format(', '.join(gene_diff)))
-
-    # subset exon data those requested.
-    exon_df = exon_df[exon_df.gene.isin(genes)]
-    chroms = exon_df.chr.unique()
     figs = list()
 
-    # iterate over unique chromosomes corresponding to genes requested.
-    for chrom in chroms:
+    # instantiate progress bar if making > 100 plots.
+    use_pbar = len(cov_ldr.cov_dict) > 100
+    if use_pbar:
+        pbar = tqdm.tqdm(total=len(cov_ldr.cov_dict)
+                         , leave=False
+                         , desc='coverage plot progress')
 
-        orig_file = os.path.join(data_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
-        ests_file = os.path.join(data_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
+    # iterate over loaded genes.
+    for gene in cov_ldr.cov_dict:
 
-        # load the payload: coverage curve matrix and DegNorm-approximated coverage matrix dictionaries.
-        with open(orig_file, 'rb') as orig, open(ests_file, 'rb') as ests:
-            cov_dat = pkl.load(orig)
-            ests_dat = pkl.load(ests)
+        # extract coverage.
+        raw_cov = cov_ldr.cov_dict.get(gene)['raw']
+        est_cov = cov_ldr.cov_dict.get(gene)['estimate']
 
-        # cast gene keys of dictionaries to uppercase.
-        cov_dat = {k.upper(): v for k, v in cov_dat.items()}
-        ests_dat = {k.upper(): v for k, v in ests_dat.items()}
-        exon_sub_df = exon_df[exon_df.chr == chrom]
+        # extract exon positioning, chromosome name.
+        gene_exon_df = cov_ldr.exon_df[cov_ldr.exon_df.gene == gene]
+        x_exon = gene_exon_df[['start', 'end']].values
+        chrom = gene_exon_df.chr.iloc[0]
 
-        # determine genes in this chromosome.
-        chrom_genes = exon_sub_df.gene.unique()
+        figs.append(plot_gene_coverage(est_cov
+                                       , f=raw_cov
+                                       , x_exon=x_exon
+                                       , gene=gene
+                                       , chrom=chrom
+                                       , sample_ids=cov_ldr.sample_ids
+                                       , save_dir=data_dir if save else None
+                                       , figsize=figsize))
 
-        # intersect desired chromosome genes with those actually run through DegNorm pipeline.
-        nmfoa_genes = list()
-        for gene in chrom_genes:
-            if (ests_dat.get(gene) is not None) and (cov_dat.get(gene) is not None):
-                nmfoa_genes.append(gene)
+        if use_pbar:
+            pbar.update()
 
-        chrom_genes = np.intersect1d(chrom_genes, nmfoa_genes)
-
-        # generate plots, save if desired.
-        if len(chrom_genes) > 0:
-
-            for gene in chrom_genes:
-                figs.append(plot_gene_coverage(ests_dat.get(gene)
-                                               , f=cov_dat.get(gene)
-                                               , x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values
-                                               , gene=gene
-                                               , chrom=chrom
-                                               , sample_ids=sample_ids
-                                               , save_dir=data_dir if save else None
-                                               , figsize=figsize))
+    # close progress bar if using one.
+    if use_pbar:
+        pbar.close()
 
     return figs
+
+
+def get_coverage_arrays(genes, data_dir, save=False):
+    """
+    Access raw and DegNorm-estimated coverage matrices of a set of genes run through the DegNorm pipeline.
+
+    By default, returns two lists:
+        - raw coverage pandas.DataFrames
+        - DegNorm-estimated coverage pandas.DataFrames
+
+    Each coverage pandas.DataFrame is in *long* format: (base positions x samples)
+
+    +-------------+-----------+---------------+
+    |  <sample 1> |   <...>   |  <sample p>   |
+    +=============+===========+===============+
+    |       0     |    ...    |      11       |
+    +-------------+-----------+---------------+
+
+
+    :param genes: str or list of str, gene names (case insensitive)
+    :param data_dir: str path to DegNorm pipeline run output directory
+    :param save: Bool if True, save raw and estimated coverage arrays to
+    <chromosome name>/<gene name>_raw_coverage.txt, <chromosome name>/<gene name>_estimated_coverage.txt.
+    :return: nested dictionary:
+    gene (key): dict('raw': raw coverage DataFrame, 'estimate': estimated coverage DataFrame) (value)
+    """
+    cov_ldr = CoverageLoader(data_dir)
+    cov_ldr.load(genes=genes)
+
+    cov_dat_output = dict()
+
+    # instantiate progress bar saving > 100 genes' coverage curves.
+    use_pbar = (len(cov_ldr.cov_dict) > 100) and (save)
+    if use_pbar:
+        pbar = tqdm.tqdm(total=len(cov_ldr.cov_dict)
+                         , leave=False
+                         , desc='coverage curve saving progress')
+
+    # iterate over loaded genes.
+    for gene in cov_ldr.cov_dict:
+
+        # extract coverage.
+        raw_cov = cov_dat_output[gene]['raw']
+        est_cov = cov_dat_output[gene]['estimate']
+
+        # store coverage as Li x p DataFrames.
+        cov_dat_output[gene] = dict()
+        cov_dat_output[gene]['raw'] = DataFrame(raw_cov.T
+                                                , columns=cov_ldr.sample_ids)
+        cov_dat_output[gene]['estimate'] = DataFrame(est_cov.T
+                                                     , columns=cov_ldr.sample_ids)
+
+        # protocol to save raw and estimated coverage to disk...
+        if save:
+
+            # extract gene's chromosome name.
+            chrom = cov_ldr.exon_df[cov_ldr.exon_df.gene == gene].chr.iloc[0]
+
+            raw_save_file = os.path.join(data_dir, chrom, '{0}_raw_coverage.txt')
+            est_save_file = os.path.join(data_dir, chrom, '{0}_estimated_coverage.txt')
+
+            # write coverage.
+            cov_dat_output[gene]['raw'].to_csv(raw_save_file
+                                               , index=None
+                                               , sep=' ')
+            cov_dat_output[gene]['estimate'].to_csv(est_save_file
+                                                    , index=None
+                                                    , sep=' ')
+
+            if use_pbar:
+                pbar.update()
+
+    # close progress bar if using one.
+    if use_pbar:
+        pbar.close()
+
+    return cov_dat_output

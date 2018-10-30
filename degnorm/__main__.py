@@ -279,10 +279,10 @@ def main():
         if len(plot_genes) > 0:
 
             logging.info('Generating coverage curve plots for specified genes.')
-            out = get_gene_coverage(plot_genes
-                                    , data_dir=output_dir
-                                    , figsize=[10, 6]
-                                    , save=True)
+            out = get_coverage_plots(plot_genes
+                                     , data_dir=output_dir
+                                     , figsize=[10, 6]
+                                     , save=True)
 
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.
