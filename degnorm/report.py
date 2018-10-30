@@ -1,6 +1,6 @@
 import pkg_resources
 import subprocess
-from degnorm.visualizations import *
+from degnorm.data_access import *
 from degnorm.utils import find_software
 from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
