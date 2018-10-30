@@ -58,21 +58,19 @@ DegNorm pipeline output file structure
         | |-- <supporting images>
 
 
-=====
-Usage
-=====
+===================
+Usage: the pipeline
+===================
 The primary entry point into the DegNorm software is the ``degnorm`` console script.
 
 ``degnorm`` flags and details are outlined with the ``--help`` flag.
 
-Minimal requirements
-####################
+Required input
+##############
 
-1. You must pass at least 2 ``.sam`` files (or ``.bam`` files, if you have ``samtools`` installed) with the ``-i/--input`` flag, or the location of a directory containing at least 2
-.sam or .bam files with the ``--input-dir`` flag. The ``--input-dir`` flag must contain all files of either .sam or .bam extension. Also, DegNorm will not normalize the read counts/coverage of a single RNA-Seq experiment.
+1. Pass at least 2 ``.sam`` files (or ``.bam`` files, if you have ``samtools`` installed) with the ``-i/--input`` flag, or the location of a directory containing at least 2 .sam or .bam files with the ``--input-dir`` flag. The ``--input-dir`` flag must contain all files of either .sam or .bam extension. If a mix of .sam and .bam files are found in the input directory, only the .sam files will be consumed.
 
-2. You must pass a genome annotation file (.gtf/.gff) describing where each gene falls on a chromosome with the
-``-g/--genome-annotation`` flag.
+2. Pass a genome annotation file (.gtf/.gff) describing where each gene falls on a chromosome with the ``-g/--genome-annotation`` flag.
 
 
 An example DegNorm pipeline run using the .sam files found in the directory ``../sam_files`` that will
@@ -83,20 +81,6 @@ plot the coverage curves for all genes in ``../plot_genes.txt``:
     $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --plot-genes ../plot_genes.txt -c 6
 
 
-``get_gene_coverage``
-#####################
-
-Should you need coverage plots in addition to the ones generated during a DegNorm pipeline run, ``get_gene_coverage``
-leverages the coverage matrices (original and degradation index-normalized) saved in a DegNorm output directory to
-make new plots.
-
-.. code-block:: python
-
-    from degnorm.visualizations import get_gene_coverage
-
-    plots = get_gene_coverage('SDF4', data_dir='./DegNorm_09022018_214247', save=False)
-    plots[0].show()
-
 ``--warm-start-dir``
 ####################
 The DegNorm preprocessing (steps 1. through 4.) is heavy, and time consuming. Should you want to run DegNorm with
@@ -105,10 +89,59 @@ Simply use the ``--warm-start-dir`` flag to specify the output directory of a pr
 will copy and load the previously-determined coverage matrices, original read counts, and parsed exon/gene annotation
 data for your new run.
 
-Testing
-#######
+==========================================
+Usage: accessing data after a pipeline run
+==========================================
 
-Check the successful installation of degnorm on your machine with the ``degnorm_test`` command. This runs all unit tests
+``get_coverage_plots``
+######################
+
+Should you need coverage plots in addition to the ones generated during a DegNorm pipeline run, ``get_coverage_plots``
+leverages the coverage matrices (original and degradation index-normalized) saved in a DegNorm output directory to
+make new plots.
+
+.. code-block:: python
+
+    from degnorm.data_access import get_coverage_plots
+
+    # pass one or many gene names to obtain one or many coverage plots
+    plots = get_coverage_plots(['SDF4', 'TMEM229B'], degnorm_dir='./DegNorm_09022018_214247')
+    plots[0].show()
+
+If you would simply like every gene's coverage plot, set ``genes='all'``. Most pipeline runs involve 1000s of genes, so rendering a plot for each gene will likely take a bit of time.
+
+You can also save the resulting plots by specifying a ``save_dir`` argument to the path of a directory where you want to save the plots.
+Each gene is saved in a chromosome-level directory:
+
+.. code-block:: python
+
+    out = get_coverage_plots('all', degnorm_dir='./DegNorm_09022018_214247', save_dir='FFvsFFPE_plots')
+
+
+``get_coverage_data``
+#####################
+
+Should you need the raw or estimated coverage matrices computed during a DegNorm pipeline run, ``get_coverage_data`` is here to help.
+It loads the .pkl files saved in the output directories. This function operates similarly to ``get_gene_coverage``, only that
+the returned value is a dictionary with gene name keys and values are sub-dictionaries with a `raw` and `estimate`
+pandas.DataFrames, the raw and DegNorm-estimated coverage data, respectively.
+
+
+.. code-block:: python
+
+    from degnorm.data_access import get_coverage_data
+
+    # pass one or many gene names, load up coverage matrix dictionary
+    cov_dat = get_coverage_data('TMEM229B', degnorm_dir='./DegNorm_09022018_214247')
+
+    # save gene coverage data to .txt file
+    cov_dat = get_coverage_data('TMEM229B', degnorm_dir='./DegNorm_09022018_214247', save_dir='FFvsFFPE_data')
+
+
+=======
+Testing
+=======
+Check the successful installation of ``degnorm`` on your machine with the ``degnorm_test`` command. This runs all unit tests
 and a minimal DegNorm pipeline run on a small batch of sample data.
 
 By default, ``degnorm_test`` will clean up after itself by removing the temporary directory containing the output
