@@ -280,9 +280,9 @@ def main():
 
             logging.info('Generating coverage curve plots for specified genes.')
             out = get_coverage_plots(plot_genes
-                                     , data_dir=output_dir
+                                     , degnorm_dir=output_dir
                                      , figsize=[10, 6]
-                                     , save=True)
+                                     , save_dir=output_dir)
 
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.

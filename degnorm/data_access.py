@@ -107,7 +107,7 @@ class CoverageLoader(object):
         gc.collect()
 
 
-def get_coverage_plots(genes, data_dir, figsize=[10, 6], save=False):
+def get_coverage_plots(genes, degnorm_dir, figsize=[10, 6], save_dir=None):
     """
     Generate pre- and post-DegNorm gene coverage plots on demand from a DegNorm output directory.
 
@@ -116,13 +116,13 @@ def get_coverage_plots(genes, data_dir, figsize=[10, 6], save=False):
     filepaths of each saved image will be returned.
 
     :param genes: str or list of str, gene names (case insensitive)
-    :param data_dir: str path to DegNorm pipeline run output directory
+    :param degnorm_dir: str path to DegNorm pipeline run output directory
     :param figsize: [width (int), height (int)] dimensions of coverage curve plots.
-    :param save: Bool if True save each plot to <chromosome name>/<gene name>_coverage.png and return
+    :param save_dir: If specified, save each plot to save_dir/<chromosome name>/<gene name>_coverage.png and return
     str filepaths of saved plots. If False (default) return a matplotlib.figure.Figures.
     :return: See save parameter.
     """
-    cov_ldr = CoverageLoader(data_dir)
+    cov_ldr = CoverageLoader(degnorm_dir)
     cov_ldr.load(genes)
 
     figs = list()
@@ -131,9 +131,9 @@ def get_coverage_plots(genes, data_dir, figsize=[10, 6], save=False):
     use_pbar = len(cov_ldr.cov_dict) > 100
     if use_pbar:
         pbar_step_size = int(np.floor(len(cov_ldr.cov_dict) / 20))
-        pbar = tqdm.tqdm(total=20
+        pbar = tqdm.tqdm(total=100
                          , leave=False
-                         , desc='coverage curve plot progress'
+                         , desc='plotting progress'
                          , unit='%')
 
     # iterate over loaded genes.
@@ -155,7 +155,7 @@ def get_coverage_plots(genes, data_dir, figsize=[10, 6], save=False):
                                        , gene=gene
                                        , chrom=chrom
                                        , sample_ids=cov_ldr.sample_ids
-                                       , save_dir=data_dir if save else None
+                                       , save_dir=degnorm_dir if not save_dir else save_dir
                                        , figsize=figsize))
         ctr += 1
 
@@ -171,7 +171,7 @@ def get_coverage_plots(genes, data_dir, figsize=[10, 6], save=False):
     return figs
 
 
-def get_coverage_data(genes, data_dir, save=False):
+def get_coverage_data(genes, degnorm_dir, save_dir=None):
     """
     Access raw and DegNorm-estimated coverage matrices of a set of genes run through the DegNorm pipeline.
 
@@ -187,15 +187,14 @@ def get_coverage_data(genes, data_dir, save=False):
     |     0.0     |    ...    |      11.0     |
     +-------------+-----------+---------------+
 
-
     :param genes: str or list of str, gene names (case insensitive)
-    :param data_dir: str path to DegNorm pipeline run output directory
-    :param save: Bool if True, save raw and estimated coverage arrays to
-    <chromosome name>/<gene name>_raw_coverage.txt, <chromosome name>/<gene name>_estimated_coverage.txt.
+    :param degnorm_dir: str path to DegNorm pipeline run output directory
+    :param save_dir: If specified, save raw and estimated coverage arrays to
+    save_dir/<chromosome name>/<gene name>_raw_coverage.txt, save_dir/<chromosome name>/<gene name>_estimated_coverage.txt.
     :return: nested dictionary:
     gene (key): dict('raw': raw coverage DataFrame, 'estimate': estimated coverage DataFrame) (value)
     """
-    cov_ldr = CoverageLoader(data_dir)
+    cov_ldr = CoverageLoader(degnorm_dir)
     cov_ldr.load(genes)
 
     cov_dat_output = dict()
@@ -204,9 +203,9 @@ def get_coverage_data(genes, data_dir, save=False):
     use_pbar = len(cov_ldr.cov_dict) > 100
     if use_pbar:
         pbar_step_size = int(np.floor(len(cov_ldr.cov_dict) / 20))
-        pbar = tqdm.tqdm(total=20
+        pbar = tqdm.tqdm(total=100
                          , leave=False
-                         , desc='coverage curve save progress'
+                         , desc='save progress'
                          , unit='%')
 
     # iterate over loaded genes.
@@ -225,13 +224,17 @@ def get_coverage_data(genes, data_dir, save=False):
                                                      , columns=cov_ldr.sample_ids)
 
         # protocol to save raw and estimated coverage to disk...
-        if save:
+        if save_dir:
 
             # extract gene's chromosome name.
             chrom = cov_ldr.exon_df[cov_ldr.exon_df.gene == gene].chr.iloc[0]
 
-            raw_save_file = os.path.join(data_dir, chrom, '{0}_raw_coverage.txt'.format(gene))
-            est_save_file = os.path.join(data_dir, chrom, '{0}_estimated_coverage.txt'.format(gene))
+            # ensure writability of coverage data: create missing directories.
+            if not os.path.isdir(os.path.join(save_dir, chrom)):
+                os.makedirs(os.path.join(save_dir, chrom))
+
+            raw_save_file = os.path.join(save_dir, chrom, '{0}_raw_coverage.txt'.format(gene))
+            est_save_file = os.path.join(save_dir, chrom, '{0}_estimated_coverage.txt'.format(gene))
 
             # write coverage.
             cov_dat_output[gene]['raw'].to_csv(raw_save_file
