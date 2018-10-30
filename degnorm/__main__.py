@@ -89,6 +89,8 @@ def main():
         # ---------------------------------------------------------------------------- #
         # iterate over .sam files; compute each sample's chromosomes' coverage arrays
         # and save them to .npz files.
+
+
         for idx in range(n_samples):
             logging.info('Loading RNA-seq data file {0} / {1}'.format(idx + 1, n_samples))
             sam_file = args.input_files[idx]
@@ -96,7 +98,7 @@ def main():
             reader = ReadsProcessor(sam_file=sam_file
                                     , chroms=chroms
                                     , n_jobs=n_jobs
-                                    , tmp_dir=output_dir
+                                    , output_dir=output_dir
                                     , verbose=True)
 
             sample_id = reader.sample_id
@@ -165,7 +167,7 @@ def main():
         # Slice up genome coverage matrix for each gene according to exon positioning.
         # Run in parallel over chromosomes.
         # ---------------------------------------------------------------------------- #
-        gene_cov_dicts = Parallel(n_jobs=n_jobs
+        gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(chroms))
                        , verbose=0
                        , backend='threading')(delayed(gene_coverage)(
             exon_df=exon_df,

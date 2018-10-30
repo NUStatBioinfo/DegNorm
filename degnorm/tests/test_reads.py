@@ -21,8 +21,8 @@ def rp_setup(request):
 
     request.addfinalizer(teardown)
 
-    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
-    rp = ReadsProcessor(sam_file, n_jobs=1, tmp_dir=outdir)
+    sam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')  # sample paired reads data
+    rp = ReadsProcessor(sam_file, n_jobs=1, output_dir=outdir)
     return rp
 
 
@@ -33,6 +33,7 @@ def test_rp_load(rp_setup):
     assert isinstance(rp_setup.data, DataFrame)
     assert not rp_setup.header.empty
     assert not rp_setup.data.empty
+    assert rp_setup.paired
 
 
 def test_cigar_parser(rp_setup):
@@ -45,9 +46,7 @@ def test_cigar_parser(rp_setup):
     cigar_2 = '13M10X10D100M'
 
     cigar_1_parse = rp_setup._cigar_segment_bounds(cigar_1, 0)
-    assert cigar_1_parse[1] == 1
-    assert cigar_1_parse[0] == [0, 99]
+    assert cigar_1_parse == [0, 99]
 
     cigar_2_parse = rp_setup._cigar_segment_bounds(cigar_2, 0)
-    assert cigar_2_parse[1] == 2
-    assert cigar_2_parse[0] == [0, 12, 33, 132]
+    assert cigar_2_parse == [0, 12, 33, 132]

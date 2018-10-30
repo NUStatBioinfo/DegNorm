@@ -219,6 +219,9 @@ class GeneNMFOA():
 
         hi_cov_idx = self.get_high_coverage_idx(F)
 
+        # establish minimum length of gene to work with. Bin relic.
+        min_gene_len = max(2, np.ceil(200.0 * (1 / self.downsample_rate)))  # scale 200 default by downsample rate.
+
         # Run systematic downsample if desired, prior to filtering out low-coverage regions.
         if self.downsample_rate > 1:
             _, downsample_idx = self.downsample_2d(F, by_row=False)
@@ -259,7 +262,7 @@ class GeneNMFOA():
 
         # decide whether to search for a gene's baseline regions.
         # If any of these criteria are satisfied, do not run baseline selection and return what we have.
-        if (n_hi_cov >= 200) and (np.nanmin(rho_vec) <= 0.2) and (not self.skip_baseline_selection):
+        if (n_hi_cov >= min_gene_len) and (np.nanmin(rho_vec) <= 0.2) and (not self.skip_baseline_selection):
 
             # split up consecutive regions of the high-coverage gene.
             # even in downsampling regime, drop batches of sample points on each baseline selection iteration.
@@ -313,7 +316,7 @@ class GeneNMFOA():
                 # recompute DI scores: closer to 1 ->> more degradation. Then run quality control.
                 rho_vec = 1 - F_bin.sum(axis=1) / (KE_bin.sum(axis=1) + 1)  # + 1 as per Bin's code.
 
-                if (n_bins <= self.min_bins) or (n_hi_cov < 200):
+                if (n_bins <= self.min_bins) or (n_hi_cov < min_gene_len):
                     break
 
             # determine whether a baseline region has been identified.

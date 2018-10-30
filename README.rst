@@ -23,24 +23,17 @@ pipeline will generate everything from coverage matrices, normalized coverage ma
 Pipeline steps
 ==============
 
-1. **Read RNA-Seq .sam files** and **compute chromosome coverage** for each experiment. Currently, only paired reads
-are considered. DegNorm does not use standard coverage tools (e.g. ``geneomecov``) that do not take into account paired
-read overlap when computing coverage - here, every *match* segment of a read's CIGAR score augments nucleotide coverage.
-For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are ``p`` experiments.
+1. **Read RNA-Seq .sam files** and **compute chromosome coverage** for each experiment. Currently, only paired reads are considered. DegNorm does not use standard coverage tools (e.g. ``geneomecov``) that do not take into account paired read overlap when computing coverage - here, every *match* segment of a read's CIGAR score augments nucleotide coverage. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are ``p`` experiments.
 
-2. **Parse a genome annotation file** (.gtf or .gff). DegNorm determines the relative start and end positions of each
-gene transcript and each exon found to comprise the gene on each chromosome. Genes occurring on multiple chromosomes
-and exons occurring on multiple genes are removed. In total, DegNorm will map ``n`` genes.
+2. **Parse a genome annotation file** (.gtf or .gff). DegNorm determines the relative start and end positions of each gene transcript and each exon found to comprise the gene on each chromosome. Genes occurring on multiple chromosomes and exons occurring on multiple genes are removed. In total, DegNorm will map ``n`` genes.
 
-3. **Assess gene read counts** from coverage curves - count the number of unique paired reads falling entirely within
-the start and end position of every gene. The read counts matrix is ``n x p`` (2-d array).
+3. **Assess gene read counts** from coverage curves - count the number of unique paired reads falling entirely within the start and end position of every gene. The read counts matrix is ``n x p`` (2-d array).
 
 4. **Break up chromosome coverage matrices into gene coverage matrices**. Matrices are saved to pickle file (a serialized data format for Python), one per chromosome.
 
 5. **Fit a non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
 
-6. Save adjusted read counts, gene- and experiment-specific *degradation index scores*, normalized coverage
-matrices, and coverage visualizations to an output directory.
+6. **Save** adjusted read counts, gene- and experiment-specific *degradation index scores*, normalized coverage matrices, and coverage visualizations to an output directory.
 
 ======================================
 DegNorm pipeline output file structure

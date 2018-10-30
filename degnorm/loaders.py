@@ -94,7 +94,18 @@ class SamLoader(Loader):
         # return 2-tuple necessary to parse the reads
         return header_df, header_idx
 
-    def get_data(self, chrom=None):
+    @staticmethod
+    def nh_flag_parser(x):
+        """
+        Helper function to extract integer from "NH:i:<integer>" flag.
+        """
+        try:
+            out = int(x.split(':')[-1])
+        except:
+            out = 1
+        return out
+
+    def get_data(self, chrom=None, unique_alignment=False):
         """
         Extract .sam files listed in self.to_load into a dictionary of pandas.DataFrames.
         A loaded DataFrame will look like this:
@@ -114,9 +125,14 @@ class SamLoader(Loader):
         See .sam file specification: http://samtools.github.io/hts-specs/SAMv1.pdf
 
         :param chrom: list of str names of chromosomes to load from .sam file. Optional. Default = None (no subsetting).
-        :return: dictionary {.sam file: pandas.DataFrame}
+        :param unique_alignment: bool indicator - should reads with non-unique alignments be dropped?
+        :return: dictionary with the following key-value pairs:
+        - 'dat': pandas.DataFrame of loaded .sam file, reduced to columns mentioned above
+        - 'header': pandas.DataFrame with 'chr' and 'length' fields specifying chromosomes (and their lengths)
+        contained within a .sam file.
+        - 'paired': bool indicator for whether or not .sam file comes from a single or paired read RNA Seq experiment.
         """
-        df_dict = dict()
+        dat_dict = dict()
 
         with open(self.filename, 'r') as f:
             lines = f.readlines()
@@ -124,25 +140,69 @@ class SamLoader(Loader):
         header_df, header_idx = self.separate_header(lines)
 
         if not header_df.empty:
-            df_dict['header'] = header_df
+            dat_dict['header'] = header_df
+
+        # default columns to grab from .sam file.
+        colnames = ['qname', 'chr', 'pos', 'cigar', 'rnext']
+        grab_cols = [0, 2, 3, 5, 6]
+
+        # if unique read alignments desired, will need an extra column from .sam file.
+        # TODO: fix this! So hacky.
+        if unique_alignment:
+            nh_col_idxs = list()
+
+            # determine sample distribution of column index position of NH:i:<x> flag.
+            for row in np.random.choice(range(header_idx, len(lines)), size=min(100, len(lines)), replace=False):
+                splt = lines[row].split('\t')
+                nh_col_idx = np.where([re.match(r'NH:i:(\d+)', splt[i]) is not None for i in range(len(splt))])[0]
+
+                if len(nh_col_idx) == 1:
+                    nh_col_idxs.append(nh_col_idx[0])
+
+            # select modal position of NH:i:<x> flag.
+            if len(nh_col_idxs) > 0:
+                nh_col_tab = np.unique(np.array(nh_col_idxs), return_counts=True)
+                nh_col_idx = nh_col_tab[0][np.argmax(nh_col_tab[1])]
+                colnames += ['nh_flag']
+
+            # if NH flag never present, just move on.
+            else:
+                unique_alignment = False
 
         # extract relevant columns from .sam file lines.
         reads = list()
         for x in lines[header_idx:]:
             splt = x.split('\t')
-            reads.append([splt[i] for i in [0, 2, 3, 5, 6]])
+
+            if unique_alignment:
+                reads.append([splt[i] for i in grab_cols + [min(len(splt) - 1, nh_col_idx)]])
+
+            else:
+                reads.append([splt[i] for i in grab_cols])
 
         # transform .sam lines into pandas.DataFrame
-        colnames = ['qname', 'chr', 'pos', 'cigar', 'rnext']
         df = DataFrame(reads
                        , columns=colnames)
-
-        # subset .sam file to paired reads using rnext column.
-        df = df[df['rnext'] == '=']
 
         # if chromosomes specified, subset reads to them.
         if chrom:
             df = subset_to_chrom(df, chrom=chrom, reindex=True)
+
+        # determine single-read or paired-read nature of the .sam file.
+        rnext_unique = df.rnext.unique()
+        paired = not ((len(rnext_unique) == 1) and (rnext_unique[0] != '='))
+
+        # subset .sam file to paired reads using rnext column.
+        if paired:
+            df = df[df['rnext'] == '=']
+
+        # if desired, eliminate reads w/ multiple alignments.
+        if unique_alignment:
+            df.nh_flag = df.nh_flag.apply(self.nh_flag_parser)  # clean up unique alignments flag.
+            df = df[df.nh_flag == 1]
+            df.drop('nh_flag'
+                    , axis=1
+                    , inplace=True)
 
         # typecasting: change int fields from str.
         int_cols = ['pos']
@@ -150,15 +210,16 @@ class SamLoader(Loader):
             df[col] = df[col].astype('int')
 
         # preprocessing: un-specify paired reads together so that a pair of alignments
-        # share the same un-paired QNAME
-        df['qname_unpaired'] = df.qname.apply(lambda x: '.'.join(x.split('.')[:-1]))
+        # share the same un-paired QNAME.
+        # sort the reads so that pairs are grouped together - very important.
+        if paired:
+            df['qname_unpaired'] = df.qname.apply(lambda x: '.'.join(x.split('.')[:-1]))
+            df.sort_values('qname_unpaired', inplace=True)
 
-        # sort the reads so that pairs are grouped together. very important!
-        df.sort_values('qname_unpaired', inplace=True)
+        dat_dict['data'] = df.reset_index(drop=True)
+        dat_dict['paired'] = paired
 
-        df_dict['data'] = df.reset_index(drop=True)
-
-        return df_dict
+        return dat_dict
 
     def find_chromosomes(self):
         """
@@ -256,14 +317,3 @@ class GeneAnnotationLoader(Loader):
 
         # subset to the data we'll actually need, turning data into a .bed file format.
         return df[['chr', 'start', 'end', 'gene']].drop_duplicates()
-
-
-# if __name__ == '__main__':
-    # gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
-    # loader = GeneAnnotationLoader(gtf_file)
-    # df = loader.get_data()
-    # print(df.head(20))
-
-    # sam_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'A01_R01_chr1_2.sam')
-    # loader = SamLoader(sam_file)
-    # print(loader.find_chromosomes())
