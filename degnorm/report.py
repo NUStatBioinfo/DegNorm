@@ -1,6 +1,6 @@
 import pkg_resources
 import subprocess
-from degnorm.visualizations import *
+from degnorm.data_access import *
 from degnorm.utils import find_software
 from pandas import DataFrame
 from jinja2 import Environment, FileSystemLoader
@@ -102,15 +102,15 @@ def render_report(data_dir, genenmfoa, input_files,
     hi_di_genes = [genenmfoa.genes[hi_di_idx[i]] for i in range(n_genes)]
     lo_di_genes = [genenmfoa.genes[lo_di_idx[i]] for i in range(n_genes)]
 
-    hi_di_imgs = get_gene_coverage(hi_di_genes
-                                   , data_dir=data_dir
-                                   , figsize=[10, 6]
-                                   , save=True)
+    hi_di_imgs = get_coverage_plots(hi_di_genes
+                                    , degnorm_dir=data_dir
+                                    , figsize=[10, 6]
+                                    , save_dir=data_dir)
 
-    lo_di_imgs = get_gene_coverage(lo_di_genes
-                                   , data_dir=data_dir
-                                   , figsize=[10, 6]
-                                   , save=True)
+    lo_di_imgs = get_coverage_plots(lo_di_genes
+                                    , degnorm_dir=data_dir
+                                    , figsize=[10, 6]
+                                    , save_dir=data_dir)
 
     # ---------------------------------------------------------------------------- #
     # Find report template and render.

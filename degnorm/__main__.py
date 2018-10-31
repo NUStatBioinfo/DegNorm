@@ -1,7 +1,7 @@
 from degnorm.reads import *
 from degnorm.coverage import *
 from degnorm.gene_processing import *
-from degnorm.visualizations import *
+from degnorm.data_access import *
 from degnorm.nmf import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
@@ -279,10 +279,10 @@ def main():
         if len(plot_genes) > 0:
 
             logging.info('Generating coverage curve plots for specified genes.')
-            out = get_gene_coverage(plot_genes
-                                    , data_dir=output_dir
-                                    , figsize=[10, 6]
-                                    , save=True)
+            out = get_coverage_plots(plot_genes
+                                     , degnorm_dir=output_dir
+                                     , figsize=[10, 6]
+                                     , save_dir=output_dir)
 
     # ---------------------------------------------------------------------------- #
     # Run summary report and exit.

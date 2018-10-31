@@ -6,7 +6,6 @@ import matplotlib.pylab as plt
 import seaborn as sns
 import numpy as np
 import os
-import pickle as pkl
 from pandas import read_csv
 from degnorm.utils import flatten_2d
 plt.rcParams.update({'figure.max_open_warning': 0})
@@ -213,14 +212,15 @@ def check_for_files(data_dir, file_names):
                          ' DegNorm output directory.'.format(data_dir))
 
 
-def load_di_scores(data_dir, order=False):
+def load_di_scores(data_dir, drop_chroms=True, order=False):
     """
     Load degradation index (DI) scores into a pandas.DataFrame from a .csv file
     in a DegNorm pipeline run output directory. The index column is `gene`, and the
     genes will be ordered alphabetically.
 
     :param data_dir: str path to DegNorm pipeline run output directory
-    :param order: Boolean should samples be ordered (increasing order) according to mean DI score?
+    :param drop_chroms: Bool should 'chr' (chromosome) column be dropped from DI scores?
+    :param order: Bool should samples be ordered (increasing order) according to mean DI score?
     :return: pandas.DataFrame with `gene` as the index, with `chr`, and sample ID columns.
     """
     # load and format DI score data.
@@ -236,10 +236,22 @@ def load_di_scores(data_dir, order=False):
     rho_df = rho_df.loc[genes]
 
     # order sample ids in ascending order of mean DI score.
-    ordered_sample_means = rho_df.mean(axis=0).sort_values()
+    sample_ids = rho_df.columns.tolist()[1:]
+    ordered_sample_means = rho_df[sample_ids].mean(axis=0).sort_values()
     ordered_sample_ids = ordered_sample_means.index.tolist()
 
-    return rho_df if not order else rho_df[['chr'] + ordered_sample_ids]
+    # determine order of sample ids in returned DI score DataFrame.
+    output_cols = ordered_sample_ids if order else sample_ids
+
+    # drop chromosome column if desired. Otherwise, return it.
+    if drop_chroms:
+        rho_df.drop('chr'
+                    , axis=1
+                    , inplace=True)
+    else:
+        output_cols = ['chr'] + output_cols
+
+    return rho_df[output_cols]
 
 
 def get_di_heatmap(data_dir, save_dir=None, figsize=[10, 8]):
@@ -253,19 +265,16 @@ def get_di_heatmap(data_dir, save_dir=None, figsize=[10, 8]):
     If None (default), return a matplotlib.figure.Figure.
     :return: See save parameter.
     """
-    # load up (ordered) DI scores, drop chromosome column.
+    # load up (ordered) DI scores, sans chromosome column.
     rho_df = load_di_scores(data_dir
                             , order=True)
-    rho_df.drop('chr'
-                , axis=1
-                , inplace=True)
 
     # make DI score heatmap.
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     fig.suptitle('DI score heatmap')
 
     sns.heatmap(rho_df
-                , cmap='bwr'
+                , cmap='RdBu'
                 , cbar_kws={"shrink": .5})
 
     ax.set_xticklabels(ax.get_xticklabels()
@@ -293,12 +302,9 @@ def get_di_correlation(data_dir, save_dir=None, figsize=[8, 6]):
     If None (default), return a matplotlib.figure.Figure.
     :return: See save parameter.
     """
-    # load up (ordered) DI scores, drop chromosome column.
+    # load up (ordered) DI scores, sans chromosome column.
     rho_df = load_di_scores(data_dir
                             , order=True)
-    rho_df.drop('chr'
-                , axis=1
-                , inplace=True)
 
     # make DI score correlation matrix heatmap.
     fig, ax = plt.subplots(1, 1, figsize=figsize)
@@ -333,12 +339,9 @@ def get_di_boxplots(data_dir, save_dir=None, figsize=[12, 8]):
     If None (default), return a matplotlib.figure.Figure.
     :return: See save parameter.
     """
-    # load up (ordered) DI scores, drop chromosome column.
+    # load up (ordered) DI scores, sans chromosome column.
     rho_df = load_di_scores(data_dir
                             , order=True)
-    rho_df.drop('chr'
-                , axis=1
-                , inplace=True)
 
     rho_long_df = rho_df.melt(var_name='sample ID'
                               , value_name='DI score')
@@ -366,92 +369,3 @@ def get_di_boxplots(data_dir, save_dir=None, figsize=[12, 8]):
             return save_path
 
         return fig
-
-
-def get_gene_coverage(genes, data_dir, figsize=[10, 6], save=False):
-    """
-    Generate gene coverage plots on demand from DegNorm output directory.
-
-    By default, returns a list of matplotlib.figure.Figures, but save=True will
-    cause gene coverage plots to be saved into corresponding chromosome directory and
-    filepaths of each saved image will be returned.
-
-    :param genes: str or list of str, gene names (case insensitive)
-    :param data_dir: str path to DegNorm pipeline run output directory
-    :param figsize: [width (int), height (int)] dimensions of coverage curve plots.
-    :param save: Bool if True save each plot to <chromosome name>/<gene name>_coverage.png and return
-    str filepaths of saved plots. If False (default) return a matplotlib.figure.Figures.
-    :return: See save parameter.
-    """
-    # genes should be a list.
-    if isinstance(genes, str):
-        genes = [genes]
-
-    # check that data_dir contains the files associated with a DegNorm output dir.
-    out = check_for_files(data_dir
-                         , file_names=['gene_exon_metadata.csv', 'read_counts.csv', 'degradation_index_scores.csv'])
-
-    # read in required data: exon positioning data and sample ID's (saved in DI score data).
-    exon_df = read_csv(os.path.join(data_dir, 'gene_exon_metadata.csv'))
-    with open(os.path.join(data_dir, 'degradation_index_scores.csv'), 'r') as di:
-        sample_ids = di.readline().strip().split(',')[2:]
-
-    # make genes case-insensitive: cast to uppercase
-    genes = [x.upper() for x in genes]
-    exon_df.gene = exon_df.gene.apply(lambda x: x.upper())
-
-    # check that all input genes are available in gene/exon metadata.
-    avail_genes = exon_df.gene.unique()
-    gene_diff = list(set(genes) - set(avail_genes))
-
-    # error out if some genes are not available.
-    if gene_diff:
-        raise ValueError('Genes {0} were not found in DegNorm output. Check that they were run through pipeline.'
-                         .format(', '.join(gene_diff)))
-
-    # subset exon data those requested.
-    exon_df = exon_df[exon_df.gene.isin(genes)]
-    chroms = exon_df.chr.unique()
-    figs = list()
-
-    # iterate over unique chromosomes corresponding to genes requested.
-    for chrom in chroms:
-
-        orig_file = os.path.join(data_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
-        ests_file = os.path.join(data_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
-
-        # load the payload: coverage curve matrix and DegNorm-approximated coverage matrix dictionaries.
-        with open(orig_file, 'rb') as orig, open(ests_file, 'rb') as ests:
-            cov_dat = pkl.load(orig)
-            ests_dat = pkl.load(ests)
-
-        # cast gene keys of dictionaries to uppercase.
-        cov_dat = {k.upper(): v for k, v in cov_dat.items()}
-        ests_dat = {k.upper(): v for k, v in ests_dat.items()}
-        exon_sub_df = exon_df[exon_df.chr == chrom]
-
-        # determine genes in this chromosome.
-        chrom_genes = exon_sub_df.gene.unique()
-
-        # intersect desired chromosome genes with those actually run through DegNorm pipeline.
-        nmfoa_genes = list()
-        for gene in chrom_genes:
-            if (ests_dat.get(gene) is not None) and (cov_dat.get(gene) is not None):
-                nmfoa_genes.append(gene)
-
-        chrom_genes = np.intersect1d(chrom_genes, nmfoa_genes)
-
-        # generate plots, save if desired.
-        if len(chrom_genes) > 0:
-
-            for gene in chrom_genes:
-                figs.append(plot_gene_coverage(ests_dat.get(gene)
-                                               , f=cov_dat.get(gene)
-                                               , x_exon=exon_sub_df[exon_sub_df.gene == gene][['start', 'end']].values
-                                               , gene=gene
-                                               , chrom=chrom
-                                               , sample_ids=sample_ids
-                                               , save_dir=data_dir if save else None
-                                               , figsize=figsize))
-
-    return figs
