@@ -68,17 +68,17 @@ The primary entry point into the DegNorm software is the ``degnorm`` console scr
 Required input
 ##############
 
-1. Pass at least 2 ``.sam`` files (or ``.bam`` files, if you have ``samtools`` installed) with the ``-i/--input`` flag, or the location of a directory containing at least 2 .sam or .bam files with the ``--input-dir`` flag. The ``--input-dir`` flag must contain all files of either .sam or .bam extension. If a mix of .sam and .bam files are found in the input directory, only the .sam files will be consumed.
+1. Pass at least 2 .sam files (or .bam files, if you have ``samtools`` installed they will be converted to .sam files) with the ``-i/--input`` flag, or the location of a directory containing at least 2 .sam or .bam files with the ``--input-dir`` flag. If a mix of .sam and .bam files are found in the input directory, only the .sam files will be consumed.
 
 2. Pass a genome annotation file (.gtf/.gff) describing where each gene falls on a chromosome with the ``-g/--genome-annotation`` flag.
 
 
-An example DegNorm pipeline run using the .sam files found in the directory ``../sam_files`` that will
-plot the coverage curves for all genes in ``../plot_genes.txt``:
+An example DegNorm pipeline run using the .sam files found in the directory ``sam_files`` that will
+plot the coverage curves for all genes in the file ``plot_genes.txt``:
 
 .. code-block:: bash
 
-    $ degnorm --input-dir ../sam_files -g ../genes.gtf -o ./degnorm_output --plot-genes ../plot_genes.txt -c 6
+    $ degnorm --input-dir sam_files -g genes.gtf -o degnorm_output --plot-genes plot_genes.txt -c 6
 
 
 ``--warm-start-dir``
@@ -121,8 +121,8 @@ Each gene is saved in a chromosome-level directory:
 ``get_coverage_data``
 #####################
 
-Should you need the raw or estimated coverage matrices computed during a DegNorm pipeline run, ``get_coverage_data`` is here to help.
-It loads the .pkl files saved in the output directories. This function operates similarly to ``get_gene_coverage``, only that
+Should you need the raw or estimated coverage matrices computed from a DegNorm pipeline run, ``get_coverage_data`` is here to help.
+It loads the .pkl files saved in the output directories. This function operates similarly to ``get_coverage_plots``, only that
 the returned value is a dictionary with gene name keys and values are sub-dictionaries with a `raw` and `estimate`
 pandas.DataFrames, the raw and DegNorm-estimated coverage data, respectively.
 
