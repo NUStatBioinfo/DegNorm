@@ -5,7 +5,7 @@ DegNorm: Normalizing RNA degradation in RNA-Seq experiments
 .. image:: https://travis-ci.org/ffineis/DegNorm.svg?branch=master
     :target: https://travis-ci.org/ffineis/DegNorm
 
-.. image:: degnorm_logo.png
+.. image:: docs/img/degnorm_logo.png
    :height: 150px
    :width: 500px
    :scale: 50 %
@@ -23,7 +23,7 @@ pipeline will generate everything from coverage matrices, normalized coverage ma
 Pipeline steps
 ==============
 
-1. **Read RNA-Seq .sam files** and **compute chromosome coverage** for each experiment. Currently, only paired reads are considered. DegNorm does not use standard coverage tools (e.g. ``geneomecov``) that do not take into account paired read overlap when computing coverage - here, every *match* segment of a read's CIGAR score augments nucleotide coverage. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are ``p`` experiments.
+1. **Read RNA-Seq .sam files** and **compute chromosome coverage** for each experiment. DegNorm does not use standard coverage tools (e.g. ``geneomecov``) that do not take into account paired read overlap when computing coverage - here, every *match* segment of a read's CIGAR score augments nucleotide coverage. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are ``p`` experiments.
 
 2. **Parse a genome annotation file** (.gtf or .gff). DegNorm determines the relative start and end positions of each gene transcript and each exon found to comprise the gene on each chromosome. Genes occurring on multiple chromosomes and exons occurring on multiple genes are removed. In total, DegNorm will map ``n`` genes.
 
@@ -122,7 +122,7 @@ Each gene is saved in a chromosome-level directory:
 #####################
 
 Should you need the raw or estimated coverage matrices computed from a DegNorm pipeline run, ``get_coverage_data`` is here to help.
-It loads the .pkl files saved in the output directories. This function operates similarly to ``get_coverage_plots``, only that
+This function operates similarly to ``get_coverage_plots``, only that
 the returned value is a dictionary with gene name keys and values are sub-dictionaries with a `raw` and `estimate`
 pandas.DataFrames, the raw and DegNorm-estimated coverage data, respectively.
 
