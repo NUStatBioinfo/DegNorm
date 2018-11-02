@@ -219,9 +219,6 @@ class GeneNMFOA():
 
         hi_cov_idx = self.get_high_coverage_idx(F)
 
-        # establish minimum length of gene to work with. Bin relic.
-        min_gene_len = max(2, np.ceil(200.0 * (1 / self.downsample_rate)))  # scale 200 default by downsample rate.
-
         # Run systematic downsample if desired, prior to filtering out low-coverage regions.
         if self.downsample_rate > 1:
             _, downsample_idx = self.downsample_2d(F, by_row=False)
@@ -259,6 +256,9 @@ class GeneNMFOA():
         # exclude extreme cases where NMF result doesn't converge.
         if np.nanmedian(1 - rho_vec) > 1:
             return output['rho'], output['estimate'], output['ran_baseline_selection']
+
+        # establish minimum length of gene to work with. Bin relic.
+        min_gene_len = max(2, np.ceil(200.0 * (1 / self.downsample_rate)))  # scale 200 default by downsample rate.
 
         # decide whether to search for a gene's baseline regions.
         # If any of these criteria are satisfied, do not run baseline selection and return what we have.
@@ -303,8 +303,12 @@ class GeneNMFOA():
 
                 # shrink F matrix to the indices not dropped, cast back to wide matrix.
                 # estimate coverage curves from said indices with NMFOA.
-                K, E = self.nmf(F_bin
-                                , factors=True)
+                try:
+                    K, E = self.nmf(F_bin
+                                    , factors=True)
+                except ValueError:
+                    break
+
                 KE_bin = K.dot(E)
 
                 # stop is fitted values are all zero for any sample (extreme cases).
