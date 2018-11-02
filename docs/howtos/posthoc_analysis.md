@@ -14,16 +14,25 @@ to individual .txt files.
     from degnorm.data_access import get_coverage_data
     
     degnorm_dir = '/DegNorm_09022018_214247'
-    save_dir='FFvsFFPE_data'
 
     # pass one or many gene names, load up coverage matrix dictionary
-    cov_dat = get_coverage_data('TMEM229B', degnorm_dir=degnorm_dir)
+    cov_dat = get_coverage_data('TMEM229B'
+                                , degnorm_dir=degnorm_dir)
+                                
+You can automatically save those coverage matrices as .txt files by specifying the `save_dir` argument. Raw and
+estimated coverage matrices are stored in per-chromosome subdirectories as tall DataFrames with sample identifiers serving as the headers.
+By setting `save_dir=degnorm_dir`, you can write the .txt files back to the original DegNorm output directory.
 
-    # save raw/estimated coverage data to .txt file
-    cov_dat = get_coverage_data('TMEM229B', degnorm_dir=degnorm_dir, save_dir=save_dir)
+    save_dir='FFvsFFPE_data'
+        
+    cov_dat = get_coverage_data('TMEM229B'
+                                , degnorm_dir=degnorm_dir
+                                , save_dir=save_dir)
     
     # save all genes' coverage data to .txt files
-    cov_dat = get_coverage_data('all', degnorm_dir=degnorm_dir, save_dir=save_dir)
+    cov_dat = get_coverage_data('all'
+                                , degnorm_dir=degnorm_dir
+                                , save_dir=save_dir)
     
 The returned object `cov_dat` is a dictionary whose keys are named after genes, and each gene's value is a dictionary
 with `raw` and `estimate` coverage pandas.DataFrame values. 
@@ -38,12 +47,15 @@ not saving plots (by using the `save_dir` argument) then this function returns a
 
     from degnorm.data_access import get_coverage_plots
 
-    plots = get_coverage_plots(['SDF4', 'TMEM229B'], degnorm_dir=degnorm_dir)
+    plots = get_coverage_plots(['SDF4', 'TMEM229B']
+                               , degnorm_dir=degnorm_dir)
     plots[0].show()
 
 Most pipeline runs involve 1000s of genes, so rendering a plot for all genes will likely take a bit of time.
 
 You can also save the resulting plots by specifying a `save_dir` argument to the path of a directory where you want to save the plots.
-Each gene is saved in a chromosome-level directory.
+Each gene is saved in a chromosome-level directory. You can still use `genes='all'` to generate a coverage plot for every gene.
 
-    out = get_coverage_plots('all', degnorm_dir=degnorm_dir, save_dir=save_dir)
+    out = get_coverage_plots('all'
+                             , degnorm_dir=degnorm_dir
+                             , save_dir=degnorm_dir)

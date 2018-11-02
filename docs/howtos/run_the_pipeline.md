@@ -73,4 +73,40 @@ Run DegNorm on from a warm start directory (from a previous run). This time, do 
         --iter 3
         
 ## Output
-#### TODO
+
+Raw and estimated coverage data are stored in separate `.pkl` files, one file per chromosome. See the [posthoc analysis](../howtos/posthoc_analysis.md)
+ documentation for helper functions to access coverage data.
+
+In addition to per-gene coverage matrices, `degnorm` will produce raw and degradation-adjusted read counts, a matrix of degradation index scores,
+and various summary graphics along with a pipeline summary report. The report will render as an .html file, but if you have `pandoc` installed
+it will be converted to a .pdf.
+
+
+    ├── adjusted_read_counts.csv
+    ├── chr1
+    │   ├── GAPDH_coverage.png
+    │   ├── <more coverage plots>
+    │   ├── coverage_matrices_chr12.pkl
+    │   └── estimated_coverage_matrices_chr12.pkl
+    ├── chr2
+    │   ├── coverage_matrices_chr10.pkl
+    │   └── estimated_coverage_matrices_chr10.pkl
+    ├── chr3
+    │   ├── coverage_matrices_chr11.pkl
+    │   └── estimated_coverage_matrices_chr11.pkl
+    ├── chr4
+    │   ├── GAPDH_coverage.png
+    │   ├── coverage_matrices_chr12.pkl
+    │   └── estimated_coverage_matrices_chr12.pkl
+    ├── <more chromosome directories>
+    │   ├── <more raw coverage matrix .pkl files>
+    │   └── <more estimated coverage matrix .pkl files>
+    ├── degnorm.log
+    ├── degradation_index_scores.csv
+    ├── ran_baseline_selection.csv
+    ├── read_counts.csv
+    └── report
+        ├── degnorm_summary.html
+        ├── di_boxplots.png
+        ├── di_correlation.png
+        └── di_heatmap.png
