@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+    <link rel="shortcut icon" href="../../img/favicon.ico">
+
+    <title>Posthoc Analysis - DegNorm</title>
+
+    <link href="../../css/bootstrap-custom.min.css" rel="stylesheet">
+    <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="//cdn.jsdelivr.net/font-hack/2.018/css/hack.min.css">
+    <link href='//fonts.googleapis.com/css?family=PT+Sans:400,400italic,700,700italic&subset=latin-ext,latin' rel='stylesheet' type='text/css'>
+    <link href='//fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,700italic,400,300,600,700&subset=latin-ext,latin' rel='stylesheet' type='text/css'>
+    <link href="../../css/base.css" rel="stylesheet">
+    <link href="../../css/cinder.css" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/highlight.css">
+
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+            <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+            <script src="https://oss.maxcdn.com/libs/respond.js/1.3.0/respond.min.js"></script>
+        <![endif]-->
+
+    <script src="https://ajax.googleapis.com/ajax/libs/webfont/1.5.18/webfont.js"></script>
+    <script>
+    WebFont.load({
+        google: {
+            families: ['Open Sans', 'PT Sans']
+        }
+    });
+    </script>
+
+    
+</head>
+
+<body>
+
+    <div class="navbar navbar-default navbar-fixed-top" role="navigation">
+    <div class="container">
+
+        <!-- Collapsed navigation -->
+        <div class="navbar-header">
+            <!-- Expander button -->
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            
+
+            <!-- Main title -->
+
+            <a class="navbar-brand" href="../..">DegNorm</a>
+        </div>
+
+        <!-- Expanded navigation -->
+        <div class="navbar-collapse collapse">
+                <!-- Main navigation -->
+                <ul class="nav navbar-nav">
+                
+                
+                    <li >
+                        <a href="../..">Home</a>
+                    </li>
+                
+                
+                
+                    <li class="dropdown active">
+                        <a href="#" class="dropdown-toggle" data-toggle="dropdown">How-Tos <b class="caret"></b></a>
+                        <ul class="dropdown-menu">
+                        
+                            
+<li >
+    <a href="../installation/">Installation</a>
+</li>
+
+                        
+                            
+<li >
+    <a href="../run_the_pipeline/">Running DegNorm</a>
+</li>
+
+                        
+                            
+<li class="active">
+    <a href="./">Posthoc Analysis</a>
+</li>
+
+                        
+                        </ul>
+                    </li>
+                
+                
+                
+                    <li class="dropdown">
+                        <a href="#" class="dropdown-toggle" data-toggle="dropdown">About <b class="caret"></b></a>
+                        <ul class="dropdown-menu">
+                        
+                            
+<li >
+    <a href="../../about/license/">License</a>
+</li>
+
+                        
+                            
+<li >
+    <a href="../../about/release/">Release Notes</a>
+</li>
+
+                        
+                        </ul>
+                    </li>
+                
+                
+                </ul>
+
+            <ul class="nav navbar-nav navbar-right">
+                    <li>
+                        <a href="#" data-toggle="modal" data-target="#mkdocs_search_modal">
+                            <i class="fa fa-search"></i> Search
+                        </a>
+                    </li>
+                    <li >
+                        <a rel="next" href="../run_the_pipeline/">
+                            <i class="fa fa-arrow-left"></i> Previous
+                        </a>
+                    </li>
+                    <li >
+                        <a rel="prev" href="../../about/license/">
+                            Next <i class="fa fa-arrow-right"></i>
+                        </a>
+                    </li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+    <div class="container">
+        
+        <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
+    <ul class="nav bs-sidenav">
+        <li class="first-level active"><a href="#the-degnormdata_access-module">The degnorm.data_access module</a></li>
+            <li class="second-level"><a href="#get_coverage_data">get_coverage_data</a></li>
+                
+            <li class="second-level"><a href="#get_coverage_plots">get_coverage_plots</a></li>
+                
+    </ul>
+</div></div>
+        <div class="col-md-9" role="main">
+
+<h1 id="the-degnormdata_access-module">The <code>degnorm.data_access</code> module</h1>
+<p>Once you've run the DegNorm pipeline and obtained an output directory,
+there is a lot of raw and estimated coverage matrix data wrapped up in dictionaries stored as .pkl
+files. Because we can't determine which genes a researcher will be interested in prior to a DegNorm run,
+we provide a couple of easy-to-use functions to grab and visualize the coverage data on the fly.</p>
+<h2 id="get_coverage_data"><code>get_coverage_data</code></h2>
+<p>Should you need the raw or DegNorm-estimated coverage matrices generated by a <code>degnorm</code> run, the <code>get_coverage_data</code>
+function can load up individual genes' or every gene's coverage data with the option to save those matrices
+to individual .txt files.</p>
+<pre><code>from degnorm.data_access import get_coverage_data
+
+degnorm_dir = '/DegNorm_09022018_214247'
+
+# pass one or many gene names, load up coverage matrix dictionary
+cov_dat = get_coverage_data('TMEM229B'
+                            , degnorm_dir=degnorm_dir)
+</code></pre>
+<p>You can automatically save those coverage matrices as .txt files by specifying the <code>save_dir</code> argument. Raw and
+estimated coverage matrices are stored in per-chromosome subdirectories as tall DataFrames with sample identifiers serving as the headers.
+By setting <code>save_dir=degnorm_dir</code>, you can write the .txt files back to the original DegNorm output directory.</p>
+<pre><code>save_dir='FFvsFFPE_data'
+
+cov_dat = get_coverage_data('TMEM229B'
+                            , degnorm_dir=degnorm_dir
+                            , save_dir=save_dir)
+
+# save all genes' coverage data to .txt files
+cov_dat = get_coverage_data('all'
+                            , degnorm_dir=degnorm_dir
+                            , save_dir=save_dir)
+</code></pre>
+<p>The returned object <code>cov_dat</code> is a dictionary whose keys are named after genes, and each gene's value is a dictionary
+with <code>raw</code> and <code>estimate</code> coverage pandas.DataFrame values. </p>
+<h2 id="get_coverage_plots"><code>get_coverage_plots</code></h2>
+<p>Should you need coverage plots in addition to the ones generated during a DegNorm pipeline run, <code>get_coverage_plots</code>
+leverages the coverage matrix data in the .pkl files to make new pre- and post-DegNorm coverage curve plots. Use it similarly
+to <code>get_coverage_data</code>. Pass one gene, a list of multiple genes, or the string 'all' to plot every gene's coverage. If you're
+not saving plots (by using the <code>save_dir</code> argument) then this function returns a list of plots.</p>
+<pre><code>from degnorm.data_access import get_coverage_plots
+
+plots = get_coverage_plots(['SDF4', 'TMEM229B']
+                           , degnorm_dir=degnorm_dir)
+plots[0].show()
+</code></pre>
+<p>Most pipeline runs involve 1000s of genes, so rendering a plot for all genes will likely take a bit of time.</p>
+<p>You can also save the resulting plots by specifying a <code>save_dir</code> argument to the path of a directory where you want to save the plots.
+Each gene is saved in a chromosome-level directory. You can still use <code>genes='all'</code> to generate a coverage plot for every gene.</p>
+<pre><code>out = get_coverage_plots('all'
+                         , degnorm_dir=degnorm_dir
+                         , save_dir=degnorm_dir)
+</code></pre></div>
+        
+    </div>
+
+    <footer class="col-md-12 text-center">
+        <hr>
+        <p>
+        <small>Documentation built with <a href="http://www.mkdocs.org/">MkDocs</a>.</p></small>
+    </footer>
+
+    <script src="../../js/jquery-1.10.2.min.js"></script>
+    <script src="../../js/bootstrap-3.0.3.min.js"></script>
+    <script src="../../js/highlight.pack.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+    <script>
+    var base_url = '../..';
+    </script>
+    <script data-main="../../mkdocs/js/search.js" src="../../mkdocs/js/require.js"></script>
+    <script src="../../js/base.js"></script>
+    <script src="../../search/main.js"></script>
+
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="Search Modal" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span aria-hidden="true">&times;</span>
+                        <span class="sr-only">Close</span>
+                    </button>
+                    <h4 class="modal-title" id="exampleModalLabel">Search</h4>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        From here you can search these documents. Enter your search terms below.
+                    </p>
+                    <form role="form">
+                        <div class="form-group">
+                            <input type="text" class="form-control" placeholder="Search..." id="mkdocs-search-query">
+                        </div>
+                    </form>
+                    <div id="mkdocs-search-results"></div>
+                </div>
+                <div class="modal-footer">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </body>
+
+</html>
