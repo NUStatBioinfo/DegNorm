@@ -78,35 +78,46 @@ Raw and estimated coverage data are stored in separate `.pkl` files, one file pe
  documentation for helper functions to access coverage data.
 
 In addition to per-gene coverage matrices, `degnorm` will produce raw and degradation-adjusted read counts, a matrix of degradation index scores,
-and various summary graphics along with a pipeline summary report. The report will render as an .html file, but if you have `pandoc` installed
+a matrix describing which genes were sent through the baseline selection procedure and when, along with various summary graphics and a pipeline summary report. 
+The report will render as an .html file, but if you have `pandoc` installed
 it will be converted to a .pdf.
 
 
-    ├── adjusted_read_counts.csv
-    ├── chr1
-    │   ├── GAPDH_coverage.png
-    │   ├── <more coverage plots>
-    │   ├── coverage_matrices_chr12.pkl
-    │   └── estimated_coverage_matrices_chr12.pkl
-    ├── chr2
-    │   ├── coverage_matrices_chr10.pkl
-    │   └── estimated_coverage_matrices_chr10.pkl
-    ├── chr3
-    │   ├── coverage_matrices_chr11.pkl
-    │   └── estimated_coverage_matrices_chr11.pkl
-    ├── chr4
-    │   ├── GAPDH_coverage.png
-    │   ├── coverage_matrices_chr12.pkl
-    │   └── estimated_coverage_matrices_chr12.pkl
-    ├── <more chromosome directories>
-    │   ├── <more raw coverage matrix .pkl files>
-    │   └── <more estimated coverage matrix .pkl files>
     ├── degnorm.log
     ├── degradation_index_scores.csv
     ├── ran_baseline_selection.csv
+    ├── adjusted_read_counts.csv
     ├── read_counts.csv
+    ├── adjusted_read_counts.csv
+    ├── SAMPLE_1
+    │   ├── sample_SAMPLE_1_chr1.npz
+    │   ├── sample_SAMPLE_1_chr2.npz
+    │   ├── <more sample chromosome coverage .npz files>
+    ├── SAMPLE_2
+    │   ├── sample_SAMPLE_2_chr1.npz
+    │   ├── sample_SAMPLE_2_chr2.npz
+    │   ├── <more per-sample chromosome coverage .npz files>
+    ├── <more sample directories with chromosome coverage>
+    ├── chr1
+    │   ├── GAPDH_coverage.png
+    │   ├── <more coverage plots>
+    │   ├── coverage_matrices_chr1.pkl
+    │   └── estimated_coverage_matrices_chr1.pkl
+    ├── chr2
+    │   ├── coverage_matrices_chr2.pkl
+    │   └── estimated_coverage_matrices_chr2.pkl
+    ├── chr3
+    │   ├── coverage_matrices_chr3.pkl
+    │   └── estimated_coverage_matrices_chr3.pkl
+    ├── chr4
+    │   ├── GAPDH_coverage.png
+    │   ├── coverage_matrices_chr4.pkl
+    │   └── estimated_coverage_matrices_chr4.pkl
+    ├── <more chromosome directories>
+    │   ├── <more raw coverage matrix .pkl files>
+    │   └── <more estimated coverage matrix .pkl files>
     └── report
-        ├── degnorm_summary.html
+        ├── degnorm_summary.pdf # (or .html if pandoc not available)
         ├── di_boxplots.png
         ├── di_correlation.png
         └── di_heatmap.png
