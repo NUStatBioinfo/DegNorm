@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import logging
 import sys
+import re
 import numpy as np
 import subprocess
 import os
@@ -107,33 +108,41 @@ def find_software(software='samtools'):
     return True
 
 
-def bam_to_sam(bam_file):
+def create_index_file(bam_file):
     """
-    Convert a .bam file to a .sam file with samtools.
+    Create a BAM index file with samtools.
 
-    :param bam_file: str realpath to .bam file to be converted to .sam file format.
-    :return: str realpath to the created .sam file
+    :param bam_file: str realpath to .bam file for which we desire a .bai index file
+    :return: str realpath to the created .bai file
     """
+    samtools_avail = find_software('samtools')
+
+    # Note that samtools is only available for Linux and Mac OS:
+    # https://github.com/samtools/samtools/blob/develop/INSTALL
+    if not samtools_avail:
+        raise EnvironmentError('samtools is not installed or is not in your PATH.'
+                               'samtools is required to convert .bam -> .bai index files.')
+
     if not bam_file.endswith('.bam'):
         raise ValueError('{0} is not a .bam file'.format(bam_file))
 
     output_dir = os.path.dirname(bam_file)
-    sam = os.path.basename(bam_file).split('.')[:-1][0] + '.sam'
-    sam_file = os.path.join(output_dir, sam)
+    bai = os.path.basename(bam_file).split('.')[:-1][0] + '.bai'
+    bai_file = os.path.join(output_dir, bai)
 
-    # check if a .sam file already exists; if it does, add salt by time.
-    while os.path.isfile(sam_file):
+    # check if a .bai file already exists; if it does, add salt by time.
+    while os.path.isfile(bai_file):
         time.sleep(2)
-        sam = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.sam'
-        sam_file = os.path.join(output_dir, sam)
+        bai = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.bai'
+        bai_file = os.path.join(output_dir, bai)
 
-    cmd = 'samtools view -h -o {0} {1}'.format(sam_file, bam_file)
+    cmd = 'samtools index {0} {1}'.format(bam_file, bai_file)
     out = subprocess.run([cmd], shell=True)
 
     if out.returncode != 0:
-        raise ValueError('{0} was not successfully converted into a .sam file'.format(bam_file))
+        raise ValueError('{0} was not successfully converted into a .bai file'.format(bam_file))
 
-    return sam_file
+    return bai_file
 
 
 def split_into_chunks(x, n):
@@ -162,18 +171,28 @@ def parse_args():
     :return: argparse.ArgumentParser object with runtime parameters required to run DegNorm pipeline.
     """
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('-i'
-                        , '--input-files'
+    parser.add_argument('--bam-files'
                         , nargs='+'
                         , default=None
                         , required=False
-                        , help='Input data files (an be multiple; separate with space).'
-                               'Can be .bam or .sam files containing paired reads from RNA-seq experiments.')
-    parser.add_argument('--input-dir'
+                        , help='Aligned read files (can be multiple; separate with space) in .bam format.'
+                               '.bam files may be for paired or single-end read experiments.')
+    parser.add_argument('--bai-files'
+                        , nargs='+'
                         , default=None
                         , required=False
-                        , help='Input data directory. Use instead of, or in addition to, specifying individual '
-                               '.sam files. All .sam files in this directory will be considered input to DegNorm.')
+                        , help='Input .bam index files (Can be multiple; separate with space). '
+                               'Only use with --bam-files.'
+                               '.bai files for files passed to --bam-files. Assumed .bai file order corresponds to '
+                               'supplied .bam files. If --bam-files is supplied and not --bai-files, it is assumed'
+                               'that you have .bai files in the same location as --bam-files, and with the same'
+                               'basename, e.g. (A01.bam, A01.bai), (sample_27.bam, sample_27.bai)')
+    parser.add_argument('--bam-dir'
+                        , default=None
+                        , required=False
+                        , help='Input .bam/.bai data directory. Use instead of, or in addition to, specifying individual '
+                               '.bam files. All .bam files (and .bai files with the same basename) in this directory '
+                               'will be considered input to DegNorm.')
     parser.add_argument('-w'
                         , '--warm-start-dir'
                         , default=None
@@ -276,8 +295,9 @@ def parse_args():
     if not os.path.isdir(args.output_dir):
         raise NotADirectoryError('Cannot find output-dir {0}'.format(args.output_dir))
 
-    if (not args.input_files and not args.input_dir) and (not args.warm_start_dir):
-        raise ValueError('Must specify either --input-files (alternatively, --input-dir) or a warm start directory')
+    # ensure that user has supplied fresh .bam/.bai files or a warm start directory.
+    if (not args.bam_files and not args.bam_dir) and (not args.warm_start_dir):
+        raise ValueError('Must specify either --bam-files, --bam-dir, or --warm-start-dir as a data input option.')
 
     # quality control on DegNorm parameters.
     if (args.nmf_iter < 1) or (args.iter < 1) or (args.downsample_rate < 1):
@@ -306,12 +326,14 @@ def parse_args():
         if not os.path.isdir(args.warm_start_dir):
             raise NotADirectoryError('Cannot find --warm-start-dir {0}'.format(args.warm_start_dir))
 
-        # warn user if they have also supplied RNA-Seq experiment input files.
-        if args.input_files or args.input_dir or args.genome_annotation:
-            logging.warning('Using warm-start directory. Supplied input files and/or directory will be ignored.')
+        # warn user if they have also supplied read alignments and/or a .gtf file, that they will
+        # be ignored for the content within the warm start directory.
+        if args.bam_files or args.bam_dir or args.genome_annotation:
+            logging.warning('Using warm-start directory. Supplied .bam files, .bam directory, '
+                            'and genome annotation file will be ignored.')
 
-            args.input_files = None
-            args.input_dir = None
+            args.bam_files = None
+            args.bam_dir = None
             args.genome_annotation = None
 
     # if not using a warm-start, parse input RNA-Seq + genome annotation files.
@@ -326,46 +348,87 @@ def parse_args():
                 raise FileNotFoundError('Gene annotation file {0} not found.'.format(args.genome_annotation))
 
         # check validity of file i/o selection.
-        if args.input_dir:
-            if not os.path.isdir(args.input_dir):
-                raise NotADirectoryError('Cannot find --input-dir {0}'.format(args.input_dir))
+        bam_files = list()
+        bai_files = list()
 
-            # scan directory for .sam files.
-            input_files = list()
-            for f in os.listdir(args.input_dir):
-                if f.endswith('.sam'):
-                    input_files.append(os.path.join(args.input_dir, f))
+        # INPUT OPTION 1: a --bam-dir was specified.
+        if args.bam_dir:
+            if not os.path.isdir(args.bam_dir):
+                raise NotADirectoryError('Cannot find --bam-dir {0}'.format(args.bam_dir))
 
-            # if user used -i/--input-files, append contents of directory to individually specified files.
-            if args.input_files:
-                args.input_files += input_files
+            # scan directory for .bam files.
+            for f in os.listdir(args.bam_dir):
+                if f.endswith('.bam'):
+                    bam_files.append(os.path.join(args.bam_dir, f))
 
-            else:
-                args.input_files = input_files
+            # if user used both --bam-dir and --bam-files and/or --bai-files, yell at them. (only use one method).
+            if args.bam_files or args.bai_files:
+                raise ValueError('Do not specify both a --bam-dir and either --bam-files and/or --bai-files.'
+                                 'Use one input selection method or the other.')
+
+            # search for .bai files in the --bam-dir. If they don't exist, try to make them.
+            for bam_file in bam_files:
+                bai_file = re.sub('.bam$', '.bai', bam_file)
+
+                # if .bai file under same basename as .bam file doesn't exist, try to create it.
+                if not os.path.isfile(bai_file):
+                    bai_files.append(create_index_file(bam_file))
+                else:
+                    bai_files.append(bai_file)
+
+        # INPUT OPTION 2: --bam-files and possibly --bai-files were specified.
+        else:
+            # ensure .bam files are actually .bam files.
+            for bam_file in args.bam_files:
+                if not bam_file.endswith('.bam'):
+                    raise ValueError('{0} is not a .bam file.'.format(bam_file))
+                else:
+                    bam_files.append(bam_files)
+
+            # case where user has specified .bai files to accompany .bam files.
+            if args.bai_files:
+                # if user has supplied an incorrect number of bai files, fail out.
+                if len(args.bai_files) != len(bam_files):
+                    raise ValueError('Number of supplied .bai files does not match number of supplied .bam files.')
+
+                # ensure .bai files are actually .bai files.
+                for bai_file in args.bai_files:
+                    if not bai_file.endswith('.bai'):
+                        raise ValueError('{0} is not a .bai file.'.format(bai_file))
+                    else:
+                        bai_files.append(bai_files)
+
+            # if user has not supplied any bai files: look for them under the same name
+            # as each of the .bam files, or create new .bai files with samtools (if possible).
+            elif not args.bai_files:
+
+                for bam_file in bam_files:
+                    bai_file = re.sub('.bam$', '.bai', bam_file)
+
+                    # if .bai file under same name as .bam file doesn't exist, try to create it.
+                    if not os.path.isfile(bai_file):
+                        bai_files.append(create_index_file(bam_file))
+                    else:
+                        bai_files.append(bai_file)
 
         # ensure that input files are uniquely named.
-        args.input_files = list(set(args.input_files))
+        if len(bam_files) != len(list(set(bam_files))):
+            raise ValueError('Supplied .bam files are not uniquely named!')
+
+        # create parser attributes for bam/index files.
+        args.bam_files = bam_files
+        args.bai_files = bai_files
 
         # ensure that all files can be found.
-        for f in args.input_files:
+        for f in args.bam_files + args.bai_files:
             if not os.path.isfile(f):
                 raise FileNotFoundError('Input file {0} not found.'.format(f))
 
         # ensure there are at least 2 experiment files.
-        if len(args.input_files) == 1:
-            raise ValueError('Must input >= 2 unique RNA-Seq experiment files! Cannot estimate coverage curve matrix '
+        if len(args.bam_files) == 1:
+            raise ValueError('Must input >= 2 unique aligned reads files! Cannot estimate coverage curve matrix '
                              'approximations from a single experiment.')
 
-        # if .bam files supplied, make sure samtools is installed.
-        if any([x.split('.')[-1] == 'bam' for x in args.input_files]):
-            samtools_avail = find_software('samtools')
-
-            # Note that samtools is only available for Linux and Mac OS:
-            # https://github.com/samtools/samtools/blob/develop/INSTALL
-            if not samtools_avail:
-                raise EnvironmentError('samtools is not installed or is not in your PATH.'
-                                       'samtools is required to convert .bam -> .sam files'
-                                       'Either use .sam files or install samtools.')
 
     return args
 
