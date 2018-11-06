@@ -1,5 +1,6 @@
 import pytest
 import os
+import shutil
 from pandas import DataFrame
 from random import choice
 from pysam.libcalignmentfile import AlignmentFile
@@ -19,14 +20,14 @@ def bam_setup(request):
     os.makedirs(outdir)
 
     def teardown():
-        os.rmdir(outdir)
+        shutil.rmtree(outdir)
 
     request.addfinalizer(teardown)
 
     bam_file_paired = os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')  # sample paired reads data
     bai_file_paired = os.path.join(THIS_DIR, 'data', 'hg_small_1.bai')  # corresponding .bam index file
-    bam_file_single = os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')  # sample single-end reads data
-    bai_file_single = os.path.join(THIS_DIR, 'data', 'hg_small_1.bai')  # corresponding .bai index file
+    bam_file_single = os.path.join(THIS_DIR, 'data', 'ff_small.bam')  # sample single-end reads data
+    bai_file_single = os.path.join(THIS_DIR, 'data', 'ff_small.bai')  # corresponding .bai index file
     bam_processor_paired = BamReadsProcessor(bam_file_paired
                                              , index_file=bai_file_paired
                                              , n_jobs=1
@@ -53,20 +54,24 @@ def gtf_setup(request):
 # ----------------------------------------------------- #
 def test_bam_header_paired(bam_setup):
     bam_setup = bam_setup[0]
+    bamfile = bam_setup.loader.get_data()
     print('TESTING BamReadsProcessor.__init__ for paired reads')
     assert isinstance(bam_setup.header, DataFrame)
-    assert isinstance(bam_setup.loader, AlignmentFile)
+    assert isinstance(bamfile, AlignmentFile)
     assert not bam_setup.header.empty
     assert bam_setup.paired
+    bamfile.close()
 
 
 def test_bam_header_unpaired(bam_setup):
     bam_setup = bam_setup[1]
+    bamfile = bam_setup.loader.get_data()
     print('TESTING BamReadsProcessor.__init__ for single-end reads')
     assert isinstance(bam_setup.header, DataFrame)
-    assert isinstance(bam_setup.loader, AlignmentFile)
+    assert isinstance(bamfile, AlignmentFile)
     assert not bam_setup.header.empty
     assert not bam_setup.paired
+    bamfile.close()
 
 
 # check that paired read .bam files are loaded correctly.
@@ -84,23 +89,29 @@ def test_bam_load_paired(bam_setup):
 def test_bam_load_single(bam_setup):
     reqd_cols = ['qname', 'pos', 'cigar']
     bam_setup = bam_setup[1]
-    reads_df = bam_setup.load_chromosome_reads('chr1')
-    assert isinstance(reads_df, DataFrame)
-    assert not reads_df.empty
-    assert reads_df.shape[1] == 3
-    assert all([col in reads_df.columns.tolist() for col in reqd_cols])
+    read_count_df = bam_setup.load_chromosome_reads('chr1')
+    assert isinstance(read_count_df, DataFrame)
+    assert not read_count_df.empty
+    assert read_count_df.shape[1] == 3
+    assert all([col in read_count_df.columns.tolist() for col in reqd_cols])
 
 
 def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     bam_setup = bam_setup[0]
     exons_df = gtf_setup
     fps, read_count_df = bam_setup.coverage_read_counts(exons_df)
+    assert isinstance(read_count_df, DataFrame)
+    assert read_count_df.shape[1] == 3
+    assert all([os.path.isfile(x) for x in fps])
 
 
 def test_bam_coverage_counts_single(bam_setup, gtf_setup):
     bam_setup = bam_setup[1]
     exons_df = gtf_setup
     fps, read_count_df = bam_setup.coverage_read_counts(exons_df)
+    assert isinstance(read_count_df, DataFrame)
+    assert read_count_df.shape[1] == 3
+    assert all([os.path.isfile(x) for x in fps])
 
 
 # ----------------------------------------------------- #

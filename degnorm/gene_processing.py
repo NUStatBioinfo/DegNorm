@@ -172,7 +172,8 @@ class GeneAnnotationProcessor():
 
         :param chroms: list of str chromosomes with which to subset data. Use if
         only a subset of chromosomes from genome annotation file will be useful.
-        :return: pandas.DataFrame with 'chr', 'gene', 'gene_start', 'gene_end', 'exon_start', 'exon_end' fields
+        :return: pandas.DataFrame with 'chr', 'gene', 'gene_start', 'gene_end',
+        'start' [exon start], and 'end'[exon end] fields
         outlining exons ready to use for reads coverage computations
         """
         if self.verbose:

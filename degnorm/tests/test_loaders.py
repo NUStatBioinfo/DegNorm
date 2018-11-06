@@ -23,7 +23,9 @@ def test_bam_loader():
     bam_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')  # paired reads subsample dataset.
     bai_file = os.path.join(THIS_DIR, 'data', 'hg_small_1.bai')  # corresponding .bam index file
     bam_loader = BamLoader(bam_file, index_file=bai_file)
-    assert isinstance(bam_loader, AlignmentFile)
+    bam_file = bam_loader.get_data()
+    assert isinstance(bam_file, AlignmentFile)
+    bam_file.close()
 
 
 def test_bam_loader_index_file_dne_error():

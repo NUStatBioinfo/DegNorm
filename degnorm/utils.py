@@ -333,6 +333,7 @@ def parse_args():
                             'and genome annotation file will be ignored.')
 
             args.bam_files = None
+            args.bai_files = None
             args.bam_dir = None
             args.genome_annotation = None
 
@@ -362,7 +363,7 @@ def parse_args():
                     bam_files.append(os.path.join(args.bam_dir, f))
 
             # if user used both --bam-dir and --bam-files and/or --bai-files, yell at them. (only use one method).
-            if args.bam_files or args.bai_files:
+            if args.bam_files is not None or args.bai_files is not None:
                 raise ValueError('Do not specify both a --bam-dir and either --bam-files and/or --bai-files.'
                                  'Use one input selection method or the other.')
 
@@ -383,10 +384,10 @@ def parse_args():
                 if not bam_file.endswith('.bam'):
                     raise ValueError('{0} is not a .bam file.'.format(bam_file))
                 else:
-                    bam_files.append(bam_files)
+                    bam_files.append(bam_file)
 
             # case where user has specified .bai files to accompany .bam files.
-            if args.bai_files:
+            if args.bai_files is not None:
                 # if user has supplied an incorrect number of bai files, fail out.
                 if len(args.bai_files) != len(bam_files):
                     raise ValueError('Number of supplied .bai files does not match number of supplied .bam files.')
@@ -396,12 +397,11 @@ def parse_args():
                     if not bai_file.endswith('.bai'):
                         raise ValueError('{0} is not a .bai file.'.format(bai_file))
                     else:
-                        bai_files.append(bai_files)
+                        bai_files.append(bai_file)
 
             # if user has not supplied any bai files: look for them under the same name
             # as each of the .bam files, or create new .bai files with samtools (if possible).
-            elif not args.bai_files:
-
+            else:
                 for bam_file in bam_files:
                     bai_file = re.sub('.bam$', '.bai', bam_file)
 
@@ -411,8 +411,12 @@ def parse_args():
                     else:
                         bai_files.append(bai_file)
 
+        # ensure we have at least two .bam files.
+        if len(bam_files) < 2:
+            raise ValueError('Fewer than 2 .bam files were found. Not sufficiently many to run DegNorm.')
+
         # ensure that input files are uniquely named.
-        if len(bam_files) != len(list(set(bam_files))):
+        if len(bam_files) != len(set(bam_files)):
             raise ValueError('Supplied .bam files are not uniquely named!')
 
         # create parser attributes for bam/index files.

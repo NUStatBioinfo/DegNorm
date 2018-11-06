@@ -35,9 +35,11 @@ def run_setup(request):
 def test_pipeline(run_setup):
 
     # run degnorm command with test data, with downsampling.
-    cmd = 'degnorm -i {0} {1} -g {2} -o {3} --plot-genes {4} --nmf-iter 50 -d 50'\
-        .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
-                , os.path.join(THIS_DIR, 'data', 'hg_small_2.sam')
+    cmd = 'degnorm --bam-files {0} {1} --bai-files {2} {3} -g {4} -o {5} --plot-genes {6} --nmf-iter 50 -d 50'\
+        .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')
+                , os.path.join(THIS_DIR, 'data', 'hg_small_2.bam')
+                , os.path.join(THIS_DIR, 'data', 'hg_small_1.bai')
+                , os.path.join(THIS_DIR, 'data', 'hg_small_2.bai')
                 , os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
                 , run_setup
                 , os.path.join(THIS_DIR, 'data', 'genes.txt'))
@@ -46,10 +48,10 @@ def test_pipeline(run_setup):
                          , shell=True)
     assert out.returncode == 0
 
-    # run degnorm command with test data, without downsampling.
-    cmd = 'degnorm -i {0} {1} -g {2} -o {3} --plot-genes {4} --nmf-iter 50'\
-        .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.sam')
-                , os.path.join(THIS_DIR, 'data', 'hg_small_2.sam')
+    # run degnorm command with test data, without downsampling, without specifying .bai files directly either.
+    cmd = 'degnorm --bam-files {0} {1} -g {2} -o {3} --plot-genes {4} --nmf-iter 50'\
+        .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')
+                , os.path.join(THIS_DIR, 'data', 'hg_small_2.bam')
                 , os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
                 , run_setup
                 , os.path.join(THIS_DIR, 'data', 'genes.txt'))

@@ -2,6 +2,7 @@
 ## BSD 2-Clause
 
 Copyright (c) 2018 Northwestern Statistical Bioinformatics Lab
+
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

@@ -24,7 +24,7 @@ def test_gtf_processor_load(gene_processor_setup):
 
 
 def test_gtf_processor_run(gene_processor_setup):
-    reqd_cols = ['chr', 'gene', 'gene_start', 'gene_end', 'exon_start', 'exon_end']
+    reqd_cols = ['chr', 'gene', 'gene_start', 'gene_end', 'start', 'end']
     exons_df = gene_processor_setup.run()
     assert isinstance(exons_df, DataFrame)
     assert not exons_df.empty

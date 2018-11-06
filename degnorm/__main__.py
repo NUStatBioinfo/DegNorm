@@ -52,13 +52,13 @@ def main():
         for idx in range(n_samples):
             header_dat = BamReadsProcessor(args.bam_files[idx]
                                             , index_file=args.bai_files[idx]).header
-            new_chroms = header_dat.chr.values
+            new_chroms = header_dat.chr.values.tolist()
 
             if not chroms:
                 chroms = new_chroms
 
             else:
-                chroms = np.intersect1d(chroms, new_chroms)
+                chroms = np.intersect1d(chroms, new_chroms).tolist()
 
         # ---------------------------------------------------------------------------- #
         # Load .gtf or .gff files and run processing pipeline.
