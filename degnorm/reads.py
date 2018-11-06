@@ -60,7 +60,8 @@ class BamReadsProcessor():
         Genome coverage reader for a single RNA-seq experiment, contained in a .sam file.
         Goal is to assemble a dictionary (chromosome, coverage array) pairs.
 
-        :param sam_file: str .sam filename
+        :param bam_file: str .bam filename
+        :param index_file: str corresponding .bai (.bam index file) filename
         :param output_dir: str path to DegNorm output directory where coverage array files will be saved.
         If not specified, will use directory where RNA Seq experiment file is located.
         :param chroms: list of str names of chromosomes to load.
@@ -110,11 +111,11 @@ class BamReadsProcessor():
 
         # based on supplied chromosome set and chromosomes in header, take intersection.
         if self.chroms is not None:
-            self.chroms = np.intersect1d(self.chroms, self.header.chr.unique())
+            self.chroms = np.intersect1d(self.chroms, self.header.chr.unique()).tolist()
 
         # if no chromosomes specified, assume load includes every chromosome in header.
         else:
-            self.chroms = self.header.chr.unique()
+            self.chroms = self.header.chr.unique().tolist()
 
     def determine_if_paired(self):
 
@@ -124,7 +125,7 @@ class BamReadsProcessor():
         # pull first 300 queries' query names.
         ctr = 0
         qnames = list()
-        for read in bam_file.fetch(self.header.chr.iloc[0]):
+        for read in bam_file.fetch(self.chroms[0]):
             qnames.append(read.query_name)
             ctr += 1
 
@@ -141,8 +142,8 @@ class BamReadsProcessor():
 
     def load_chromosome_reads(self, chrom):
 
-        read_attributes = ['query_name', 'pos', 'cigarstring']
         reads = list()
+        read_attributes = ['query_name', 'pos', 'cigarstring']
         bam_file = self.loader.get_data()
 
         for read in bam_file.fetch(chrom):
@@ -192,6 +193,10 @@ class BamReadsProcessor():
         """
 
         # First, parse this chromosome's reads.
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1}: begin loading reads from {2}'
+                         .format(self.sample_id, chrom, self.filename))
+
         reads_df = self.load_chromosome_reads(chrom)
 
         # Second, if working with paired reads,
@@ -203,7 +208,8 @@ class BamReadsProcessor():
 
         # grab cigar string and read starting position. Initialize coverage array.
         dat = reads_df[['cigar', 'pos']].values
-        cov_vec = np.zeros([self.header[self.header.chr == chrom].length[0]])
+        chrom_len = self.header[self.header.chr == chrom].length.iloc[0]
+        cov_vec = np.zeros([chrom_len])
 
         # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
         if self.paired:
@@ -294,9 +300,6 @@ class BamReadsProcessor():
         GeneAnnotationProcessor.
         :return: list of str file paths of compressed .npz files containing coverage arrays.
         """
-        if self.verbose:
-            logging.info('Begin reading file {0}...'.format(self.filename))
-
         # create directory in DegNorm output dir where sample coverage vecs are saved.
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)

@@ -120,8 +120,8 @@ def create_index_file(bam_file):
     # Note that samtools is only available for Linux and Mac OS:
     # https://github.com/samtools/samtools/blob/develop/INSTALL
     if not samtools_avail:
-        raise EnvironmentError('samtools is not installed or is not in your PATH.'
-                               'samtools is required to convert .bam -> .bai index files.')
+        raise EnvironmentError('samtools is required to convert .bam -> .bai index files.'
+                               'samtools is not installed or is not in your PATH.')
 
     if not bam_file.endswith('.bam'):
         raise ValueError('{0} is not a .bam file'.format(bam_file))
@@ -354,6 +354,13 @@ def parse_args():
 
         # INPUT OPTION 1: a --bam-dir was specified.
         if args.bam_dir:
+
+            # if user used both --bam-dir and --bam-files and/or --bai-files, yell at them. (only use one method).
+            if args.bam_files is not None or args.bai_files is not None:
+                raise ValueError('Do not specify both a --bam-dir and either --bam-files and/or --bai-files.'
+                                 'Use one input selection method or the other.')
+
+            # check that the dir actually exists.
             if not os.path.isdir(args.bam_dir):
                 raise NotADirectoryError('Cannot find --bam-dir {0}'.format(args.bam_dir))
 
@@ -362,10 +369,10 @@ def parse_args():
                 if f.endswith('.bam'):
                     bam_files.append(os.path.join(args.bam_dir, f))
 
-            # if user used both --bam-dir and --bam-files and/or --bai-files, yell at them. (only use one method).
-            if args.bam_files is not None or args.bai_files is not None:
-                raise ValueError('Do not specify both a --bam-dir and either --bam-files and/or --bai-files.'
-                                 'Use one input selection method or the other.')
+            # check that we found enough .bam files.
+            if len(bam_files) < 2:
+                raise ValueError('Only found {0} .bam {1} within directory {2}'
+                                 .format(len(bam_files), 'files' if len(bam_files) > 0 else 'files', args.bam_dir))
 
             # search for .bai files in the --bam-dir. If they don't exist, try to make them.
             for bam_file in bam_files:
