@@ -194,10 +194,14 @@ class BamReadsProcessor():
 
         # First, parse this chromosome's reads.
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1}: begin loading reads from {2}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} begin loading reads from {2}'
                          .format(self.sample_id, chrom, self.filename))
 
         reads_df = self.load_chromosome_reads(chrom)
+
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} reads successfully loaded -- shape: {2}'
+                         .format(self.sample_id, chrom, reads_df.shape))
 
         # Second, if working with paired reads,
         # ensure that we've sequestered paired reads (eliminate any query names only occurring once).
@@ -205,6 +209,10 @@ class BamReadsProcessor():
             qname_counts = reads_df.qname_unpaired.value_counts()
             paired_occ_reads = qname_counts[qname_counts == 2].index.values.tolist()
             reads_df = reads_df[reads_df.qname_unpaired.isin(paired_occ_reads)]
+
+        # start computing coverage from pos and cigar fields.
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} begin computing coverage.'.format(self.sample_id, chrom))
 
         # grab cigar string and read starting position. Initialize coverage array.
         dat = reads_df[['cigar', 'pos']].values
