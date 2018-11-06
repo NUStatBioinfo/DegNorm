@@ -155,9 +155,13 @@ class BamReadsProcessor():
                         continue
 
             # if reading paired reads and the read is paired,
-            # or if reading single end reads and the read is not paired,
-            # grab the attributes of interest from the read.
-            if ((read.is_paired) and (self.paired)) or ((not read.is_paired) and (not self.paired)):
+            # then grab the attributes of interest from the read in question.
+            if self.paired:
+                if read.is_paired:
+                    reads.append([getattr(read, attr) for attr in read_attributes])
+
+            # otherwise (single-end reads) just grab them.
+            else:
                 reads.append([getattr(read, attr) for attr in read_attributes])
 
         # close .bam file connection.
