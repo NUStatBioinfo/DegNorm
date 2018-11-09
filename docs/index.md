@@ -21,7 +21,7 @@ scores between samples.
 
 The DegNorm pipeline is comprised of the following steps
 
-1. **Load in RNA-Seq .sam files**. If passed .bam files, DegNorm will attempt to convert them to .sam files if you have `samtools` installed. It will also determine whether the RNA-Seq experiment was obtained from a paired read or single read platform.
+1. **Load in RNA-Seq .bam files**. DegNorm also requires the presence of corresponding bam index (.bai) files. DegNorm will determine whether the RNA-Seq experiment was obtained from a paired read or single read platform.
 
 2. **Parse a genome annotation file** (.gtf or .gff). DegNorm determines the relative start and end positions of each gene transcript and each exon comprising each gene on each chromosome. Genes occurring on multiple chromosomes and exons occurring on multiple genes are removed. The total number of genes is referred to as `n`.
 

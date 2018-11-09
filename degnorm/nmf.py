@@ -473,8 +473,8 @@ class GeneNMFOA():
             raise ValueError('Not all coverage matrices are 2-d arrays!')
 
         if np.sum(li_vec / self.p < 1) > 0:
-            warnings.warn('At least one coverage matrix is longer than it is wide.'
-                          'Ensure that coverage matrices are (p x Li).')
+            logging.warning('At least one coverage matrix is taller than it is wide.'
+                            'Ensure that coverage matrices are shaped (p x L_i).')
 
         if self.downsample_rate > 1:
             if not np.min(li_vec) >= self.downsample_rate:

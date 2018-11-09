@@ -12,12 +12,14 @@ def cigar_segment_bounds(cigar, start):
 
     cigar string meaning: http://bioinformatics.cvr.ac.uk/blog/tag/cigar-string/
 
-    :param cigar: str a read's cigar string, e.g. "49M165N51M"
-    :param start: int a read's start position on a chromosome
-    :return: list of integers representing cigar match start, end points, e.g.
-        50M25N50M starting from 100 -> [100, 149, 175, 224]. Note that start and end integers
+    Example:
+        '50M25N50M' with start = 100 -> [100, 149, 175, 224]. Note that start and end integers
         are inclusive, i.e. all positions at or between 100 and 149 and at or between 175 and 224
         are covered by reads.
+
+    :param cigar: str a read's cigar string, e.g. "49M165N51M"
+    :param start: int a read's start position on a chromosome
+    :return: list of integers representing cigar match start, end points, in order of matching subsequences
     """
     # if CIGAR string is a single full match (i.e. "<positive integer>M")
     # extract length of the match, return match segment.
@@ -57,8 +59,10 @@ class BamReadsProcessor():
     def __init__(self, bam_file, index_file, chroms=None, n_jobs=max_cpu(),
                  output_dir=None, unique_alignment=False, verbose=True):
         """
-        Genome coverage reader for a single RNA-seq experiment, contained in a .sam file.
-        Goal is to assemble a dictionary (chromosome, coverage array) pairs.
+        Genome coverage reader for a single RNA-seq experiment, contained in a .bam file.
+        The main method for this class is coverage_read_counts, which computes the per-chromosome
+        coverage array, saving it to a compressed sparse numpy array in the meantime, for each chromosome,
+        in parallel.
 
         :param bam_file: str .bam filename
         :param index_file: str corresponding .bai (.bam index file) filename
@@ -91,6 +95,18 @@ class BamReadsProcessor():
         self.determine_if_paired()
 
     def get_header(self):
+        """
+        Parse the header of a .bam file and extract the chromosomes and corresponding lengths
+        of the chromosomes with reads contained in the .bam file. E.g.
+
+        +----------------+-----------------+
+        |     chr        |      length     |
+        +================+=================+
+        |     chr1       |     23445432    |
+        +----------------+-----------------+
+        |     chr2       |     31192127    |
+        +----------------+-----------------+
+        """
 
         # open .bam file connection.
         bam_file = self.loader.get_data()
@@ -118,7 +134,11 @@ class BamReadsProcessor():
             self.chroms = self.header.chr.unique().tolist()
 
     def determine_if_paired(self):
-
+        """
+        Determine if a .bam file is from a paired read experiment or from a single-end read experiment
+        by studying the pattern of the first 500 reads' query names. Checks for "<query_name>.1" "<query_name>.2"
+        pattern, indicating paired reads.
+        """
         self.paired = False
         bam_file = self.loader.get_data()
 
@@ -129,7 +149,7 @@ class BamReadsProcessor():
             qnames.append(read.query_name)
             ctr += 1
 
-            if ctr > 300:
+            if ctr > 500:
                 break
 
         # close .bam file connection.
@@ -141,7 +161,21 @@ class BamReadsProcessor():
             self.paired = True
 
     def load_chromosome_reads(self, chrom):
+        """
+        Load the reads from a .bam file for one particular chromosome.
 
+        +-------------------+-------------+--------------+-------------------------------------+
+        |        qname      |      pos    |     cigar    |  qname_unpaired [for paired reads]  |
+        +===================+=============+==============+=====================================+
+        | SRR873838.292.1   |   46189662  |      101M    |              SRR873838.292          |
+        +-------------------+-------------+--------------+-------------------------------------+
+        | SRR873838.292.2   |   46189763  |  77M255N24M  |              SRR873838.292          |
+        +-------------------+-------------+----------------------------------------------------+
+
+        :param chroms: list of str names of chromosomes to load.
+        :return: pandas.DataFrame. If for paired reads file, additionally comes with qname_unpaired column and
+        is sorted by qname_unpaired
+        """
         reads = list()
         read_attributes = ['query_name', 'pos', 'cigarstring']
         bam_file = self.loader.get_data()
@@ -157,7 +191,8 @@ class BamReadsProcessor():
             # if reading paired reads and the read is paired,
             # then grab the attributes of interest from the read in question.
             if self.paired:
-                if read.is_paired:
+                # pysam encodes RNEXT field as integer: -1 for "*" and 15 for "="
+                if read.rnext != -1:
                     reads.append([getattr(read, attr) for attr in read_attributes])
 
             # otherwise (single-end reads) just grab them.
@@ -167,9 +202,10 @@ class BamReadsProcessor():
         # close .bam file connection.
         bam_file.close()
 
-        # transform .sam lines into pandas.DataFrame
+        # transform .bam lines into pandas.DataFrame
         df = DataFrame(reads
                        , columns=['qname', 'pos', 'cigar'])
+        df['pos'] = df['pos'].astype('int')
 
         # remove reads list (large memory).
         del reads
@@ -334,26 +370,3 @@ class BamReadsProcessor():
         read_count_dfs = [x[1] for x in par_output]
 
         return cov_filepaths, concat(read_count_dfs)
-
-
-if __name__ == '__main__':
-    # bam_file = '/Users/fineiskid/Downloads/ff_small.bam'
-    # bai_file = '/Users/fineiskid/Downloads/ff_small.bai'
-    # bam_file = '/Users/fineiskid/Downloads/hg_small_1.bam'
-    # bai_file = '/Users/fineiskid/Downloads/hg_small_1.bai'
-    bam_file = '/Users/fineiskid/Downloads/hg_small_2.bam'
-    bai_file = '/Users/fineiskid/Downloads/hg_small_2.bai'
-
-    from degnorm.gene_processing import GeneAnnotationProcessor
-    gap = GeneAnnotationProcessor('/Users/fineiskid/Downloads/chr1_small.gtf'
-                                  , n_jobs=1
-                                  , verbose=True)
-    exon_df = gap.run()
-    genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
-
-    bammer = BamReadsProcessor(bam_file=bam_file
-                               , index_file=bai_file)
-    dat = bammer.coverage_read_counts(genes_df)
-    print(dat[0])
-    print(dat[1].head())
-    print(bammer.paired)

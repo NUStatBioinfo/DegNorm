@@ -52,7 +52,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         idx += 1
 
     if verbose:
-        logging.info('CHROMOSOME {0}: coverage matrix shape: {1}'.format(chrom, cov_mat.shape))
+        logging.info('CHROMOSOME {0}: chromosome coverage matrix shape: {1}'.format(chrom, cov_mat.shape))
 
     # clean up coverage array data.
     del cov_vec_sp
@@ -105,7 +105,8 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         # save per-gene coverage matrices to .pkl files
         gene_cov_output_file = os.path.join(output_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
         if verbose:
-            logging.info('Saving {0} coverage matrices to {1}'.format(chrom, gene_cov_output_file))
+            logging.info('CHROMOSOME {0}: successfully parsed gene coverage matrices.'
+                         'Saving gene coverage matrices to {1}'.format(chrom, gene_cov_output_file))
 
         with open(gene_cov_output_file, 'wb') as f:
             pkl.dump(gene_cov_dict, f)

@@ -225,8 +225,8 @@ def main():
     gc.collect()
 
     # briefly summarize DegNorm input and settings.
-    logging.info('RNA sample identifiers: \n\t' + ', '.join(sample_ids))
-    logging.info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection algorithm.'
+    logging.info('RNA-seq sample identifiers: \n\t' + ', '.join(sample_ids))
+    logging.info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection.'
                  .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
     # ---------------------------------------------------------------------------- #
