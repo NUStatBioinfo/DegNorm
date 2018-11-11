@@ -130,7 +130,7 @@ def get_coverage_plots(genes, degnorm_dir, figsize=[10, 6], save_dir=None):
     # instantiate progress bar if making > 100 plots.
     use_pbar = len(cov_ldr.cov_dict) > 100
     if use_pbar:
-        pbar_step_size = int(np.floor(len(cov_ldr.cov_dict) / 20))
+        pbar_step_size = int(np.ceil(len(cov_ldr.cov_dict) / 20))
         pbar = tqdm.tqdm(total=100
                          , leave=False
                          , desc='plotting progress'
@@ -161,7 +161,7 @@ def get_coverage_plots(genes, degnorm_dir, figsize=[10, 6], save_dir=None):
 
         # update progress bar in 5% intervals
         if use_pbar:
-            if (ctr % pbar_step_size == 0) and (ctr > 0):
+            if ctr % pbar_step_size == 0:
                 pbar.update(5)
 
     # close progress bar if using one.

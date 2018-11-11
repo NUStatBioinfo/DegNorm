@@ -6,12 +6,12 @@ DegNorm is a CLI tool. You can access it through the `degnorm` command.
 You only need two types of files to supply `degnorm`: .bam (and their corresponding .bai files - [bam index files](https://www.biostars.org/p/15847/)), and a .gtf file.
 If you have `samtools` in your `$PATH`, .bai files will be created for you if you do not have them.
 
-#### 1. (Paired or single end) aligned reads data
+#### 1. (Paired or single end) aligned and sorted reads data
 At least two aligned reads files must be specieid, as inter-sample degradation normalization can't happen on a standalone 
 RNA-Seq expermient. Use `p` to refer to the total number of experiments.
 
-It is assumed your .bam files abide by the [conventions](http://samtools.sourceforge.net/SAM1.pdf) and each contain a header. If .bai files are not submitted,
-`degnorm` will look for files named after the input .bam files, but with the .bai extension. If no such file is found, `degnorm` will attempt to build one with the `samtools index` command.
+It is assumed your .bam files are **sorted** (i.e. with `samtools sort`), contain a header, and abide by the [conventions](http://samtools.sourceforge.net/SAM1.pdf). If .bai files are not submitted,
+`degnorm` will look for .bai files named after the .bam files only with the ".bai" extension. If no such file is found, `degnorm` will attempt to build one with the `samtools index` command. This will only work if the .bam files are sorted.
 Instead of specifying individual .bam and .bai files, you can just specify `--bam-dir`, a path to a directory holding the relevant .bam and .bai files.
   With `--bam-dir`, it is assumed that the .bai files are named the same as the .bam files, they just have a different extension.
 

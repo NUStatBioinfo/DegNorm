@@ -31,7 +31,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     if verbose:
         logging.info('CHROMOSOME {0}: begin loading coverage matrix.'.format(chrom))
 
-    # load up this chromosome's coverage curves (over samples).
+    # load up this chromosome's coverage curves across all samples.
     idx = 0
     for sample_id in coverage_files:
         r = re.compile('sample_{0}_{1}.npz'.format(sample_id, chrom))
@@ -64,12 +64,18 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
     # store coverage matrices in a dictionary with gene name keys
     gene_cov_dict = dict()
 
-    # Instantiate progress bar.
-    pbar = tqdm.tqdm(total=n_genes
-                     , leave=False
-                     , desc='CHROMOSOME {0}: gene coverage matrix progress'.format(chrom))
+    # Instantiate progress bar if parsing non-negligible number of genes. Update in intervals of 5%.
+    use_pbar = n_genes > 100
+    if use_pbar:
+        pbar_step_size = int(np.ceil(n_genes / 20))
+        pbar = tqdm.tqdm(total=100
+                         , leave=False
+                         , desc='CHROMOSOME {0}: gene coverage matrix progress'.format(chrom)
+                         , unit='%')
 
+    # tear out each gene's coverage matrix from chromosome's coverage matrix.
     for gene_idx in range(n_genes):
+
         gene = genes[gene_idx]
 
         # subset chromosome's gene/exon data to a single gene and
@@ -86,9 +92,13 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         # Save transposed coverage matrix so that shape is p x Li.
         gene_cov_dict[gene] = np.array(cov_mat[slicing, :].T).astype(np.float_)
 
-        pbar.update()
+        if use_pbar:
+            if (gene_idx % pbar_step_size == 0) and (gene_idx > 0):
+                pbar.update(5)
 
-    pbar.close()
+    # close progress bar if using one.
+    if use_pbar:
+        pbar.close()
 
     # free up massive memory allocation for dense coverage matrix.
     del cov_mat
@@ -105,8 +115,8 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
         # save per-gene coverage matrices to .pkl files
         gene_cov_output_file = os.path.join(output_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
         if verbose:
-            logging.info('CHROMOSOME {0}: successfully parsed gene coverage matrices.'
-                         'Saving gene coverage matrices to {1}'.format(chrom, gene_cov_output_file))
+            logging.info('CHROMOSOME {0}: successfully parsed gene coverage matrices. Saving to {1}'
+                         .format(chrom, gene_cov_output_file))
 
         with open(gene_cov_output_file, 'wb') as f:
             pkl.dump(gene_cov_dict, f)

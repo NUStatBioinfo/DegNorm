@@ -45,7 +45,8 @@ def test_pipeline(run_setup):
                 , os.path.join(THIS_DIR, 'data', 'genes.txt'))
 
     out = subprocess.run([cmd]
-                         , shell=True)
+                         , shell=True
+                         , stderr=subprocess.PIPE)
     assert out.returncode == 0
 
     # run degnorm command with test data, without downsampling, without specifying .bai files directly either.
@@ -57,5 +58,6 @@ def test_pipeline(run_setup):
                 , os.path.join(THIS_DIR, 'data', 'genes.txt'))
 
     out = subprocess.run([cmd]
-                         , shell=True)
+                         , shell=True
+                         , stderr=subprocess.PIPE)
     assert out.returncode == 0

@@ -21,7 +21,7 @@ def configure_logger(output_dir):
     logging.basicConfig(level=logging.DEBUG
                         , format='DegNorm (%(asctime)s) ---- %(message)s'
                         , handlers=[logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
-            , logging.StreamHandler()]
+                                    , logging.StreamHandler()]
                         , datefmt='%m/%d/%Y %I:%M:%S')
 
 
@@ -34,7 +34,7 @@ def welcome():
         welcome = f.readlines()
         welcome += '\n' + 'version {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
-    sys.stdout.write('\n' + ''.join(welcome) + '\n'*4)
+    # sys.stdout.write('\n' + ''.join(welcome) + '\n'*4)
     logging.info('\n' + ''.join(welcome) + '\n'*4)
 
 
@@ -115,20 +115,19 @@ def create_index_file(bam_file):
     :param bam_file: str realpath to .bam file for which we desire a .bai index file
     :return: str realpath to the created .bai file
     """
+    output_dir = os.path.dirname(bam_file)
+    bai_file = os.path.join(output_dir, bam_file[:-3] + 'bai')
+
     samtools_avail = find_software('samtools')
 
     # Note that samtools is only available for Linux and Mac OS:
     # https://github.com/samtools/samtools/blob/develop/INSTALL
     if not samtools_avail:
-        raise EnvironmentError('samtools is required to convert .bam -> .bai index files.'
-                               'samtools is not installed or is not in your PATH.')
+        raise EnvironmentError('samtools not in found in PATH. samtools is required to convert {0} -> {1}'
+                               .format(bam_file, bai_file))
 
     if not bam_file.endswith('.bam'):
         raise ValueError('{0} is not a .bam file'.format(bam_file))
-
-    output_dir = os.path.dirname(bam_file)
-    bai = os.path.basename(bam_file).split('.')[:-1][0] + '.bai'
-    bai_file = os.path.join(output_dir, bai)
 
     # check if a .bai file already exists; if it does, add salt by time.
     while os.path.isfile(bai_file):
@@ -136,8 +135,9 @@ def create_index_file(bam_file):
         bai = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.bai'
         bai_file = os.path.join(output_dir, bai)
 
-    cmd = 'samtools index {0} {1}'.format(bam_file, bai_file)
-    out = subprocess.run([cmd], shell=True)
+    cmd = 'samtools index {0} -o {1}'.format(bam_file, bai_file)
+    out = subprocess.run([cmd]
+                         , shell=True)
 
     if out.returncode != 0:
         raise ValueError('{0} was not successfully converted into a .bai file'.format(bam_file))
@@ -175,7 +175,7 @@ def parse_args():
                         , nargs='+'
                         , default=None
                         , required=False
-                        , help='Aligned read files (can be multiple; separate with space) in .bam format.'
+                        , help='Aligned read files (can be multiple; separate with space) in .bam format. '
                                '.bam files may be for paired or single-end read experiments.')
     parser.add_argument('--bai-files'
                         , nargs='+'
@@ -184,8 +184,8 @@ def parse_args():
                         , help='Input .bam index files (Can be multiple; separate with space). '
                                'Only use with --bam-files.'
                                '.bai files for files passed to --bam-files. Assumed .bai file order corresponds to '
-                               'supplied .bam files. If --bam-files is supplied and not --bai-files, it is assumed'
-                               'that you have .bai files in the same location as --bam-files, and with the same'
+                               'supplied .bam files. If --bam-files is supplied and not --bai-files, it is assumed '
+                               'that you have .bai files in the same location as --bam-files, and with the same '
                                'basename, e.g. (A01.bam, A01.bai), (sample_27.bam, sample_27.bai)')
     parser.add_argument('--bam-dir'
                         , default=None
@@ -197,8 +197,8 @@ def parse_args():
                         , '--warm-start-dir'
                         , default=None
                         , required=False
-                        , help='Previous DegNorm run output directory. Use to source'
-                               'gene coverage matrices, read counts, and parsed genome annotation data.'
+                        , help='Previous DegNorm run output directory. Use to source '
+                               'gene coverage matrices, read counts, and parsed genome annotation data. '
                                'Use this to avoid duplicating costly preprocessing over multiple runs.')
     parser.add_argument('-g'
                         , '--genome-annotation'
@@ -207,7 +207,7 @@ def parse_args():
                         , required=False
                         , help='Genome annotation file.'
                                'Must have extension .gtf or .gff.'
-                               'All non-exon regions will be removed, along with exons that appear in'
+                               'All non-exon regions will be removed, along with exons that appear in '
                                'multiple chromosomes and exons that overlap with multiple genes.')
     parser.add_argument('-o'
                         , '--output-dir'
@@ -229,23 +229,23 @@ def parse_args():
                         , type=int
                         , default=1
                         , required=False
-                        , help='Gene nucleotide downsample rate for systematic sampling of gene coverage curves.'
+                        , help='Gene nucleotide downsample rate for systematic sampling of gene coverage curves. '
                                'Integer-valued. Specifies a \'take every\' interval. '
                                'Larger value -> fewer bases sampled. '
                                'Resulting coverage matrix estimates (and plots) will be re-interpolated back '
-                               'to original size.'
+                               'to original size. '
                                'Use to speed up computation. Default is NO downsampling (i.e. downsample rate == 1.')
     parser.add_argument( '--nmf-iter'
                         , type=int
                         , default=100
                         , required=False
-                        , help='Number of iterations to perform per NMF-OA computation per gene.'
+                        , help='Number of iterations to perform per NMF-OA computation per gene. '
                                'Different than number of DegNorm iterations (--iter flag). Default = 100.')
     parser.add_argument( '--iter'
                         , type=int
                         , default=5
                         , required=False
-                        , help='Number of DegNorm iterations to perform. Default = 5.'
+                        , help='Number of DegNorm iterations to perform. Default = 5. '
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
     parser.add_argument('--minimax-coverage'
                         , type=int
@@ -267,7 +267,7 @@ def parse_args():
                         , '--cpu'
                         , type=int
                         , default=max_cpu()
-                        , help='Number of cores for running DegNorm pipeline in parallel.'
+                        , help='Number of cores for running DegNorm pipeline in parallel. '
                                'Defaults to the number of available cores - 1.')
     parser.add_argument('-v'
                         , '--version'
@@ -278,7 +278,7 @@ def parse_args():
                         , '--help'
                         , action='help'
                         , default=argparse.SUPPRESS
-                        , help='RNA-seq Degradation Normalization (DegNorm) pipeline package.'
+                        , help='RNA-seq Degradation Normalization (DegNorm) pipeline package. '
                                'Accompanies our 2018 research paper "Normalization of generalized '
                                'transcript degradation improves accuracy in RNA-seq analysis."')
 

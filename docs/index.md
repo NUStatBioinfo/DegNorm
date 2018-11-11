@@ -21,11 +21,11 @@ scores between samples.
 
 The DegNorm pipeline is comprised of the following steps
 
-1. **Load in RNA-Seq .bam files**. DegNorm also requires the presence of corresponding bam index (.bai) files. DegNorm will determine whether the RNA-Seq experiment was obtained from a paired read or single read platform.
+1. **Load in sorted .bam files**. DegNorm also requires bam index (.bai) files - these will be created for you if `samtools` is in your `$PATH`. DegNorm will determine whether the RNA-Seq experiment was obtained from a paired read or single read platform.
 
 2. **Parse a genome annotation file** (.gtf or .gff). DegNorm determines the relative start and end positions of each gene transcript and each exon comprising each gene on each chromosome. Genes occurring on multiple chromosomes and exons occurring on multiple genes are removed. The total number of genes is referred to as `n`.
 
-3. **Compute the chromosome-wide coverage** for each experiment. DegNorm does not use standard coverage tools (e.g. `geneomecov`) that do not take into account paired read overlap when computing coverage - here, every *match* segment of a read's CIGAR score augments nucleotide coverage. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are `p` experiments.
+3. **Compute the chromosome-wide coverage** for each experiment. DegNorm does not use standard coverage tools (e.g. `geneomecov`) that do not take into account paired read overlap when computing coverage - here, every *match* segment of a read's CIGAR score augments nucleotide coverage, excluding paired read overlap. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are `p` experiments.
 
 4. **Assess per-gene read counts** by counting the number of paired reads falling entirely within the start and end position of every gene. The read count matrix is a `n x p` matrix.
 
@@ -33,4 +33,10 @@ The DegNorm pipeline is comprised of the following steps
 
 6. **Fit a non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
 
-7. **Save** adjusted read counts, gene- and experiment-specific *degradation index scores*, normalized coverage matrices, and coverage visualizations to an output directory.
+7. **Save output data to an output directory**
+    - original read counts
+    - degradation-adjusted read counts
+    - gene-/experiment-specific *degradation index scores* 
+    - raw coverage matrices
+    - normalized coverage matrices
+    - DegNorm summary report
