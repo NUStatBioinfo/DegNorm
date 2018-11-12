@@ -83,7 +83,7 @@ def test_get_coverage_data(da_setup):
 
     # check that coverage matrices were saved.
     assert all([os.path.isfile(os.path.join(da_setup, 'chr1', x)) for x in
-                ['gene_1_raw_coverage.txt', 'gene_1_estimated_coverage.txt']])
+                ['GENE_1_raw_coverage.txt', 'GENE_1_estimated_coverage.txt']])
 
 
 # ----------------------------------------------------- #
