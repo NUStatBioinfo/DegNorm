@@ -85,7 +85,7 @@ After one pipeline run, we could start `degnorm` from a warm start directory (fr
     degnorm --warm-start-dir degnorm_output/DegNorm_GBM_102018 \
         -c 20 \
         -o degnorm_output \
-        -minimax-coverage 20 \
+        --minimax-coverage 20 \
         --iter 3
         
 ## Output
