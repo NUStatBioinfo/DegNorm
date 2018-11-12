@@ -3,36 +3,41 @@
 DegNorm is a CLI tool. You can access it through the `degnorm` command.
  
 ## Inputs
-You only need two types of files to supply `degnorm`
+You only need two types of files to supply `degnorm`: .bam (and their corresponding .bai files - [bam index files](https://www.biostars.org/p/15847/)), and a .gtf file.
+If you have `samtools` in your `$PATH`, .bai files will be created for you if you do not have them.
 
-#### 1. (Paired or single eng) aligned reads data
-At least two aligned reads files must be supplied, as inter-sample degradation normalization can't happen on a standalone 
-RNA-Seq expermient. Use `p` to refer to the total number of experiments. If you have `samtools` installed, feel free
-to provide .bam files - DegNorm will convert them to their text equivalent via `samtools view -h -o {.sam} {.bam}`.
+#### 1. (Paired or single end) aligned and sorted reads data
+At least two aligned reads files must be specieid, as inter-sample degradation normalization can't happen on a standalone 
+RNA-Seq expermient. Use `p` to refer to the total number of experiments.
 
-It is assumed your .sam files abide by the [conventions](https://en.wikipedia.org/wiki/SAM_(file_format)).
+It is assumed your .bam files are **sorted** (i.e. with `samtools sort`), contain a header, and abide by the [conventions](http://samtools.sourceforge.net/SAM1.pdf). If .bai files are not submitted,
+`degnorm` will look for .bai files named after the .bam files only with the ".bai" extension. If no such file is found, `degnorm` will attempt to build one with the `samtools index` command. This will only work if the .bam files are sorted.
+Instead of specifying individual .bam and .bai files, you can just specify `--bam-dir`, a path to a directory holding the relevant .bam and .bai files.
+  With `--bam-dir`, it is assumed that the .bai files are named the same as the .bam files, they just have a different extension.
+
 **You can supply paired reads files or single end reads files**.
 
 Argument    | Required? |    Meaning
 ----------- | --------- | ------------
-`-i`, `--input-files` |   Only if `--input-dir` not supplied | Individual .sam or .bam files. Any .bam files will be converted to .sam if `samtools` is available.
-`--input-dir` | Only if input files not supplied | A directory containing a set of .sam files. In this case, .bam files will be ignored.
-`-u`, `--unique-alignments` | optional flag | If specified, tells DegNorm to remove reads aligned to more than one area of the genome. Suggested for use with single end reads data.
+`--bam-files` | If neither `--warm-start-dir` nor `--bam-dir` are specified | Set of individual .bam files
+`--bai-files` | If `samtools` is not in the `$PATH` and neither `--warm-start-dir` nor `--bam-dir` are specified | Set of individual .bai files. If specified, they must be in the order corresponding to `--bam-files`.
+`--bam-dir`   | If neither `--warm-start-dir` nor `--bam-files` are specified | Directory containing .bam and .bai files for a pipeline run. It is assumed the .bai files are named after the .bam files.
+`-u`, `--unique-alignments` | optional flag | If specified, tells `degnorm` to remove reads aligned to more than one location on the genome. Suggested for use with single end reads data.
 
 #### 2. Genome annotation file
 DegNorm needs a .gtf file to determine the transcript for computing the per-gene coverage curves, which span a 
-concatenation of the coding regions only (introns are ignored). It is assumed your .gtf file abides by the [conventions](https://useast.ensembl.org/info/website/upload/gff.html)
+concatenation of the coding regions only (introns are ignored). It is assumed your .gtf file abides by the standard [conventions](https://useast.ensembl.org/info/website/upload/gff.html).
 
 Argument    | Required? |    Meaning
 ----------- | --------- | ------------
 `-g`, `--genome-annotation` | Yes | .gtf file for relevant genome.
 
 
-## Using a "warm start" directory
-Loading multiple .sam files, parsing a .gtf files, and computing per-gene cross-sample coverage matrices and read counts, can take some time, but there is really no need
-to run this process more than once for a specific set of RNA-Seq experiments. If you run the `degnorm` pipeline once, you can leverage
+## Using a warm start directory
+Loading multiple .bam files, parsing a .gtf files, and computing per-gene cross-sample coverage matrices and read counts, can take some time, but this is a one-time
+ preprocessing cost given a specific set of RNA-Seq experiments. If you run the `degnorm` pipeline once, you can leverage
 the stored coverage, read counts, and parsed transcript data from an existing DegNorm output directory to start a a new DegNorm run where all of the
-data preprocessing is already completed. When using `--warm-start-dir` you do *not* need to supply a .gtf file.
+preprocessing is completed ahead of time. When using `--warm-start-dir` you do *not* need to supply a .gtf file.
 
 Argument    | Required? |    Meaning
 ----------- | --------- | ------------
@@ -54,16 +59,27 @@ Argument    | Required? |    Meaning
 
 ## Example usage
 
-Run DegNorm with an input directory (containing multiple .sam files) with 20 threads, use 5 DegNorm iterations and 50 NMF iterations per gene per NMF iteration.
+Run `degnorm` with an input directory (containing multiple .bam files) with 20 threads, use 5 DegNorm iterations and 50 NMF iterations per gene per NMF iteration.
 Route output to a directory besides the current working directory.
 
-    degnorm --input-dir degnorm_data/GBM \
+    degnorm --bam-dir degnorm_data/GBM \
+        -g human.gtf \
+        -c 20 \
+        --nmf-iter 50 \
+        -o degnorm_output
+        
+        
+This is equivalent to simply enumerating the .bam files individually. Here, since .bai files are not explicitly specified, `degnorm` will look for 
+the files "degnorm_data/GBM/S1.bai" and  "degnorm_data/GBM/S2.bai":
+
+    degnorm --bam-files degnorm_data/GBM/S1.bam degnorm_data/GBM/S2.bam \
         -g human.gtf \
         -c 20 \
         --nmf-iter 50 \
         -o degnorm_output
 
-Run DegNorm on from a warm start directory (from a previous run). This time, do not include genes with a maximum coverage
+
+After one pipeline run, we could start `degnorm` from a warm start directory (from a previous run). This time, do not include genes with a maximum coverage
 (across all samples) less than 20, and only run 3 DegNorm iterations.
 
     degnorm --warm-start-dir degnorm_output/DegNorm_GBM_102018 \

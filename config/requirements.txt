@@ -8,4 +8,5 @@ joblib==0.12.2
 pytest==3.2.1
 seaborn==0.9.0
 pandas==0.20.3
+pysam==0.15.1
 pytest==3.2.1

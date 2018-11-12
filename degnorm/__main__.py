@@ -38,32 +38,27 @@ def main():
         sample_ids = load_dat['sample_ids']
 
     # ---------------------------------------------------------------------------- #
-    # Path 2: .sam file preprocessing path.
-    # If supplied with .bam files (NOT using a warm-start),
-    # convert them to .sam; further, determine intersection of chromosomes across samples.
+    # Path 2: .bam file preprocessing path.
+    # Determine intersection of chromosomes across samples from .bam files
     # ---------------------------------------------------------------------------- #
     else:
         sample_ids = list()
         chroms = list()
         cov_files = OrderedDict()
         read_count_dict = dict()
-        n_samples = len(args.input_files)
+        n_samples = len(args.bam_files)
 
+        # load each .bam file's header, find joint intersection of read chromosomes.
         for idx in range(n_samples):
-            sam_file = args.input_files[idx]
+            header_dat = BamReadsProcessor(args.bam_files[idx]
+                                            , index_file=args.bai_files[idx]).header
+            new_chroms = header_dat.chr.values.tolist()
 
-            # if file actually .bam, convert to .sam.
-            if sam_file.endswith('.bam'):
-                logging.info('Converting input file {0} into .sam file format...'
-                             .format(sam_file))
-                args.input_files[idx] = bam_to_sam(sam_file)
-
-            # Take intersection of chromosomes over samples.
-            if idx == 0:
-                chroms = SamLoader(args.input_files[idx]).find_chromosomes()
+            if not chroms:
+                chroms = new_chroms
 
             else:
-                chroms = np.intersect1d(chroms, SamLoader(args.input_files[idx]).find_chromosomes()).tolist()
+                chroms = np.intersect1d(chroms, new_chroms).tolist()
 
         # ---------------------------------------------------------------------------- #
         # Load .gtf or .gff files and run processing pipeline.
@@ -84,22 +79,21 @@ def main():
                      '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
         # ---------------------------------------------------------------------------- #
-        # Load .sam or .bam files, parse into coverage arrays, store them, and
-        # compute gene read counts.
+        # Load .bam files while simultaneously parsing into coverage arrays. Store chromosome
+        # coverage arrays and and compute gene read counts.
         # ---------------------------------------------------------------------------- #
-        # iterate over .sam files; compute each sample's chromosomes' coverage arrays
+
+        # iterate over .bam files; compute each sample's chromosomes' coverage arrays
         # and save them to .npz files.
-
-
         for idx in range(n_samples):
             logging.info('Loading RNA-seq data file {0} / {1}'.format(idx + 1, n_samples))
-            sam_file = args.input_files[idx]
 
-            reader = ReadsProcessor(sam_file=sam_file
-                                    , chroms=chroms
-                                    , n_jobs=n_jobs
-                                    , output_dir=output_dir
-                                    , verbose=True)
+            reader = BamReadsProcessor(bam_file=args.bam_files[idx]
+                                       , index_file=args.bai_files[idx]
+                                       , chroms=chroms
+                                       , n_jobs=n_jobs
+                                       , output_dir=output_dir
+                                       , verbose=True)
 
             sample_id = reader.sample_id
             sample_ids.append(sample_id)
@@ -115,7 +109,6 @@ def main():
         # Merge per-sample gene read count matrices:
         # obtain read count DataFrame containing X, an n (genes) x p (samples) matrix.
         # ---------------------------------------------------------------------------- #
-
         read_count_df = read_count_dict[sample_ids[0]]
         read_count_df.rename(columns={'read_count': sample_ids[0]}, inplace=True)
 
@@ -232,8 +225,8 @@ def main():
     gc.collect()
 
     # briefly summarize DegNorm input and settings.
-    logging.info('RNA sample identifiers: \n\t' + ', '.join(sample_ids))
-    logging.info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection algorithm.'
+    logging.info('RNA-seq sample identifiers: \n\t' + ', '.join(sample_ids))
+    logging.info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection.'
                  .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
     # ---------------------------------------------------------------------------- #
@@ -290,7 +283,7 @@ def main():
     logging.info('Rendering DegNorm summary report.')
     render_report(data_dir=output_dir
                   , genenmfoa=nmfoa
-                  , input_files=args.input_files if not args.warm_start_dir else [args.warm_start_dir]
+                  , bam_files=args.bam_files if not args.warm_start_dir else [args.warm_start_dir]
                   , sample_ids=sample_ids
                   , top_n_genes=5
                   , output_dir=output_dir)

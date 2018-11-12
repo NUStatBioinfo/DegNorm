@@ -3,6 +3,7 @@ import os
 import pytest
 import pkg_resources
 
+
 def parse_args():
     """
     Obtain degnorm CLI parameters.
@@ -32,7 +33,6 @@ def main():
     print('RUNNING DegNorm TESTS...')
     tests_dir = pkg_resources.resource_filename('degnorm', 'tests')
     pytest.main(['-x', tests_dir])
-    print('ALL TESTS PASSING.')
 
 
 if __name__ == "__main__":
