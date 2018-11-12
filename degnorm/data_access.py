@@ -155,7 +155,7 @@ def get_coverage_plots(genes, degnorm_dir, figsize=[10, 6], save_dir=None):
                                        , gene=gene
                                        , chrom=chrom
                                        , sample_ids=cov_ldr.sample_ids
-                                       , save_dir=degnorm_dir if not save_dir else save_dir
+                                       , save_dir=save_dir
                                        , figsize=figsize))
         ctr += 1
 
