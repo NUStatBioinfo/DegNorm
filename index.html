@@ -166,13 +166,13 @@ scores between samples.</p>
 <p>The DegNorm pipeline is comprised of the following steps</p>
 <ol>
 <li>
-<p><strong>Load in RNA-Seq .sam files</strong>. If passed .bam files, DegNorm will attempt to convert them to .sam files if you have <code>samtools</code> installed. It will also determine whether the RNA-Seq experiment was obtained from a paired read or single read platform.</p>
+<p><strong>Load in sorted .bam files</strong>. DegNorm also requires bam index (.bai) files - these can be created for you if <code>samtools</code> is in your <code>$PATH</code>. DegNorm will determine whether the RNA-Seq experiment was obtained from a paired read or single read platform.</p>
 </li>
 <li>
 <p><strong>Parse a genome annotation file</strong> (.gtf or .gff). DegNorm determines the relative start and end positions of each gene transcript and each exon comprising each gene on each chromosome. Genes occurring on multiple chromosomes and exons occurring on multiple genes are removed. The total number of genes is referred to as <code>n</code>.</p>
 </li>
 <li>
-<p><strong>Compute the chromosome-wide coverage</strong> for each experiment. DegNorm does not use standard coverage tools (e.g. <code>geneomecov</code>) that do not take into account paired read overlap when computing coverage - here, every <em>match</em> segment of a read's CIGAR score augments nucleotide coverage. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are <code>p</code> experiments.</p>
+<p><strong>Compute the chromosome-wide coverage</strong> for each experiment. DegNorm does not use standard coverage tools (e.g. <code>geneomecov</code>) that do not take into account paired read overlap when computing coverage - here, every <em>match</em> segment of a read's CIGAR score augments nucleotide coverage, excluding paired read overlap. For each experiment, for each chromosome, we save coverage in a compressed Numpy array. There are <code>p</code> experiments.</p>
 </li>
 <li>
 <p><strong>Assess per-gene read counts</strong> by counting the number of paired reads falling entirely within the start and end position of every gene. The read count matrix is a <code>n x p</code> matrix.</p>
@@ -184,7 +184,15 @@ scores between samples.</p>
 <p><strong>Fit a non-negative matrix factorization with over-approximation</strong> model, as outlined in the central DegNorm paper.</p>
 </li>
 <li>
-<p><strong>Save</strong> adjusted read counts, gene- and experiment-specific <em>degradation index scores</em>, normalized coverage matrices, and coverage visualizations to an output directory.</p>
+<p><strong>Save output data to an output directory</strong></p>
+<ul>
+<li>original read counts</li>
+<li>degradation-adjusted read counts</li>
+<li>gene-/experiment-specific <em>degradation index scores</em> </li>
+<li>raw coverage matrices</li>
+<li>normalized coverage matrices</li>
+<li>DegNorm summary report</li>
+</ul>
 </li>
 </ol></div>
         
@@ -240,5 +248,5 @@ scores between samples.</p>
 
 <!--
 MkDocs version : 1.0.4
-Build Date UTC : 2018-11-02 04:18:03
+Build Date UTC : 2018-11-12 01:29:34
 -->
