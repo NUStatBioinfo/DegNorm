@@ -54,7 +54,7 @@ Argument    | Required? |    Meaning
 `--iter` | No | Number of whole DegNorm iterations. Default is 5.
 `--minimax-coverage` | No | Minimum cross-sample maximum coverage for a gene before it is included in the DegNorm pipeline. Can be used to exclude relatively low-coverage genes.
  `-s`, `--skip-baseline-selection` | No | EXPERIMENTAL. Flag to skip baseline selection, will greatly speed up DegNorm iterations.
- `-c`, `--cpu` | No | Integer number of threads. The more the better.
+ `-p`, `--proc-per-node` | No | Integer number of processes to spawn per compute node. The more the better.
 
 
 ## Example usage
@@ -64,7 +64,7 @@ Route output to a directory besides the current working directory.
 
     degnorm --bam-dir degnorm_data/GBM \
         -g human.gtf \
-        -c 20 \
+        -p 20 \
         --nmf-iter 50 \
         -o degnorm_output
         
@@ -74,7 +74,7 @@ the files "degnorm_data/GBM/S1.bai" and  "degnorm_data/GBM/S2.bai":
 
     degnorm --bam-files degnorm_data/GBM/S1.bam degnorm_data/GBM/S2.bam \
         -g human.gtf \
-        -c 20 \
+        -p 20 \
         --nmf-iter 50 \
         -o degnorm_output
 
@@ -83,7 +83,7 @@ After one pipeline run, we could start `degnorm` from a warm start directory (fr
 (across all samples) less than 20, and only run 3 DegNorm iterations.
 
     degnorm --warm-start-dir degnorm_output/DegNorm_GBM_102018 \
-        -c 20 \
+        -p 20 \
         -o degnorm_output \
         --minimax-coverage 20 \
         --iter 3

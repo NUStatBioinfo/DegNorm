@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+
+# ---------------------------------------------------------------------------- #
+# DegNorm CLI entrypoint for use on a single node with hyperthreading.
+# ---------------------------------------------------------------------------- #
+
+import sys
 from degnorm.reads import *
 from degnorm.coverage import *
 from degnorm.gene_processing import *
@@ -6,7 +13,6 @@ from degnorm.nmf import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
 from collections import OrderedDict
-import sys
 
 
 def main():
@@ -15,7 +21,7 @@ def main():
     # Load CLI arguments, display welcome message, create output directory
     # ---------------------------------------------------------------------------- #
     args = parse_args()
-    n_jobs = args.cpu
+    n_jobs = args.proc_per_node
     output_dir = create_output_dir(args.output_dir)
     configure_logger(output_dir)
     welcome()

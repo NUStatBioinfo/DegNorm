@@ -1,5 +1,6 @@
 import multiprocessing as mp
 import logging
+import warnings
 import sys
 import re
 import numpy as np
@@ -12,18 +13,22 @@ import pkg_resources
 import gc
 
 
-def configure_logger(output_dir):
+def configure_logger(output_dir=None):
     """
     Configure DegNorm logger. Save log to file in output directory and route to stdout.
 
     :param output_dir: str path to DegNorm run output dir where degnorm.log file to be written.
     """
+    if output_dir:
+        handlers = [logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
+                                        , logging.StreamHandler()]
+    else:
+        handlers = [logging.StreamHandler()]
+
     logging.basicConfig(level=logging.DEBUG
                         , format='DegNorm (%(asctime)s) ---- %(message)s'
-                        , handlers=[logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
-                                    , logging.StreamHandler()]
+                        , handlers=handlers
                         , datefmt='%m/%d/%Y %I:%M:%S')
-
 
 def welcome():
     """
@@ -79,6 +84,9 @@ def subset_to_chrom(df, chrom, reindex=False):
 
 
 def max_cpu():
+    """
+    :return: int number of CPUs available on a node minus 1
+    """
     return mp.cpu_count() - 1
 
 
@@ -164,7 +172,7 @@ def split_into_chunks(x, n):
     return out
 
 
-def parse_args():
+def argparser():
     """
     Obtain degnorm CLI parameters.
 
@@ -235,13 +243,13 @@ def parse_args():
                                'Resulting coverage matrix estimates (and plots) will be re-interpolated back '
                                'to original size. '
                                'Use to speed up computation. Default is NO downsampling (i.e. downsample rate == 1.')
-    parser.add_argument( '--nmf-iter'
+    parser.add_argument('--nmf-iter'
                         , type=int
                         , default=100
                         , required=False
                         , help='Number of iterations to perform per NMF-OA computation per gene. '
                                'Different than number of DegNorm iterations (--iter flag). Default = 100.')
-    parser.add_argument( '--iter'
+    parser.add_argument('--iter'
                         , type=int
                         , default=5
                         , required=False
@@ -263,12 +271,14 @@ def parse_args():
                         , action='store_true'
                         , help='Only retain reads that were uniquely aligned. All reads with '
                                'the flag "NH:i:<x>" with x > 1 will be dropped.')
-    parser.add_argument('-c'
-                        , '--cpu'
+    parser.add_argument('-p'
+                        , '--proc-per-node'
                         , type=int
+                        , required=False
                         , default=max_cpu()
-                        , help='Number of cores for running DegNorm pipeline in parallel. '
-                               'Defaults to the number of available cores - 1.')
+                        , help='Number of processes to spawn per node, for within-node parallelization.'
+                               'Defaults to the number of available cores (on the worker node) - 1. '
+                               'If too high for a given node, reduce to the node\'s default.')
     parser.add_argument('-v'
                         , '--version'
                         , action='version'
@@ -282,14 +292,26 @@ def parse_args():
                                'Accompanies our 2018 research paper "Normalization of generalized '
                                'transcript degradation improves accuracy in RNA-seq analysis."')
 
+    return parser
+
+
+def parse_args(mpi=False):
+    """
+    Parse command line arguments.
+
+    :param mpi: Boolean is DegNorm being run in MPI mode?
+    :return:
+    """
+    parser = argparser()
     args = parser.parse_args()
 
     # check validity of cores selection.
-    avail_cores = max_cpu() + 1
-    if args.cpu > avail_cores:
-        logging.warning('{0} is greater than the number of available cores. Reducing to {1}'
-                        .format(args.cpu, avail_cores))
-        args.cpu = avail_cores
+    if not mpi:
+        max_ppn = max_cpu() + 1
+        if args.proc_per_node > max_ppn:
+            warnings.warn('{0} is greater than the number of available cores ({1}). Reducing to {2}'
+                          .format(args.proc_per_node, max_ppn, max_ppn - 1))
+            args.proc_per_node = max_ppn - 1
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
@@ -440,9 +462,8 @@ def parse_args():
             raise ValueError('Must input >= 2 unique aligned reads files! Cannot estimate coverage curve matrix '
                              'approximations from a single experiment.')
 
-
     return args
 
 
 if __name__ == '__main__':
-    print(parse_args())
+    print(parse_args(mpi=False))
