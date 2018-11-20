@@ -4,7 +4,11 @@
 # DegNorm CLI entrypoint for use in a multi-node MPI-enabled setting.
 # ---------------------------------------------------------------------------- #
 
-import sys
+try:
+    from mpi4py import MPI
+except ImportError as e:
+    raise e
+
 from degnorm.reads import *
 from degnorm.coverage import *
 from degnorm.gene_processing import *
@@ -13,7 +17,7 @@ from degnorm.nmf import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
 from collections import OrderedDict
-from mpi4py import MPI
+import sys
 
 
 COMM = MPI.COMM_WORLD
@@ -30,7 +34,7 @@ def mpi_logging_info(msg):
 
     :param msg: message to send to logger
     """
-    logging.info('({rank}/{size}) ---- {msg}'.format(rank=RANK, size=SIZE, msg=msg))
+    logging.info('({rank}/{size}) -- {msg}'.format(rank=RANK, size=SIZE, msg=msg))
 
 
 def main():
@@ -47,9 +51,10 @@ def main():
 
     if RANK == 0:
         output_dir = create_output_dir(args.output_dir)
-        configure_logger(output_dir=None)
+        configure_logger(output_dir=None
+                         , mpi=True)
         welcome()
-        mpi_logging_info('DegNorm output directory -- {0}'.format(output_dir))
+        mpi_logging_info('DegNorm save directory: {0}'.format(output_dir))
 
     else:
         output_dir = None
@@ -150,7 +155,6 @@ def main():
         # (Each worker gets ~ same number of .bam files to process.)
         # ---------------------------------------------------------------------------- #
         sample_ids = list()
-        chroms = list()
         cov_files = dict()
         read_count_dict = dict()
 
@@ -159,7 +163,8 @@ def main():
         my_files_idx = split_into_chunks(range(n_samples)
                                          , n=SIZE)
         for idx in my_files_idx[RANK]:
-            mpi_logging_info('Loading RNA-seq data file {0}/{1}'.format(idx + 1, n_samples))
+            mpi_logging_info('Loading RNA-seq data file {0} -- {1}/{2}'
+                             .format(args.bam_files[idx], idx + 1, n_samples))
 
             reader = BamReadsProcessor(bam_file=args.bam_files[idx]
                                        , index_file=args.bai_files[idx]

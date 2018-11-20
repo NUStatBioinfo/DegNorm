@@ -13,22 +13,26 @@ import pkg_resources
 import gc
 
 
-def configure_logger(output_dir=None):
+def configure_logger(output_dir=None, mpi=False):
     """
     Configure DegNorm logger. Save log to file in output directory and route to stdout.
 
     :param output_dir: str path to DegNorm run output dir where degnorm.log file to be written.
+    :param mpi: Bool is user running degnorm_mpi?
     """
+    handlers = [logging.StreamHandler()]
     if output_dir:
-        handlers = [logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
-                                        , logging.StreamHandler()]
-    else:
-        handlers = [logging.StreamHandler()]
+        handlers += [logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))]
+
+    fmt = 'DegNorm (%(asctime)s) ---- %(message)s'
+    if mpi:
+        fmt = 'DegNorm MPI (%(asctime)s) ---- %(message)s'
 
     logging.basicConfig(level=logging.DEBUG
-                        , format='DegNorm (%(asctime)s) ---- %(message)s'
+                        , format=fmt
                         , handlers=handlers
                         , datefmt='%m/%d/%Y %I:%M:%S')
+
 
 def welcome():
     """
@@ -39,7 +43,6 @@ def welcome():
         welcome = f.readlines()
         welcome += '\n' + 'version {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
-    # sys.stdout.write('\n' + ''.join(welcome) + '\n'*4)
     logging.info('\n' + ''.join(welcome) + '\n'*4)
 
 
@@ -50,13 +53,13 @@ def create_output_dir(output_dir):
     :param output_dir: str desired path to DegNorm output directory
     :return: str path to newly created output directory
     """
-    output_dir = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
-    if os.path.isdir(output_dir):
+    dir_to_make = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+    while os.path.isdir(dir_to_make):
         time.sleep(2)
-        output_dir = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+        dir_to_make = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
 
-    os.makedirs(output_dir)
-    return output_dir
+    os.makedirs(dir_to_make)
+    return dir_to_make
 
 
 def subset_to_chrom(df, chrom, reindex=False):
@@ -315,7 +318,7 @@ def parse_args(mpi=False):
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
-        raise NotADirectoryError('Cannot find output-dir {0}'.format(args.output_dir))
+        raise NotADirectoryError('Cannot find output directory {0} for saving output'.format(args.output_dir))
 
     # ensure that user has supplied fresh .bam/.bai files or a warm start directory.
     if (not args.bam_files and not args.bam_dir) and (not args.warm_start_dir):
