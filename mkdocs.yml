@@ -4,6 +4,7 @@ nav:
 - How-Tos:
     - 'Installation': 'howtos/installation.md'
     - 'Running DegNorm': 'howtos/run_the_pipeline.md'
+    - 'Speed Enhancements': 'howtos/speedups.md'
     - 'Posthoc Analysis': 'howtos/posthoc_analysis.md'
 - About:
     - 'License': 'about/license.md'

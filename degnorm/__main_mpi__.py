@@ -184,7 +184,7 @@ def main():
         gc.collect()
 
         # consolidate each worker's sample_ids, cov_files dictionary, and read_count DF dictionar on to master.
-        sample_ids = flatten_2d(COMM.gather(sample_ids, root=0)).tolist() # ONLY MASTER HAS sample_ids.
+        sample_ids = flatten_2d(COMM.gather(sample_ids, root=0)).tolist()
         cov_files_unordered = {k: v for d in COMM.gather(cov_files, root=0) for k, v in d.items()}
         read_count_dict = {k: v for d in COMM.gather(read_count_dict, root=0) for k, v in d.items()}
 
@@ -198,8 +198,9 @@ def main():
         else:
             cov_files = None
 
-        # give everyone the ordered cov_files.
+        # give everyone the ordered cov_files and sample_ids.
         cov_files = COMM.bcast(cov_files, root=0)
+        sample_ids = COMM.bcast(sample_ids, root=0)
 
         # ---------------------------------------------------------------------------- #
         # Master to merge per-sample gene read count matrices:
@@ -260,9 +261,9 @@ def main():
             exon_df = None
             chroms = None
 
+        # give everyone the exon data and updated chromosome set for coverage matrix parsing.
         exon_df = COMM.bcast(exon_df, root=0)
         chroms = COMM.bcast(chroms, root=0)
-        # COMM.Barrier()  # need this?
 
         # ---------------------------------------------------------------------------- #
         # Slice up genome coverage matrix for each gene according to exon positioning.
@@ -344,15 +345,20 @@ def main():
         mpi_logging_info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection.'
                          .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
-    # # ---------------------------------------------------------------------------- #
-    # # Run NMF.
-    # # ---------------------------------------------------------------------------- #
-    #
-    # # joblib overhead: specify temp folder if not in environment.
-    # joblib_folder = os.environ.get('JOBLIB_TEMP_FOLDER')
-    # if not joblib_folder:
-    #     os.environ['JOBLIB_TEMP_FOLDER'] = output_dir
-    #
+    else:
+        gene_cov_dict = None
+        read_count_df = None
+
+    # broadcast per-gene coverage data and read counts.
+    gene_cov_dict = COMM.bcast(gene_cov_dict, root=0)
+    read_count_df = COMM.bcast(read_count_df, root=0)
+
+    mpi_logging_info('Dimensions of read_count_df: {0}'.format(read_count_df.shape))
+
+    # ---------------------------------------------------------------------------- #
+    # Run NMF.
+    # ---------------------------------------------------------------------------- #
+
     # logging.info('Executing NMF-OA over-approximation algorithm...')
     # nmfoa = GeneNMFOA(degnorm_iter=args.iter
     #                   , nmf_iter=args.nmf_iter
