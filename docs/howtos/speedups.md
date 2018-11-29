@@ -43,6 +43,10 @@ offering 50%+ DegNorm iteration time savings.
 
 ![gbm_dsample_SEQC_ROC](../img/dsamp_comparo_SEQC.png)
 
+To run DegNorm with downsampling, add `-d <take every>` (full option `--downsample-rate <take every>`) where
+ `take every` is the integer step size for the systematic sample. Note that genes with total concatenated exon length
+ less than the downsample rate will not be included in the DegNorm pipeline.
+
 
 
 ## Skipping baseline selection
@@ -58,11 +62,16 @@ but for those who are seeking *ballpark* DegNorm results in an hour or two, this
 
 The impact of skipping baseline selection is experiment-specific, and is likely
 due to the nature and extent of RNA degradation present in the samples. As is shown in the figure below,
-the DegNorm-without-baseline-selection ROC curve in the SEQC AA vs. AB is negatively impacted over the original, while the GBM p-value ECDF
- maintains its advantage over the existing methods' curves.
- 
- 
+the skipping baseline selection negatively impacts the SEQC AA/AB DE ROC curve.
 
+![nbs_roc_comparo](../img/nbs_roc_comparo.png)
+
+At the same time, DegNorm still retains its
+advantage over the existing normalization methods with respect to GBM p-value ECDF curves, even while skipping baseline selection.
+ 
+![nbs_ecdf_comparo](../img/nbs_ecdf_comparo.png)
+
+Run DegNorm without baseline selection at your own risk by adding the `--skip-baseline-selection` flag at the command line.
 
 ## v.0.1.1 MPI release
 The next `degnorm` release will feature an MPI implementation for cross-node .bam file processing.
