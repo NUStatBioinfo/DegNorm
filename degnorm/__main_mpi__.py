@@ -177,37 +177,36 @@ def main():
             sample_ids.append(sample_id)
             cov_files[sample_id], read_count_dict[sample_id] = reader.coverage_read_counts(genes_df)
 
-        mpi_logging_info('Successfully processed chromosome read coverage and gene read counts for all {0} experiments'
-                         .format(len(sample_ids)))
-
         del reader
         gc.collect()
 
-        # consolidate each worker's sample_ids, cov_files dictionary, and read_count DF dictionar on to master.
-        sample_ids = flatten_2d(COMM.gather(sample_ids, root=0)).tolist()
-        cov_files_unordered = {k: v for d in COMM.gather(cov_files, root=0) for k, v in d.items()}
-        read_count_dict = {k: v for d in COMM.gather(read_count_dict, root=0) for k, v in d.items()}
+        # everyone gives sample_ids, cov_file map, and read_count DF dictionaries to master.
+        sample_ids = COMM.gather(sample_ids, root=0)
+        cov_files = COMM.gather(cov_files, root=0)
+        read_count_dict = COMM.gather(read_count_dict, root=0)
 
-        # order cov_files according to the order of sample_ids.
+        # ---------------------------------------------------------------------------- #
+        # Master to merge per-sample gene read count matrices:
+        # obtain read count DataFrame containing X, an n (genes) x p (samples) matrix.
+        # Master also to order cov_files according to the order of sample_ids.
+        # ---------------------------------------------------------------------------- #
         if RANK == 0:
+
+            # collapse sample_ids and read_count_dict from list of lists to something useful.
+            sample_ids = flatten_2d(sample_ids).tolist()
+            cov_files_unordered = {k: v for d in cov_files for k, v in d.items()}
+            read_count_dict = {k: v for d in read_count_dict for k, v in d.items()}
+
+            # order the cov_files by sample_id.
             cov_files = OrderedDict()
 
             for sample_id in sample_ids:
                 cov_files[sample_id] = cov_files_unordered.get(sample_id)
 
-        else:
-            cov_files = None
-
-        # give everyone the ordered cov_files and sample_ids.
-        cov_files = COMM.bcast(cov_files, root=0)
-        sample_ids = COMM.bcast(sample_ids, root=0)
-
-        # ---------------------------------------------------------------------------- #
-        # Master to merge per-sample gene read count matrices:
-        # obtain read count DataFrame containing X, an n (genes) x p (samples) matrix.
-        # Master does this, but everybody will need read_count_df.
-        # ---------------------------------------------------------------------------- #
-        if RANK == 0:
+            # Celebrate successful parsing of .bam files.
+            mpi_logging_info('Successfully processed chromosome read coverage and gene read counts for all experiments.'
+                             .format(len(sample_ids)))
+            mpi_logging_info('RNA-seq sample identifiers: \n\t' + ', '.join(sample_ids))
 
             read_count_df = read_count_dict[sample_ids[0]]
             read_count_df.rename(columns={'read_count': sample_ids[0]}, inplace=True)
@@ -261,9 +260,12 @@ def main():
             exon_df = None
             chroms = None
 
-        # give everyone the exon data and updated chromosome set for coverage matrix parsing.
+        # give everyone the exon data, updated chromosome set,
+        # sample_ids, and coverage files for coverage matrix parsing
         exon_df = COMM.bcast(exon_df, root=0)
         chroms = COMM.bcast(chroms, root=0)
+        cov_files = COMM.bcast(cov_files, root=0)
+        sample_ids = COMM.bcast(sample_ids, root=0)
 
         # ---------------------------------------------------------------------------- #
         # Slice up genome coverage matrix for each gene according to exon positioning.
@@ -341,7 +343,6 @@ def main():
         gc.collect()
 
         # briefly summarize DegNorm input and settings.
-        mpi_logging_info('RNA-seq sample identifiers: \n\t' + ', '.join(sample_ids))
         mpi_logging_info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection.'
                          .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
