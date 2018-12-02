@@ -27,7 +27,8 @@ HOST = MPI.Get_processor_name()
 WORKER_NODES = list(range(SIZE))
 
 # ensure we have at least 2 nodes.
-assert SIZE > 1
+if SIZE <= 1:
+    raise RuntimeError('Must run degnorm_mpi with at least 2 workers.')
 
 
 def mpi_logging_info(msg):
@@ -275,7 +276,7 @@ def main():
         # ---------------------------------------------------------------------------- #
         my_chrom_idx = split_into_chunks(chroms
                                          , n=SIZE)
-        my_chroms = [chroms[idx] for idx in my_chrom_idx[RANK]]
+        my_chroms = my_chrom_idx[RANK]
         gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(my_chroms))
                        , verbose=0
                        , backend='threading')(delayed(gene_coverage)(

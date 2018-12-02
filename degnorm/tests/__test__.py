@@ -37,12 +37,15 @@ def main():
     # if MPI available and > 1 node available, run pipeline test for degnorm_mpi.
     try:
         from mpi4py import MPI
-        COMM = MPI.COMM_WORLD
 
-        if COMM.size > 1:
+        # try running degnorm_mpi test if there are > 1 nodes available. O/w skip it.
+        try:
             pytest.main([os.path.join(tests_dir, 'mpi_test_pipeline.py')])
 
-    except ImportError as e:
+        except RuntimeError:
+            pass
+
+    except ImportError:
         pass
 
 
