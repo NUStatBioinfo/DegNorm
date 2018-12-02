@@ -13,7 +13,7 @@ from degnorm.reads import *
 from degnorm.coverage import *
 from degnorm.gene_processing import *
 from degnorm.data_access import *
-from degnorm.nmf import *
+from degnorm.nmf_mpi import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
 from collections import OrderedDict
@@ -25,6 +25,9 @@ SIZE = COMM.size
 RANK = COMM.rank
 HOST = MPI.Get_processor_name()
 WORKER_NODES = list(range(SIZE))
+
+# ensure we have at least 2 nodes.
+assert SIZE > 1
 
 
 def mpi_logging_info(msg):
@@ -96,7 +99,6 @@ def main():
     # Determine intersection of chromosomes across samples from .bam files
     # ---------------------------------------------------------------------------- #
     else:
-
         # Have master node assess chromosomes to be included in DegNorm pipeline run.
         if RANK == 0:
             chroms = list()
@@ -180,7 +182,7 @@ def main():
         del reader
         gc.collect()
 
-        # everyone gives sample_ids, cov_file map, and read_count DF dictionaries to master.
+        # everyone gives sample_ids, cov_file map, and read_counts to master.
         sample_ids = COMM.gather(sample_ids, root=0)
         cov_files = COMM.gather(cov_files, root=0)
         read_count_dict = COMM.gather(read_count_dict, root=0)
@@ -256,7 +258,7 @@ def main():
             chroms = read_count_df.chr.unique().tolist()
 
         else:
-            # only MASTER has genes_df and read_count_df.
+            # only MASTER has genes_df and read_count_df. Everyone else will get them later on.
             exon_df = None
             chroms = None
 
@@ -359,46 +361,60 @@ def main():
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
+    if RANK == 0:
+        mpi_logging_info('Begin executing NMF-OA over-approximation algorithm...')
 
-    # logging.info('Executing NMF-OA over-approximation algorithm...')
-    # nmfoa = GeneNMFOA(degnorm_iter=args.iter
-    #                   , nmf_iter=args.nmf_iter
-    #                   , downsample_rate=args.downsample_rate
-    #                   , n_jobs=n_jobs
-    #                   , skip_baseline_selection=args.skip_baseline_selection)
-    # estimates = nmfoa.run(gene_cov_dict
-    #                       , reads_dat=read_count_df[sample_ids].values.astype(np.float_))
-    #
-    # # restore original environment.
-    # if not joblib_folder:
-    #     del os.environ['JOBLIB_TEMP_FOLDER']
-    #
-    # # ---------------------------------------------------------------------------- #
-    # # Save results.
-    # # ---------------------------------------------------------------------------- #
-    # logging.info('Saving NMF-OA output:\n'
-    #              '\t-- degradation index scores --\n'
-    #              '\t-- adjusted read counts --\n'
-    #              '\t-- coverage curve estimates --')
-    # nmfoa.save_results(estimates
-    #                    , gene_manifest_df=genes_df
-    #                    , output_dir=output_dir
-    #                    , sample_ids=sample_ids)
-    #
-    # # ---------------------------------------------------------------------------- #
-    # # Generate coverage curve plots if -g/--genes were specified.
-    # # ---------------------------------------------------------------------------- #
-    # if args.plot_genes:
-    #     plot_genes = np.intersect1d(args.plot_genes, nmfoa.genes)
-    #
-    #     if len(plot_genes) > 0:
-    #
-    #         logging.info('Generating coverage curve plots for specified genes.')
-    #         out = get_coverage_plots(plot_genes
-    #                                  , degnorm_dir=output_dir
-    #                                  , figsize=[10, 6]
-    #                                  , save_dir=output_dir)
-    #
+    nmfoa_output = run_gene_nmfoa_mpi(COMM
+                                      , cov_dat=gene_cov_dict
+                                      , reads_dat=read_count_df[sample_ids].values.astype(np.float_)
+                                      , degnorm_iter=args.iter
+                                      , nmf_iter=args.nmf_iter
+                                      , downsample_rate=args.downsample_rate
+                                      , n_jobs=n_jobs
+                                      , skip_baseline_selection=args.skip_baseline_selection)
+
+    # ---------------------------------------------------------------------------- #
+    # Save results.
+    # ---------------------------------------------------------------------------- #
+    if RANK == 0:
+        mpi_logging_info('Saving NMF-OA output:\n'
+                         '\t-- degradation index scores --\n'
+                         '\t-- adjusted read counts --\n'
+                         '\t-- coverage curve estimates --\n')
+
+        save_results(genes_df
+                     , estimates=nmfoa_output['estimates']
+                     , rho=nmfoa_output['rho']
+                     , x_adj=nmfoa_output['x_adj']
+                     , ran_baseline_selection=nmfoa_output['ran_baseline_selection']
+                     , sample_ids=sample_ids
+                     , output_dir=output_dir)
+
+        if args.plot_genes:
+            plot_genes = np.intersect1d(args.plot_genes, list(nmfoa_output['estimates'].keys()))
+            plot_genes = split_into_chunks(plot_genes
+                                           , n=SIZE)
+
+            # if --plot-genes < number of workers...
+            if len(plot_genes) < SIZE:
+                plot_genes += [[None]] * (SIZE - len(plot_genes))
+
+        else:
+            plot_genes = [[None]] * SIZE
+
+    # master disseminates genes for plotting.
+    plot_genes = COMM.scatter(plot_genes, root=0)
+
+    # ---------------------------------------------------------------------------- #
+    # Generate coverage curve plots (only if --plot-genes specified)
+    # ---------------------------------------------------------------------------- #
+    if plot_genes[0] is not None:
+        mpi_logging_info('Generating visualizations for --plot-genes')
+        out = get_coverage_plots(plot_genes
+                                 , degnorm_dir=output_dir
+                                 , figsize=[10, 6]
+                                 , save_dir=output_dir)
+
     # # ---------------------------------------------------------------------------- #
     # # Run summary report and exit.
     # # ---------------------------------------------------------------------------- #

@@ -93,16 +93,16 @@ def max_cpu():
     return mp.cpu_count() - 1
 
 
-def flatten_2d(lst2d):
+def flatten_2d(lst2d, arr=True):
     """
-    Flatten a 2-dimensional list of lists or list of numpy arrays into a single numpy array.
+    Flatten a 2-dimensional list of lists or list of numpy arrays into a single list or numpy array.
 
-    :param lst2d: 2-dimensional list of lists or list of numpy arrays
-    :return: 1-dimensional numpy array
+    :param lst2d: 2-dimensional list of lists or list of 1-d numpy arrays
+    :param arr: Bool return numpy array or list?
+    :return: 1-dimensional list or numpy array
     """
-    arr1d = np.array([elt for lst1d in lst2d for elt in lst1d])
-
-    return arr1d
+    lst1d = [elt for lst1d in lst2d for elt in lst1d]
+    return np.array(lst1d) if arr else lst1d
 
 
 def find_software(software='samtools'):
