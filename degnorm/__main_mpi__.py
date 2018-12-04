@@ -220,7 +220,8 @@ def main():
                                          , how='inner'
                                          , on=['chr', 'gene'])
 
-            mpi_logging_info('Successfully merged sample read counts -- shape: {0}'.format(read_count_df.shape))
+            mpi_logging_info('Successfully merged sample read counts ({0} samples) -- shape: {1}'
+                             .format(len(sample_ids), read_count_df.shape))
 
             del read_count_dict
             gc.collect()
@@ -274,26 +275,40 @@ def main():
         # Slice up genome coverage matrix for each gene according to exon positioning.
         # Run in parallel across workers.
         # ---------------------------------------------------------------------------- #
-        my_chrom_idx = split_into_chunks(chroms
+        chrom_chunks = split_into_chunks(chroms
                                          , n=SIZE)
-        my_chroms = my_chrom_idx[RANK]
-        gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(my_chroms))
-                       , verbose=0
-                       , backend='threading')(delayed(gene_coverage)(
-            exon_df=exon_df,
-            chrom=chrom,
-            coverage_files=cov_files,
-            output_dir=output_dir,
-            verbose=True) for chrom in my_chroms)
 
-        # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}
-        chrom_gene_cov_dict = {my_chroms[idx]: gene_cov_dicts[idx] for idx in range(len(my_chroms))}
+        # if there are enough chromosome chunks to distribute to workers, disseminate chromosomes,
+        # otherwise this worker gets no chromosomes to dice up.
+        if RANK < len(chrom_chunks):
+            my_chroms = chrom_chunks[RANK]
+            gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(my_chroms))
+                           , verbose=0
+                           , backend='threading')(delayed(gene_coverage)(
+                exon_df=exon_df,
+                chrom=chrom,
+                coverage_files=cov_files,
+                output_dir=output_dir,
+                verbose=True) for chrom in my_chroms)
 
-        del gene_cov_dicts, exon_df
-        gc.collect()
+            # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}
+            chrom_gene_cov_dict = {my_chroms[idx]: gene_cov_dicts[idx] for idx in range(len(my_chroms))}
 
-        # everybody give their chrom_gene_cov_dict to master.
-        chrom_gene_cov_dict = {k: v for d in COMM.gather(chrom_gene_cov_dict, root=0) for k, v in d.items()}
+            del gene_cov_dicts, exon_df
+            gc.collect()
+
+            # workers give their coverage matrix data to master.
+            if RANK > 0:
+                comm.send(chrom_gene_cov_dict
+                          , dest=0
+                          , tag=66)
+
+        # host assembles chromosome gene coverage matrix dictionary.
+        if RANK == 0:
+            if len(chrom_chunks) > 1:
+                for worker_id in range(1, len(chrom_chunks)):
+                    chrom_gene_cov_dict.update(comm.recv(source=worker_id
+                                                         , tag=66))
 
     # ---------------------------------------------------------------------------- #
     # PATHS MERGE: warm-start and input-file paths meet.
@@ -357,13 +372,14 @@ def main():
     gene_cov_dict = COMM.bcast(gene_cov_dict, root=0)
     read_count_df = COMM.bcast(read_count_df, root=0)
 
-    mpi_logging_info('Dimensions of read_count_df: {0}'.format(read_count_df.shape))
+    # let's all wait up before going into DegNorm iterations.
+    COMM.Barrier()
 
     # ---------------------------------------------------------------------------- #
     # Run NMF.
     # ---------------------------------------------------------------------------- #
     if RANK == 0:
-        mpi_logging_info('Begin executing NMF-OA over-approximation algorithm...')
+        mpi_logging_info('Begin executing DegNorm iterations...')
 
     nmfoa_output = run_gene_nmfoa_mpi(COMM
                                       , cov_dat=gene_cov_dict
@@ -400,11 +416,12 @@ def main():
             if len(plot_genes) < SIZE:
                 plot_genes += [[None]] * (SIZE - len(plot_genes))
 
-        else:
-            plot_genes = [[None]] * SIZE
+    else:
+        plot_genes = [[None]] * SIZE
 
     # master disseminates genes for plotting.
-    plot_genes = COMM.scatter(plot_genes, root=0)
+    plot_genes = COMM.scatter(plot_genes
+                              , root=0)
 
     # ---------------------------------------------------------------------------- #
     # Generate coverage curve plots (only if --plot-genes specified)

@@ -610,13 +610,25 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
             for gene in genes_partition[worker_id]:
                 my_cov_dat[gene] = cov_dat.get(gene)
 
-            if worker_id > 0:
+            # display how many genes for which each worker is responsible.
+            msg = 'node {0} will be responsible for {1} genes.'.format(worker_id, len(my_cov_dat))
+            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+
+            # master keeps its own gene coverage matrix data.
+            if worker_id == 0:
+                master_cov_dat = my_cov_dat
+
+            # master sends worker nodes their data.
+            else:
                 comm.send(my_cov_dat
                           , dest=worker_id
                           , tag=666)
 
         # initialize baseline selection tracker entirely False (no genes have gone through baseline selection yet).
         ran_baseline_selection = np.zeros(shape=[n_genes, degnorm_iter]).astype(bool)
+
+        # master housekeeping.
+        my_cov_dat = master_cov_dat
         p = my_cov_dat.get(my_genes[0]).shape[0]
 
         # ---------------------------------------------------------------------------- #
@@ -641,9 +653,11 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
             if not np.min(li_vec) >= downsample_rate:
                 raise ValueError('downsample_rate is too large; take-every size > at least one gene.')
 
+    # workers pick up their gene coverage matrix data.
     else:
         my_cov_dat = comm.recv(source=0
                                , tag=666)
+        my_genes = list(my_cov_dat.keys())
 
     # determine (integer) number of data splits for threaded workers (50Mb per worker).
     mem_splits = int(np.ceil(np.sum(list(map(lambda z: z.nbytes, list(my_cov_dat.values())))) / 5e7))
@@ -708,16 +722,17 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
     i = 0
     while True:
 
-        # scale baseline_cov coverage curves by 1 / (updated adjustment factors),
-        # then distribute adjusted coverage matrices among workers.
+        # master scales baseline_cov coverage curves by 1 / (updated adjustment factors),
+        # then distributes adjusted coverage matrices among workers.
         if rank == 0:
             adj_cov_dat = adjust_coverage_curves(list(cov_dat.values()), scale_factors)
             adj_cov_dat = {all_genes[i]: adj_cov_dat[i] for i in range(n_genes)}
 
-            # distribute dicts of {gene: adjusted coverage matrix} pairs
+            # master distributes dicts of {gene: adjusted coverage matrix} pairs.
             for worker_id in range(size):
                 my_adj_cov_dat = OrderedDict()
-                for gene in my_genes:
+
+                for gene in genes_partition[worker_id]:
                     my_adj_cov_dat[gene] = adj_cov_dat.get(gene)
 
                 if worker_id > 0:
@@ -725,8 +740,15 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
                               , dest=worker_id
                               , tag=667)
 
+                else:
+                    master_adj_cov_dat = my_cov_dat
+
+            # master housekeeping.
+            my_adj_cov_dat = master_adj_cov_dat
+
         else:
-            my_adj_cov_dat = comm.recv(source=0, tag=667)
+            my_adj_cov_dat = comm.recv(source=0
+                                       , tag=667)
 
         # everyone runs NMF-OA + baseline selection on their genes.
         msg = 'DegNorm iteration {0} -- begin baseline selection for {1} genes.' \
@@ -753,13 +775,15 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
 
         # begin host's work of organizing everyone's baseline selection data and re-scaling read counts.
         else:
+            # obtain host's baseline selection output.
             estimates, rho, bs_bool = [baseline_output[i] for i in range(3)]
 
             # get each worker's baseline selection output data, in order.
             # construct correctly ordered, comprehensive set of coverage matrix estimates, DI scores,
             # and baseline selection tracking.
             for worker_id in range(1, size):
-                baseline_output = comm.recv(source=worker_id, tag=worker_id + 100)
+                baseline_output = comm.recv(source=worker_id
+                                            , tag=worker_id + 100)
 
                 estimates += baseline_output[0]
                 rho = np.vstack([rho, baseline_output[1]])
@@ -770,7 +794,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
 
             # declare number of genes sent through baseline selection on this iteration.
             if not skip_baseline_selection:
-                msg = 'DegNorm iteration {0} -- {1} genes sent through baseline selection' \
+                msg = 'DegNorm iteration {0} -- {1} genes sent through baseline selection.' \
                     .format(i + 1, np.sum(ran_baseline_selection[:, i]))
                 logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
 
