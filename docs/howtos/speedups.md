@@ -1,7 +1,13 @@
 # DegNorm speed enhancements
 
+### Distributed pipeline runs with `degnorm_mpi`
+Use `degnorm_mpi` to distribute DegNorm over parallel compute nodes via MPI, the [Message Passing Interface standard](https://en.wikipedia.org/wiki/Message_Passing_Interface).
+With MPI, preprocessing and coverage matrix approximations will scale by the number of available compute nodes. MPI also allows you to best exploit the embarrassingly parallel nature
+ of the DegNorm workload.
+ 
+ See the `degnorm_mpi` example in the [usage docs](../howtos/run_the_pipeline.md).
 
-## Downsampling coverage matrices
+### Downsampling coverage matrices
 The backbone of the DegNorm normalization pipeline is the non-negative matrix factorization with over-approximation (NMFOA) algorithm.
  NMFOA is a computationally expensive algorithm, requiring `--nmf-iter`-many singular value decompositions of the coverage matrix.
  The SVD is O(n^3) in terms of flop count (according to Trefethen and Bau), so genes with smaller coverage matrices will 
@@ -23,7 +29,7 @@ at various downsampling rates from the 9-sample gliablastoma (GBM) cell line stu
 ![gbm_dsample_speed_times](../img/degnorm_dsamp_speeds.png)
 
 
-### Impact
+#### Impact
 
 We recreated the DE analysis using the GBM data as well as
 the Sequencing Quality Control (SEQC) AA vs. AB data at various downsampling rates.
@@ -49,7 +55,7 @@ To run DegNorm with downsampling, add `-d <take every>` (full option `--downsamp
 
 
 
-## Skipping baseline selection
+### Skipping baseline selection
 The most expensive part of the DegNorm normalization algorithm is in finding a "baseline" region of non-degraded coverage
 across all samples, a process referred to as **baseline selection**. In the event that that region is small, the approximation of a single gene's coverage curves may require
 over a thousand SVDs.
@@ -58,7 +64,7 @@ over a thousand SVDs.
 but likely with a more heavy impact on DegNorm's performance. We cannot wholly endorse skipping baseline selection,
 but for those who are seeking *ballpark* DegNorm results in an hour or two, this option may be for you.
 
-### Impact
+#### Impact
 
 The impact of skipping baseline selection is experiment-specific, and is likely
 due to the nature and extent of RNA degradation present in the samples. As is shown in the figure below,
@@ -72,8 +78,3 @@ advantage over the existing normalization methods with respect to GBM p-value EC
 ![nbs_ecdf_comparo](../img/nbs_ecdf_comparo.png)
 
 Run DegNorm without baseline selection at your own risk by adding the `--skip-baseline-selection` flag at the command line.
-
-## v.0.1.1 MPI release
-The next `degnorm` release will feature an MPI implementation for cross-node .bam file processing.
-Further, individual DegNorm iterations will be distributed, as the per-gene NMF-OA approximation
-algorithm is embarrassingly parallel. Stay tuned!

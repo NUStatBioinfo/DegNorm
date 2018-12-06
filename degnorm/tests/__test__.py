@@ -34,20 +34,6 @@ def main():
     tests_dir = pkg_resources.resource_filename('degnorm', 'tests')
     pytest.main(['-x', tests_dir])
 
-    # if MPI available and > 1 node available, run pipeline test for degnorm_mpi.
-    try:
-        from mpi4py import MPI
-
-        # try running degnorm_mpi test if there are > 1 nodes available. O/w skip it.
-        try:
-            pytest.main([os.path.join(tests_dir, 'mpi_test_pipeline.py')])
-
-        except RuntimeError:
-            pass
-
-    except ImportError:
-        pass
-
 
 if __name__ == '__main__':
     main()

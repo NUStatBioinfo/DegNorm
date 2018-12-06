@@ -765,6 +765,12 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
                                                        , bin_frac=0.2
                                                        , skip_baseline_selection=skip_baseline_selection)
 
+        # declare number of genes sent through baseline selection on this iteration.
+        if not skip_baseline_selection:
+            msg = 'DegNorm iteration {0} -- {1} genes sent through baseline selection.' \
+                .format(i + 1, np.sum(baseline_output[2]))
+            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+
         # everyone sends their estimates, DI scores, and baseline selection trackers to master. Do this
         # with a specific tag though, so we can assemble everything in the correct gene order, as we
         # know which worker has been assigned which genes.
@@ -791,12 +797,6 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
 
             # update indicators whether gene was sent thru baseline selection on DegNorm iteration i
             ran_baseline_selection[:, i] = bs_bool
-
-            # declare number of genes sent through baseline selection on this iteration.
-            if not skip_baseline_selection:
-                msg = 'DegNorm iteration {0} -- {1} genes sent through baseline selection.' \
-                    .format(i + 1, np.sum(ran_baseline_selection[:, i]))
-                logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
 
             # adjust (weighted) read counts.
             x_adj = x_weighted / (1 - rho)

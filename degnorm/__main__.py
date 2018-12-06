@@ -276,7 +276,6 @@ def main():
         plot_genes = np.intersect1d(args.plot_genes, nmfoa.genes)
 
         if len(plot_genes) > 0:
-
             logging.info('Generating coverage curve plots for specified genes.')
             out = get_coverage_plots(plot_genes
                                      , degnorm_dir=output_dir
@@ -287,8 +286,14 @@ def main():
     # Run summary report and exit.
     # ---------------------------------------------------------------------------- #
     logging.info('Rendering DegNorm summary report.')
+    degnorm_dat = {'degnorm_iter': args.iter
+                   , 'nmf_iter': args.nmf_iter
+                   , 'downsample_rate': args.downsample_rate
+                   , 'rho': nmfoa.rho
+                   , 'genes': nmfoa.genes}
+
     render_report(data_dir=output_dir
-                  , genenmfoa=nmfoa
+                  , degnorm_data=degnorm_dat
                   , bam_files=args.bam_files if not args.warm_start_dir else [args.warm_start_dir]
                   , sample_ids=sample_ids
                   , top_n_genes=5

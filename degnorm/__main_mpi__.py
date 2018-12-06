@@ -299,7 +299,7 @@ def main():
 
             # workers give their coverage matrix data to master.
             if RANK > 0:
-                comm.send(chrom_gene_cov_dict
+                COMM.send(chrom_gene_cov_dict
                           , dest=0
                           , tag=66)
 
@@ -307,7 +307,7 @@ def main():
         if RANK == 0:
             if len(chrom_chunks) > 1:
                 for worker_id in range(1, len(chrom_chunks)):
-                    chrom_gene_cov_dict.update(comm.recv(source=worker_id
+                    chrom_gene_cov_dict.update(COMM.recv(source=worker_id
                                                          , tag=66))
 
     # ---------------------------------------------------------------------------- #
@@ -407,8 +407,10 @@ def main():
                      , sample_ids=sample_ids
                      , output_dir=output_dir)
 
+        genes = list(nmfoa_output['estimates'].keys())
+
         if args.plot_genes:
-            plot_genes = np.intersect1d(args.plot_genes, list(nmfoa_output['estimates'].keys()))
+            plot_genes = np.intersect1d(args.plot_genes, genes)
             plot_genes = split_into_chunks(plot_genes
                                            , n=SIZE)
 
@@ -433,19 +435,28 @@ def main():
                                  , figsize=[10, 6]
                                  , save_dir=output_dir)
 
-    # # ---------------------------------------------------------------------------- #
-    # # Run summary report and exit.
-    # # ---------------------------------------------------------------------------- #
-    # logging.info('Rendering DegNorm summary report.')
-    # render_report(data_dir=output_dir
-    #               , genenmfoa=nmfoa
-    #               , bam_files=args.bam_files if not args.warm_start_dir else [args.warm_start_dir]
-    #               , sample_ids=sample_ids
-    #               , top_n_genes=5
-    #               , output_dir=output_dir)
-    #
-    # logging.info('DegNorm pipeline complete! Exiting...')
-    # sys.exit(0)
+    # ---------------------------------------------------------------------------- #
+    # Run summary report and exit.
+    # ---------------------------------------------------------------------------- #
+    if RANK == 0:
+        mpi_logging_info('Rendering DegNorm summary report.')
+        degnorm_dat = {'degnorm_iter': args.iter
+                       , 'nmf_iter': args.nmf_iter
+                       , 'downsample_rate': args.downsample_rate
+                       , 'rho': nmfoa_output['rho']
+                       , 'genes': genes}
+
+        render_report(data_dir=output_dir
+                      , degnorm_data=degnorm_dat
+                      , bam_files=args.bam_files if not args.warm_start_dir else [args.warm_start_dir]
+                      , sample_ids=sample_ids
+                      , top_n_genes=5
+                      , output_dir=output_dir)
+
+        mpi_logging_info('DegNorm pipeline complete! Exiting...')
+
+    COMM.Barrier()
+    sys.exit(0)
 
 
 if __name__ == "__main__":
