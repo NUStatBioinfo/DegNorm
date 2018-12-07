@@ -451,7 +451,7 @@ def parse_args(mpi=False):
                     bai_file = re.sub('.bam$', '.bai', bam_file)
 
                     # if .bai file under same name as .bam file doesn't exist,
-                    # add it to list of .bai files that need to be created.
+                    # add it to list of .bam files for which we need to create a .bai file.
                     if not os.path.isfile(bai_file):
                         bai_files.append(bai_from_bam_file(bam_file))
                         create_bai_files.append(bam_file)
@@ -473,7 +473,7 @@ def parse_args(mpi=False):
 
         # ensure that all pertinent files can be found.
         for f in args.bam_files + args.bai_files:
-            if (not os.path.isfile(f)) and (f not in args.create_bai_files):
+            if (not os.path.isfile(f)) and (f.replace('.bai', '.bam') not in args.create_bai_files):
                 raise FileNotFoundError('Input file {0} not found.'.format(f))
 
         # ensure there are at least 2 experiment files.
