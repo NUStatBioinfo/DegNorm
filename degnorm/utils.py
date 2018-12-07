@@ -157,7 +157,7 @@ def create_index_file(bam_file):
         bai = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.bai'
         bai_file = os.path.join(output_dir, bai)
 
-    cmd = 'samtools index {0} -o {1}'.format(bam_file, bai_file)
+    cmd = 'samtools index {0} {1}'.format(bam_file, bai_file)
     out = subprocess.run([cmd]
                          , shell=True)
 
