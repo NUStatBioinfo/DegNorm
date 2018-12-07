@@ -428,6 +428,8 @@ def parse_args(mpi=False):
             for bam_file in args.bam_files:
                 if not bam_file.endswith('.bam'):
                     raise ValueError('{0} is not a .bam file.'.format(bam_file))
+                elif not os.path.isfile(bam_file):
+                    raise FileNotFoundError('Count not find .bam file {0}'.format(bam_file))
                 else:
                     bam_files.append(bam_file)
 
@@ -441,6 +443,8 @@ def parse_args(mpi=False):
                 for bai_file in args.bai_files:
                     if not bai_file.endswith('.bai'):
                         raise ValueError('{0} is not a .bai file.'.format(bai_file))
+                    elif not os.path.isfile(bai_file):
+                        raise FileNotFoundError('Count not find .bai file {0}'.format(bai_file))
                     else:
                         bai_files.append(bai_file)
 
@@ -470,11 +474,6 @@ def parse_args(mpi=False):
         args.bam_files = bam_files
         args.bai_files = bai_files
         args.create_bai_files = create_bai_files
-
-        # ensure that all pertinent files can be found.
-        for f in args.bam_files + args.bai_files:
-            if (not os.path.isfile(f)) and (f.replace('.bai', '.bam') not in args.create_bai_files):
-                raise FileNotFoundError('Input file {0} not found.'.format(f))
 
         # ensure there are at least 2 experiment files.
         if len(args.bam_files) == 1:
