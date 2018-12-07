@@ -471,9 +471,9 @@ def parse_args(mpi=False):
         args.bai_files = bai_files
         args.create_bai_files = create_bai_files
 
-        # ensure that all files can be found.
+        # ensure that all pertinent files can be found.
         for f in args.bam_files + args.bai_files:
-            if not os.path.isfile(f):
+            if (not os.path.isfile(f)) and (f not in args.create_bai_files):
                 raise FileNotFoundError('Input file {0} not found.'.format(f))
 
         # ensure there are at least 2 experiment files.

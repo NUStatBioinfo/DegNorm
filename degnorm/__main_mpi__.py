@@ -388,13 +388,25 @@ def main():
         mpi_logging_info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection.'
                          .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
+        # write gene_cov_dict to disk, avoid MPI errors in trying to broadcast this large structure.
+        with open(os.path.join(output_dir, 'TMP_gene_cov_dict.pkl'), 'wb') as f:
+            pkl.dump(gene_cov_dict, f)
+
     else:
-        gene_cov_dict = None
+        # gene_cov_dict = None
         read_count_df = None
 
     # broadcast per-gene coverage data and read counts.
-    gene_cov_dict = COMM.bcast(gene_cov_dict, root=0)
+    # gene_cov_dict = COMM.bcast(gene_cov_dict, root=0)
     read_count_df = COMM.bcast(read_count_df, root=0)
+
+    # everyone waits for master to finish dumping gene_cov_dict to disk.
+    COMM.Barrier()
+
+    # workers load up the pickled up gene coverage matrices saved by master.
+    if RANK > 0:
+        with open(os.path.join(output_dir, 'TMP_gene_cov_dict.pkl'), 'rb') as f:
+            gene_cov_dict = pkl.load(f)
 
     # let's all wait up before going into DegNorm iterations.
     COMM.Barrier()
@@ -403,6 +415,8 @@ def main():
     # Run NMF.
     # ---------------------------------------------------------------------------- #
     if RANK == 0:
+        # master deletes the saved coverage data that everyone has loaded by now.
+        os.remove(os.path.join(output_dir, 'TMP_gene_cov_dict.pkl'))
         mpi_logging_info('Begin executing DegNorm iterations...')
 
     nmfoa_output = run_gene_nmfoa_mpi(COMM
