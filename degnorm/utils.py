@@ -126,7 +126,7 @@ def bai_from_bam_file(bam_file):
     if not bam_file.endswith('.bam'):
         raise ValueError('{0} must have a .bam extension.'.format(bam_file))
 
-    return os.path.join(os.path.dirname(bam_file), bam_file[:-3] + 'bai')
+    return bam_file[:-3] + 'bai'
 
 
 def create_index_file(bam_file):
@@ -137,7 +137,6 @@ def create_index_file(bam_file):
     :return: str realpath to the created .bai file
     """
     bai_file = bai_from_bam_file(bam_file)
-    output_dir = os.path.dirname(bam_file)
 
     # check if samtools is available in $PATH.
     samtools_avail = find_software('samtools')
@@ -148,15 +147,7 @@ def create_index_file(bam_file):
         raise EnvironmentError('samtools not in found in PATH. samtools is required to convert {0} -> {1}'
                                .format(bam_file, bai_file))
 
-    if not bam_file.endswith('.bam'):
-        raise ValueError('{0} is not a .bam file'.format(bam_file))
-
-    # check if a .bai file already exists; if it does, add salt by time.
-    while os.path.isfile(bai_file):
-        time.sleep(2)
-        bai = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.bai'
-        bai_file = os.path.join(output_dir, bai)
-
+    # run samtools index
     cmd = 'samtools index {0} {1}'.format(bam_file, bai_file)
     out = subprocess.run([cmd]
                          , shell=True)
