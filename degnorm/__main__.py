@@ -28,6 +28,16 @@ def main():
     logging.info('DegNorm output directory -- {0}'.format(output_dir))
 
     # ---------------------------------------------------------------------------- #
+    # If any Bam index (.bai) files need to be created, do that now.
+    # ---------------------------------------------------------------------------- #
+    if args.create_bai_files:
+        for file_idx in range(len(args.create_bai_files)):
+            bam_file = args.create_bai_files[file_idx]
+            logging.info('creating index file for {0} -- {1} / {2}'
+                         .format(bam_file, file_idx + 1, len(args.create_bai_files)))
+            out = create_index_file(bam_file)
+
+    # ---------------------------------------------------------------------------- #
     # Path 1: warm-start path.
     # If supplied a warm-start directory, load and copy previously parsed coverage matrices,
     # genome annotation data, read counts into new output dir.

@@ -119,6 +119,16 @@ def find_software(software='samtools'):
     return True
 
 
+def bai_from_bam_file(bam_file):
+    """
+    Simple helper function to change the file extension of a .bam file to .bai.
+    """
+    if not bam_file.endswith('.bam'):
+        raise ValueError('{0} must have a .bam extension.'.format(bam_file))
+
+    return os.path.join(os.path.dirname(bam_file), bam_file[:-3] + 'bai')
+
+
 def create_index_file(bam_file):
     """
     Create a BAM index file with samtools.
@@ -126,9 +136,10 @@ def create_index_file(bam_file):
     :param bam_file: str realpath to .bam file for which we desire a .bai index file
     :return: str realpath to the created .bai file
     """
+    bai_file = bai_from_bam_file(bam_file)
     output_dir = os.path.dirname(bam_file)
-    bai_file = os.path.join(output_dir, bam_file[:-3] + 'bai')
 
+    # check if samtools is available in $PATH.
     samtools_avail = find_software('samtools')
 
     # Note that samtools is only available for Linux and Mac OS:
@@ -152,8 +163,6 @@ def create_index_file(bam_file):
 
     if out.returncode != 0:
         raise ValueError('{0} was not successfully converted into a .bai file'.format(bam_file))
-
-    return bai_file
 
 
 def split_into_chunks(x, n):
@@ -303,7 +312,7 @@ def parse_args(mpi=False):
     Parse command line arguments.
 
     :param mpi: Boolean is DegNorm being run in MPI mode?
-    :return:
+    :return: parsed argparse.ArgumentParser
     """
     parser = argparser()
     args = parser.parse_args()
@@ -359,6 +368,7 @@ def parse_args(mpi=False):
 
             args.bam_files = None
             args.bai_files = None
+            args.create_bai_files = None
             args.bam_dir = None
             args.genome_annotation = None
 
@@ -376,6 +386,7 @@ def parse_args(mpi=False):
         # check validity of file i/o selection.
         bam_files = list()
         bai_files = list()
+        create_bai_files = list()
 
         # INPUT OPTION 1: a --bam-dir was specified.
         if args.bam_dir:
@@ -403,9 +414,11 @@ def parse_args(mpi=False):
             for bam_file in bam_files:
                 bai_file = re.sub('.bam$', '.bai', bam_file)
 
-                # if .bai file under same basename as .bam file doesn't exist, try to create it.
+                # if .bai file under same basename as .bam file doesn't exist,
+                # add it to list of .bai files that need to be created.
                 if not os.path.isfile(bai_file):
-                    bai_files.append(create_index_file(bam_file))
+                    bai_files.append(bai_from_bam_file(bam_file))
+                    create_bai_files.append(bam_file)
                 else:
                     bai_files.append(bai_file)
 
@@ -437,9 +450,11 @@ def parse_args(mpi=False):
                 for bam_file in bam_files:
                     bai_file = re.sub('.bam$', '.bai', bam_file)
 
-                    # if .bai file under same name as .bam file doesn't exist, try to create it.
+                    # if .bai file under same name as .bam file doesn't exist,
+                    # add it to list of .bai files that need to be created.
                     if not os.path.isfile(bai_file):
-                        bai_files.append(create_index_file(bam_file))
+                        bai_files.append(bai_from_bam_file(bam_file))
+                        create_bai_files.append(bam_file)
                     else:
                         bai_files.append(bai_file)
 
@@ -454,6 +469,7 @@ def parse_args(mpi=False):
         # create parser attributes for bam/index files.
         args.bam_files = bam_files
         args.bai_files = bai_files
+        args.create_bai_files = create_bai_files
 
         # ensure that all files can be found.
         for f in args.bam_files + args.bai_files:

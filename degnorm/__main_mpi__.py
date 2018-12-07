@@ -50,6 +50,28 @@ def main():
     args = parse_args()
     n_samples = len(args.bam_files)
 
+    # ---------------------------------------------------------------------------- #
+    # If Bam index (.bai) files need to be created, do that now.
+    # ---------------------------------------------------------------------------- #
+    if args.create_bai_files:
+
+        # distribute .bai files to workers.
+        bai_file_chunks = split_into_chunks(args.create_bai_files
+                                            , n=SIZE)
+
+        # worker creates its .bai files.
+        if RANK < len(bai_file_chunks):
+            my_bai_files = bai_file_chunks[RANK]
+
+            for file_idx in range(len(my_bai_files)):
+                bam_file = my_bai_files[file_idx]
+                logging.info('creating index file for {0}'
+                             .format(bam_file, file_idx + 1, len(my_bai_files)))
+                out = create_index_file(bam_file)
+
+        # have everyone wait up until .bai files are created.
+        COMM.Barrier()
+
     # assess number of processes to spawn within a compute node.
     n_jobs = min(args.proc_per_node, max_cpu() + 1) if args.proc_per_node else max_cpu()
 
