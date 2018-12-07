@@ -65,8 +65,7 @@ def main():
 
             for file_idx in range(len(my_bai_files)):
                 bam_file = my_bai_files[file_idx]
-                logging.info('creating index file for {0}'
-                             .format(bam_file, file_idx + 1, len(my_bai_files)))
+                mpi_logging_info('creating index file for {0}'.format(bam_file))
                 out = create_index_file(bam_file)
 
         # have everyone wait up until .bai files are created.
