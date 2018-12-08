@@ -325,11 +325,10 @@ def main():
                           , tag=66)
 
         # host assembles chromosome gene coverage matrix dictionary.
-        if RANK == 0:
-            if len(chrom_chunks) > 1:
-                for worker_id in range(1, len(chrom_chunks)):
-                    chrom_gene_cov_dict.update(COMM.recv(source=worker_id
-                                                         , tag=66))
+        if (RANK == 0) and (len(chrom_chunks) > 1):
+            for worker_id in range(1, len(chrom_chunks)):
+                chrom_gene_cov_dict.update(COMM.recv(source=worker_id
+                                                     , tag=66))
 
     # ---------------------------------------------------------------------------- #
     # PATHS MERGE: warm-start and input-file paths meet.

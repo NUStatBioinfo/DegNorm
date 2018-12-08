@@ -466,13 +466,4 @@ def parse_args(mpi=False):
         args.bai_files = bai_files
         args.create_bai_files = create_bai_files
 
-        # ensure there are at least 2 experiment files.
-        if len(args.bam_files) == 1:
-            raise ValueError('Must input >= 2 unique aligned reads files! Cannot estimate coverage curve matrix '
-                             'approximations from a single experiment.')
-
     return args
-
-
-if __name__ == '__main__':
-    print(parse_args(mpi=False))

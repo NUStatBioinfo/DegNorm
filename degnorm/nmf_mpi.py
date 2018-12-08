@@ -681,7 +681,8 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
     estimates = {my_genes[i]: estimates[i] for i in range(len(my_genes))}
 
     # everyone sends their estimates to master.
-    estimates = comm.gather(estimates, root=0)
+    # use Gather according to https://groups.google.com/forum/#!topic/mpi4py/r95uGPcqXLA
+    estimates = comm.Gather(estimates, root=0)
 
     # master constructs rho and normalizes read counts.
     if rank == 0:
