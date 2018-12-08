@@ -2,6 +2,9 @@
 
 DegNorm is a command line interface (CLI) tool. You can access it through the `degnorm` command and the MPI-enabled
 distributed version is `degnorm_mpi`.
+
+-----
+
  
 ## Inputs
 You only need two types of files to supply `degnorm`: .bam (and their corresponding .bai files - [bam index files](https://www.biostars.org/p/15847/)), and a .gtf file.

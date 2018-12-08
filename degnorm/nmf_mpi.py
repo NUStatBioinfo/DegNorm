@@ -680,13 +680,20 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
                           , mem_splits=mem_splits)
     estimates = {my_genes[i]: estimates[i] for i in range(len(my_genes))}
 
-    # everyone sends their estimates to master.
-    # use Gather according to https://groups.google.com/forum/#!topic/mpi4py/r95uGPcqXLA
-    estimates = comm.Gather(estimates, root=0)
+    # everyone sends their estimates to master. Getting memory/pickle issues with .gather,
+    # so have individual workers send their estimates to master.
+    if rank > 0:
+        comm.send(estimates
+                  , dest=0
+                  , tag=667)
 
     # master constructs rho and normalizes read counts.
     if rank == 0:
-        estimates = {k: v for d in estimates for k, v in d.items()}  # collapse gathered dictionaries into one.
+
+        # master receives ratio_svd estimate dictionaries from workers.
+        for worker_id in range(1, size):
+            estimates.update(comm.recv(source=worker_id
+                                       , tag=667))
 
         est_sums = np.vstack(list(map(lambda x: x.sum(axis=1), [estimates.get(gene) for gene in all_genes])))
         cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), list(cov_dat.values()))))
@@ -739,7 +746,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
                 if worker_id > 0:
                     comm.send(my_adj_cov_dat
                               , dest=worker_id
-                              , tag=667)
+                              , tag=668)
 
                 else:
                     master_adj_cov_dat = my_cov_dat
@@ -749,7 +756,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
 
         else:
             my_adj_cov_dat = comm.recv(source=0
-                                       , tag=667)
+                                       , tag=668)
 
         # everyone runs NMF-OA + baseline selection on their genes.
         msg = 'DegNorm iteration {0} -- begin baseline selection for {1} genes.' \

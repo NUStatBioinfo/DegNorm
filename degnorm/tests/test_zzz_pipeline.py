@@ -46,7 +46,7 @@ def test_pipeline(run_setup):
                          , stderr=subprocess.PIPE)
     assert out.returncode == 0
 
-    # run degnorm command with test data, without downsampling, without specifying .bai files directly either.
+    # run degnorm command with test data, without downsampling, without specifying .bai files either.
     cmd = 'degnorm --bam-files {0} {1} -g {2} -o {3} --plot-genes {4} --nmf-iter 50'\
         .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')
                 , os.path.join(THIS_DIR, 'data', 'hg_small_2.bam')
@@ -59,10 +59,7 @@ def test_pipeline(run_setup):
                          , stderr=subprocess.PIPE)
     assert out.returncode == 0
 
-
-def test_mpi_pipeline(run_setup):
-
-    # run degnorm_mpi command with test data, with downsampling.
+    # run degnorm_mpi command with test data, without downsampling, without specifying .bai files either.
     cmd = 'mpiexec -n 2 degnorm_mpi --bam-files {0} {1} -g {2} -o {3} -p 2 --plot-genes {4} --nmf-iter 50'\
         .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')
                 , os.path.join(THIS_DIR, 'data', 'hg_small_2.bam')

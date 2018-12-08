@@ -2,6 +2,7 @@
 
 *This package is not yet on PyPi*. These instructions are for manual installation into a virtual environment.
 DegNorm is only supported on *Nix platforms.
+-----
 
 ## Installing DegNorm in a conda environment
 
@@ -19,18 +20,8 @@ cd DegNorm
 #### 3. Run the `install` script
 
     ./install
-
-# Testing
-
-Check the successful installation of `degnorm` on your machine with the `degnorm_test` command. This runs all unit tests
-and a minimal DegNorm pipeline run on a small batch of sample data.
-
-By default, `degnorm_test` will clean up after itself by removing the temporary directory containing the output
-of a full pipeline test run. If you would like to keep and inspect that directory, add the `--keep-output` flag:
-
-    degnorm_test --keep-output
     
-
+    
 ## Requirements for `degnorm_mpi`
 
 To make use of `degnorm_mpi`, you'll further need to install the [mpi4py](https://mpi4py.readthedocs.io/en/stable/index.html) package 
@@ -44,3 +35,15 @@ If you're running DegNorm on a high performance computing environment (e.g. if y
     pip install mpi4py
  
 Otherwise, you'll need to install [MPICH](https://en.wikipedia.org/wiki/MPICH).
+
+# Testing
+
+Check the successful installation of `degnorm` on your machine with the `degnorm_test` command. This runs all unit tests
+and a minimal DegNorm pipeline run on a small batch of sample data. If you have installed the mpi4py package, and
+you happen to be testing in a multi-node environment, `degnorm_test` will also test a small distributed pipeline run with `degnorm_mpi`.
+
+By default, `degnorm_test` will clean up after itself by removing the temporary directory containing the output
+of a full pipeline test run. If you would like to keep and inspect that directory, add the `--keep-output` flag:
+
+    degnorm_test --keep-output
+    
