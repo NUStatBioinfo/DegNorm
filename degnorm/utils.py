@@ -298,23 +298,21 @@ def argparser():
     return parser
 
 
-def parse_args(mpi=False):
+def parse_args():
     """
     Parse command line arguments.
 
-    :param mpi: Boolean is DegNorm being run in MPI mode?
     :return: parsed argparse.ArgumentParser
     """
     parser = argparser()
     args = parser.parse_args()
 
     # check validity of cores selection.
-    if not mpi:
-        max_ppn = max_cpu() + 1
-        if args.proc_per_node > max_ppn:
-            warnings.warn('{0} is greater than the number of available cores ({1}). Reducing to {2}'
-                          .format(args.proc_per_node, max_ppn, max_ppn - 1))
-            args.proc_per_node = max_ppn - 1
+    max_ppn = max_cpu() + 1
+    if args.proc_per_node > max_ppn:
+        warnings.warn('{0} is greater than the number of available cores ({1}). Reducing to {2}'
+                      .format(args.proc_per_node, max_ppn, max_ppn - 1))
+        args.proc_per_node = max_ppn - 1
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
@@ -357,11 +355,11 @@ def parse_args(mpi=False):
             logging.warning('Using warm-start directory. Supplied .bam files, .bam directory, '
                             'and genome annotation file will be ignored.')
 
-            args.bam_files = None
-            args.bai_files = None
-            args.create_bai_files = None
-            args.bam_dir = None
-            args.genome_annotation = None
+        args.bam_files = None
+        args.bai_files = None
+        args.create_bai_files = None
+        args.bam_dir = None
+        args.genome_annotation = None
 
     # if not using a warm-start, parse input RNA-Seq + genome annotation files.
     else:

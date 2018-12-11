@@ -38,7 +38,7 @@ def mpi_logging_info(msg):
 
     :param msg: message to send to logger
     """
-    logging.info('({rank}/{size}) -- {msg}'.format(rank=RANK, size=SIZE, msg=msg))
+    logging.info('({rank}/{size}) -- {msg}'.format(rank=RANK + 1, size=SIZE, msg=msg))
 
 
 def main():
@@ -48,7 +48,25 @@ def main():
     # display welcome message, create output directory (just master node)
     # ---------------------------------------------------------------------------- #
     args = parse_args()
-    n_samples = len(args.bam_files)
+
+    # assess number of processes to spawn within a compute node.
+    n_jobs = min(args.proc_per_node, max_cpu() + 1) if args.proc_per_node else max_cpu()
+
+    # everyone sets up stdout logger.
+    configure_logger(output_dir=None
+                     , mpi=True)
+
+    # master welcomes user, sets up output directory.
+    if RANK == 0:
+        welcome()
+        output_dir = create_output_dir(args.output_dir)
+        mpi_logging_info('DegNorm save directory: {0}'.format(output_dir))
+
+    else:
+        output_dir = None
+
+    # Give everyone the output directory.
+    output_dir = COMM.bcast(output_dir, root=0)
 
     # ---------------------------------------------------------------------------- #
     # If Bam index (.bai) files need to be created, do that now.
@@ -71,22 +89,6 @@ def main():
         # have everyone wait up until .bai files are created.
         COMM.Barrier()
 
-    # assess number of processes to spawn within a compute node.
-    n_jobs = min(args.proc_per_node, max_cpu() + 1) if args.proc_per_node else max_cpu()
-
-    if RANK == 0:
-        output_dir = create_output_dir(args.output_dir)
-        configure_logger(output_dir=None
-                         , mpi=True)
-        welcome()
-        mpi_logging_info('DegNorm save directory: {0}'.format(output_dir))
-
-    else:
-        output_dir = None
-
-    # Broadcast the output directory.
-    output_dir = COMM.bcast(output_dir, root=0)
-
     # ---------------------------------------------------------------------------- #
     # Path 1: warm-start path.
     # If supplied a warm-start directory, load and copy previously parsed coverage matrices,
@@ -94,6 +96,7 @@ def main():
     # ---------------------------------------------------------------------------- #
     if args.warm_start_dir:
 
+        # only master needs genes, reads, and coverage matrix dictionary.
         if RANK == 0:
             mpi_logging_info('WARM-START: loading data from previous DegNorm run contained in {0}'
                              .format(args.warm_start_dir))
@@ -105,15 +108,9 @@ def main():
             sample_ids = load_dat['sample_ids']
 
         else:
-            chrom_gene_cov_dict = None
-            read_count_df = None
-            genes_df = None
             sample_ids = None
 
-        # Broadcast the data everyone wants for DegNorm iterations.
-        chrom_gene_cov_dict = COMM.bcast(chrom_gene_cov_dict, root=0)
-        read_count_df = COMM.bcast(read_count_df, root=0)
-        genes_df = COMM.bcast(genes_df, root=0)
+        # Everyone needs sample_ids.
         sample_ids = COMM.bcast(sample_ids, root=0)
 
     # ---------------------------------------------------------------------------- #
@@ -121,6 +118,8 @@ def main():
     # Determine intersection of chromosomes across samples from .bam files
     # ---------------------------------------------------------------------------- #
     else:
+        n_samples = len(args.bam_files)
+
         # Have master node assess chromosomes to be included in DegNorm pipeline run.
         if RANK == 0:
             chroms = list()
@@ -392,11 +391,9 @@ def main():
             pkl.dump(gene_cov_dict, f)
 
     else:
-        # gene_cov_dict = None
         read_count_df = None
 
-    # broadcast per-gene coverage data and read counts.
-    # gene_cov_dict = COMM.bcast(gene_cov_dict, root=0)
+    # broadcast read counts.
     read_count_df = COMM.bcast(read_count_df, root=0)
 
     # everyone waits for master to finish dumping gene_cov_dict to disk.
@@ -411,12 +408,12 @@ def main():
     COMM.Barrier()
 
     # ---------------------------------------------------------------------------- #
-    # Run NMF.
+    # Run NMF-OA.
     # ---------------------------------------------------------------------------- #
     if RANK == 0:
         # master deletes the saved coverage data that everyone has loaded by now.
         os.remove(os.path.join(output_dir, 'TMP_gene_cov_dict.pkl'))
-        mpi_logging_info('Begin executing DegNorm iterations...')
+        mpi_logging_info('Begin executing NMFOA algorithm...')
 
     nmfoa_output = run_gene_nmfoa_mpi(COMM
                                       , cov_dat=gene_cov_dict
@@ -425,7 +422,8 @@ def main():
                                       , nmf_iter=args.nmf_iter
                                       , downsample_rate=args.downsample_rate
                                       , n_jobs=n_jobs
-                                      , skip_baseline_selection=args.skip_baseline_selection)
+                                      , skip_baseline_selection=args.skip_baseline_selection
+                                      , tmpdir=output_dir)
 
     # ---------------------------------------------------------------------------- #
     # Save results.
@@ -446,6 +444,7 @@ def main():
 
         genes = list(nmfoa_output['estimates'].keys())
 
+        # split up any specified --plot-genes for parallel processing.
         if args.plot_genes:
             plot_genes = np.intersect1d(args.plot_genes, genes)
             plot_genes = split_into_chunks(plot_genes
@@ -455,15 +454,18 @@ def main():
             if len(plot_genes) < SIZE:
                 plot_genes += [[None]] * (SIZE - len(plot_genes))
 
+        else:
+            plot_genes = [[None]] * SIZE
+
     else:
-        plot_genes = [[None]] * SIZE
+        plot_genes = None
 
     # master disseminates genes for plotting.
     plot_genes = COMM.scatter(plot_genes
                               , root=0)
 
     # ---------------------------------------------------------------------------- #
-    # Generate coverage curve plots (only if --plot-genes specified)
+    # Generate coverage curve plots in parallel (only if --plot-genes specified)
     # ---------------------------------------------------------------------------- #
     if plot_genes[0] is not None:
         mpi_logging_info('Generating visualizations for --plot-genes')
@@ -496,5 +498,5 @@ def main():
     sys.exit(0)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

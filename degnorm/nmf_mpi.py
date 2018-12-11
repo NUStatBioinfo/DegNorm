@@ -175,41 +175,6 @@ def run_baseline_selection_serial(x, **kwargs):
     return list(map(lambda z: baseline_selection(z, **kwargs), x))
 
 
-def par_apply_baseline_selection(dat, n_jobs, mem_splits, **kwargs):
-    """
-    Apply baseline selection algorithm to all gene coverage matrices in parallel,
-    building the DI score matrix (rho) in the process and
-    returning the estimated coverage matrices for visualization purposes.
-
-    :param dat: list of numpy reads coverage arrays, shapes are (Li x p). Ideally
-    coverage arrays will have been already adjusted for sequencing-depth by scale factors.
-    :return: 3-tuple --
-    (list of 2-d numpy arrays used to visualize DegNorm estimated coverage matrices
-    , rho (DI score matrix)
-    , baseline selection Boolean indicator vector, one T/F per gene)
-    """
-    # split up coverage matrices so that no worker gets much more than 50Mb.
-    dat = split_into_chunks(dat
-                            , n=mem_splits)
-    baseline_dat = Parallel(n_jobs=min(n_jobs, mem_splits)
-                            , verbose=0
-                            , backend='threading')(delayed(run_baseline_selection_serial)(
-        x=x
-        , **kwargs) for x in dat)
-
-    # flatten results.
-    baseline_dat = [est for est1d in baseline_dat for est in est1d]
-
-    # Assemble DI score matrix, apply QA thresholding on output.
-    rho = np.vstack([x[1] for x in baseline_dat])
-    rho[rho > 0.9] = 0.9
-    rho[rho < 0.] = 0.
-
-    # return coverage curve estimates (for visualization purposes, not for DI score calculations),
-    # boolean array indicating whether or not each gene was sent through baseline selection
-    return [x[0] for x in baseline_dat], rho, np.array([x[2] for x in baseline_dat])
-
-
 def baseline_selection(F, nmf_iter=100, downsample_rate=1, min_high_coverage=20,
                        bins=20, bin_frac=0.2, skip_baseline_selection=False):
     """
@@ -267,7 +232,7 @@ def baseline_selection(F, nmf_iter=100, downsample_rate=1, min_high_coverage=20,
 
     # if there are not sufficiently-many high-coverage base pairs, return null degradation.
     if n_hi_cov < min_high_coverage:
-        return output['rho'], output['estimate'], output['ran_baseline_selection']
+        return output['estimate'], output['rho'], output['ran_baseline_selection']
 
     # select high-coverage positions from (possibly downsampled) coverage matrix.
     hi_cov_idx.sort()
@@ -276,7 +241,7 @@ def baseline_selection(F, nmf_iter=100, downsample_rate=1, min_high_coverage=20,
 
     # if any sample sans coverage after filtering, return defaults.
     if np.sum(F_bin.sum(axis=1) > 0) < p:
-        return output['rho'], output['estimate'], output['ran_baseline_selection']
+        return output['estimate'], output['rho'], output['ran_baseline_selection']
 
     # run NMF on filtered coverage, obtain initial coverage curve estimate.
     K, E = nmf(F_bin
@@ -293,7 +258,7 @@ def baseline_selection(F, nmf_iter=100, downsample_rate=1, min_high_coverage=20,
 
     # exclude extreme cases where NMF result doesn't converge.
     if np.nanmedian(1 - rho_vec) > 1:
-        return output['rho'], output['estimate'], output['ran_baseline_selection']
+        return output['estimate'], output['rho'], output['ran_baseline_selection']
 
     # establish minimum length of gene to work with. Bin relic.
     min_gene_len = max(2, np.ceil(200.0 * (1 / downsample_rate)))  # scale 200 default by downsample rate.
@@ -411,6 +376,44 @@ def baseline_selection(F, nmf_iter=100, downsample_rate=1, min_high_coverage=20,
 
     # return DI vector, estimate of F, True/False whether gene sent through baseline selection.
     return output['estimate'], output['rho'], output['ran_baseline_selection']
+
+
+def par_apply_baseline_selection(dat, n_jobs, mem_splits, **kwargs):
+    """
+    Apply baseline selection algorithm to all gene coverage matrices in parallel,
+    building the DI score matrix (rho) in the process and
+    returning the estimated coverage matrices for visualization purposes.
+
+    :param dat: list of numpy reads coverage arrays, shapes are (Li x p). Ideally
+    coverage arrays will have been already adjusted for sequencing-depth by scale factors.
+    :param n_jobs: int number of threads to use for running baseline selection in parallel on a single node.
+    :param mem_splits: int number of splits to apply to dat. Threads work on individual splits, so
+    more splits means less work per worker, but more times each worker needs to get a new split to work on.
+    :return: 3-tuple --
+    (list of 2-d numpy arrays used to visualize DegNorm estimated coverage matrices
+    , rho (DI score matrix)
+    , baseline selection Boolean indicator vector, one T/F per gene)
+    """
+    # split up coverage matrices so that no worker gets much more than 50Mb.
+    dat = split_into_chunks(dat
+                            , n=mem_splits)
+    baseline_dat = Parallel(n_jobs=min(n_jobs, mem_splits)
+                            , verbose=0
+                            , backend='threading')(delayed(run_baseline_selection_serial)(
+        x=x
+        , **kwargs) for x in dat)
+
+    # flatten results.
+    baseline_dat = [est for est1d in baseline_dat for est in est1d]
+
+    # Assemble DI score matrix, apply QA thresholding on output.
+    rho = np.vstack([x[1] for x in baseline_dat])
+    rho[rho > 0.9] = 0.9
+    rho[rho < 0.] = 0.
+
+    # return coverage curve estimates (for visualization purposes, not for DI score calculations),
+    # boolean array indicating whether or not each gene was sent through baseline selection
+    return [x[0] for x in baseline_dat], rho, np.array([x[2] for x in baseline_dat])
 
 
 def downsample_2d(x, downsample_rate=1, by_row=True):
@@ -550,7 +553,7 @@ def save_results(gene_manifest_df,
 
 
 def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
-                       nmf_iter=100, bins=20, n_jobs=max_cpu(), skip_baseline_selection=False, random_state=123):
+                       nmf_iter=100, bins=20, n_jobs=max_cpu(), skip_baseline_selection=False, random_state=123,tmpdir='.'):
     """
     Run DegNorm degradation normalization pipeline: adjust read counts, compute degradation index scores,
     and compute normalized coverage curve estimates.
@@ -611,8 +614,9 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
                 my_cov_dat[gene] = cov_dat.get(gene)
 
             # display how many genes for which each worker is responsible.
-            msg = 'node {0} will be responsible for {1} genes.'.format(worker_id, len(my_cov_dat))
-            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+            msg = '{node} will be responsible for {n} genes.'\
+                .format(node='host' if worker_id == 0 else 'worker node ' + str(worker_id), n=len(my_cov_dat))
+            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank + 1, size=size, msg=msg))
 
             # master keeps its own gene coverage matrix data.
             if worker_id == 0:
@@ -622,7 +626,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
             else:
                 comm.send(my_cov_dat
                           , dest=worker_id
-                          , tag=666)
+                          , tag=333 + worker_id)
 
         # initialize baseline selection tracker entirely False (no genes have gone through baseline selection yet).
         ran_baseline_selection = np.zeros(shape=[n_genes, degnorm_iter]).astype(bool)
@@ -656,7 +660,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
     # workers pick up their gene coverage matrix data.
     else:
         my_cov_dat = comm.recv(source=0
-                               , tag=666)
+                               , tag=333 + rank)
         my_genes = list(my_cov_dat.keys())
 
     # determine (integer) number of data splits for threaded workers (50Mb per worker).
@@ -685,7 +689,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
     if rank > 0:
         comm.send(estimates
                   , dest=0
-                  , tag=667)
+                  , tag=444 + rank)
 
     # master constructs rho and normalizes read counts.
     if rank == 0:
@@ -693,7 +697,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
         # master receives ratio_svd estimate dictionaries from workers.
         for worker_id in range(1, size):
             estimates.update(comm.recv(source=worker_id
-                                       , tag=667))
+                                       , tag=444 + worker_id))
 
         est_sums = np.vstack(list(map(lambda x: x.sum(axis=1), [estimates.get(gene) for gene in all_genes])))
         cov_sums = np.vstack(list(map(lambda x: x.sum(axis=1), list(cov_dat.values()))))
@@ -711,7 +715,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
         # display initialized scale factors.
         msg = 'Initial sequencing depth scale factors -- \n\t{0}' \
             .format(', '.join([str(x) for x in scale_factors]))
-        logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+        logging.info('({rank}/{size}) -- {msg}'.format(rank=rank + 1, size=size, msg=msg))
 
     # ---------------------------------------------------------------------------- #
     # DegNorm iterations:
@@ -723,8 +727,9 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
     # 5. Update sequencing depth scale factors based on re-normalized read counts.
     # ---------------------------------------------------------------------------- #
 
-    # set random number generator seed.
+    # set random number generator seed and wait up.
     np.random.seed(random_state)
+    comm.Barrier()
 
     # run DegNorm iterations.
     i = 0
@@ -733,35 +738,41 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
         # master scales baseline_cov coverage curves by 1 / (updated adjustment factors),
         # then distributes adjusted coverage matrices among workers.
         if rank == 0:
+            msg = 'DegNorm iteration {0} -- master adjusting coverage matrices for scale factors.' \
+                .format(i + 1)
+            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank + 1, size=size, msg=msg))
+
             adj_cov_dat = adjust_coverage_curves(list(cov_dat.values()), scale_factors)
             adj_cov_dat = {all_genes[i]: adj_cov_dat[i] for i in range(n_genes)}
 
             # master distributes dicts of {gene: adjusted coverage matrix} pairs.
-            for worker_id in range(size):
+            for worker_id in range(1, size):
                 my_adj_cov_dat = OrderedDict()
 
                 for gene in genes_partition[worker_id]:
                     my_adj_cov_dat[gene] = adj_cov_dat.get(gene)
 
+                # getting MPI timeouts upon sending adjusted coverage matrix dicts.
+                # Just write data to disk for particular worker, have them read in later.
                 if worker_id > 0:
                     comm.send(my_adj_cov_dat
                               , dest=worker_id
-                              , tag=668)
+                              , tag=555 + worker_id)
 
-                else:
-                    master_adj_cov_dat = my_cov_dat
+            # get host's adjusted coverage matrices.
+            my_adj_cov_dat = OrderedDict()
+            for gene in genes_partition[0]:
+                my_adj_cov_dat[gene] = adj_cov_dat.get(gene)
 
-            # master housekeeping.
-            my_adj_cov_dat = master_adj_cov_dat
-
-        else:
+        # workers receive their adjusted coverage matrices.
+        if rank > 0:
             my_adj_cov_dat = comm.recv(source=0
-                                       , tag=668)
+                                       , tag=555 + rank)
 
         # everyone runs NMF-OA + baseline selection on their genes.
-        msg = 'DegNorm iteration {0} -- begin baseline selection for {1} genes.' \
+        msg = 'DegNorm iteration {0} -- running baseline selection on {1} genes.' \
             .format(i + 1, len(my_adj_cov_dat))
-        logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+        logging.info('({rank}/{size}) -- {msg}'.format(rank=rank + 1, size=size, msg=msg))
 
         baseline_output = par_apply_baseline_selection(list(my_adj_cov_dat.values())
                                                        , n_jobs=n_jobs
@@ -775,9 +786,9 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
 
         # declare number of genes sent through baseline selection on this iteration.
         if not skip_baseline_selection:
-            msg = 'DegNorm iteration {0} -- {1} genes sent through baseline selection.' \
+            msg = 'DegNorm iteration {0} -- {1} genes were sent through baseline selection.' \
                 .format(i + 1, np.sum(baseline_output[2]))
-            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank + 1, size=size, msg=msg))
 
         # everyone sends their estimates, DI scores, and baseline selection trackers to master. Do this
         # with a specific tag though, so we can assemble everything in the correct gene order, as we
@@ -785,7 +796,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
         if rank > 0:
             comm.send(baseline_output
                       , dest=0
-                      , tag=rank + 100)
+                      , tag=666 + rank)
 
         # begin host's work of organizing everyone's baseline selection data and re-scaling read counts.
         else:
@@ -797,7 +808,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
             # and baseline selection tracking.
             for worker_id in range(1, size):
                 baseline_output = comm.recv(source=worker_id
-                                            , tag=worker_id + 100)
+                                            , tag=666 + worker_id)
 
                 estimates += baseline_output[0]
                 rho = np.vstack([rho, baseline_output[1]])
@@ -829,7 +840,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
             # display scale_factors.
             msg = 'DegNorm iteration {0} -- sequencing depth scale factors: \n\t{1}' \
                 .format(i + 1, ', '.join([str(x) for x in scale_factors]))
-            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank, size=size, msg=msg))
+            logging.info('({rank}/{size}) -- {msg}'.format(rank=rank + 1, size=size, msg=msg))
 
         # increment the current degnorm iteration for everyone.
         i += 1

@@ -246,7 +246,7 @@ def main():
                  .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
     # ---------------------------------------------------------------------------- #
-    # Run NMF.
+    # Run NMF-OA.
     # ---------------------------------------------------------------------------- #
 
     # joblib overhead: specify temp folder if not in environment.

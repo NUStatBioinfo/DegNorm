@@ -24,17 +24,18 @@ cd DegNorm
     
 ## Requirements for `degnorm_mpi`
 
-To make use of `degnorm_mpi`, you'll further need to install the [mpi4py](https://mpi4py.readthedocs.io/en/stable/index.html) package 
-which requires the MPICH MPI library be installed and configured across your server system. Check that the `mpiexec` and/or 
-`mpirun` commands are available to you at the command line. The `mpi4py` package will not be installed by default from the `.install` script.
+To make use of `degnorm_mpi`, the [mpi4py](https://mpi4py.readthedocs.io/en/stable/index.html) package must be installed.
+This requires the MPICH MPI library be installed and configured across your computing environment.
 
-If you're running DegNorm on a high performance computing environment (e.g. if you're at a university or research institute),
- it is most likely the case that MPI is already installed and available to you. If this is the case,
- then simply `pip install` the mpi4py package within the conda environment created in step 2:
-    
-    pip install mpi4py
- 
-Otherwise, you'll need to install [MPICH](https://en.wikipedia.org/wiki/MPICH).
+From the `install` script, `mpi4py` will be installed for you if the `mpiexec` command is available in your `$PATH`. This installation
+is simply `pip install mpi4py`, given that MPI is available. If you're running DegNorm in a high performance computing environment (e.g. if you're at a university or research institute),
+ it is most likely the case that MPI is already installed and available to you. Just check that the `mpiexec` and/or 
+`mpirun` commands are available to you at the command line when running `./install`, and you should be 
+all set to run the distributed pipeline with `degnorm_mpi`.
+
+If MPI is not installed in your compute environment, you will need to
+take additional steps to do so. See [MPICH home](https://en.wikipedia.org/wiki/MPICH).
+
 
 # Testing
 
