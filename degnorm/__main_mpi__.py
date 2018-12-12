@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ---------------------------------------------------------------------------- #
-# DegNorm CLI entrypoint for use in a multi-node MPI-enabled setting.
+# DegNorm CLI entrypoint for distributed pipeline run.
 # ---------------------------------------------------------------------------- #
 
 try:
