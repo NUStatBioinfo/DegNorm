@@ -15,6 +15,7 @@ cd DegNorm
 #### 2. Create a [conda](https://conda.io/docs/user-guide/tasks/manage-environments.html) virtual environment and activate it:
 
     conda create -n degnorm python=3.6
+    source activate degnorm
 
 
 #### 3. Run the `install` script
