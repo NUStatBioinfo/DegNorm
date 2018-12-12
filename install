@@ -9,5 +9,12 @@ fi
 # install pip-able requirements.
 pip install -r config/requirements.txt
 
+# check for mpiexec. If mpi available, install mpi4py package.
+if ! [ -x "$(command -v mpiexec)" ]; then
+  echo 'mpiexec not available -- SKIPPING mpi4py INSTALLATION.'
+else
+  pip install mpi4py
+fi
+
 # install degnorm.
 python setup.py install

@@ -2,10 +2,11 @@ from setuptools import setup
 
 setup(
     name='DegNorm',
-    version='0.0.1',
+    version='0.1.2',
     packages=['degnorm', 'degnorm.tests'],
     entry_points={
         'console_scripts': ['degnorm=degnorm.__main__:main',
+                            'degnorm_mpi=degnorm.__main_mpi__:main',
                             'degnorm_test=degnorm.tests.__test__:main'],
     },
     package_data={

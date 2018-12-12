@@ -24,9 +24,6 @@ def run_setup(request):
         if os.environ['DEGNORM_TEST_CLEANUP'] == 'True':
             shutil.rmtree(outdir)
 
-        # remove corresponding environment var.
-        del os.environ['DEGNORM_TEST_CLEANUP']
-
     request.addfinalizer(teardown)
 
     return outdir
@@ -49,7 +46,7 @@ def test_pipeline(run_setup):
                          , stderr=subprocess.PIPE)
     assert out.returncode == 0
 
-    # run degnorm command with test data, without downsampling, without specifying .bai files directly either.
+    # run degnorm command with test data, without downsampling, without specifying .bai files either.
     cmd = 'degnorm --bam-files {0} {1} -g {2} -o {3} --plot-genes {4} --nmf-iter 50'\
         .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')
                 , os.path.join(THIS_DIR, 'data', 'hg_small_2.bam')
@@ -61,3 +58,29 @@ def test_pipeline(run_setup):
                          , shell=True
                          , stderr=subprocess.PIPE)
     assert out.returncode == 0
+
+    # run degnorm_mpi command with test data, without downsampling, without specifying .bai files either.
+    cmd = 'mpiexec -n 2 degnorm_mpi --bam-files {0} {1} -g {2} -o {3} -p 2 --plot-genes {4} --nmf-iter 50'\
+        .format(os.path.join(THIS_DIR, 'data', 'hg_small_1.bam')
+                , os.path.join(THIS_DIR, 'data', 'hg_small_2.bam')
+                , os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
+                , run_setup
+                , os.path.join(THIS_DIR, 'data', 'genes.txt'))
+
+    # if MPI available and > 1 node available, run pipeline test for degnorm_mpi.
+    try:
+        from mpi4py import MPI
+
+        # try running degnorm_mpi test if there are > 1 nodes available. O/w skip it.
+        try:
+            out = subprocess.run([cmd]
+                                 , shell=True
+                                 , stderr=subprocess.PIPE)
+
+            assert out.returncode == 0
+
+        except RuntimeError:
+            pass
+
+    except ImportError:
+        pass

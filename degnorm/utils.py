@@ -1,5 +1,6 @@
 import multiprocessing as mp
 import logging
+import warnings
 import sys
 import re
 import numpy as np
@@ -12,16 +13,24 @@ import pkg_resources
 import gc
 
 
-def configure_logger(output_dir):
+def configure_logger(output_dir=None, mpi=False):
     """
     Configure DegNorm logger. Save log to file in output directory and route to stdout.
 
     :param output_dir: str path to DegNorm run output dir where degnorm.log file to be written.
+    :param mpi: Bool is user running degnorm_mpi?
     """
+    handlers = [logging.StreamHandler()]
+    if output_dir:
+        handlers += [logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))]
+
+    fmt = 'DegNorm (%(asctime)s) ---- %(message)s'
+    if mpi:
+        fmt = 'DegNorm MPI (%(asctime)s) ---- %(message)s'
+
     logging.basicConfig(level=logging.DEBUG
-                        , format='DegNorm (%(asctime)s) ---- %(message)s'
-                        , handlers=[logging.FileHandler(os.path.join(output_dir, 'degnorm.log'))
-                                    , logging.StreamHandler()]
+                        , format=fmt
+                        , handlers=handlers
                         , datefmt='%m/%d/%Y %I:%M:%S')
 
 
@@ -34,7 +43,6 @@ def welcome():
         welcome = f.readlines()
         welcome += '\n' + 'version {0}'.format(pkg_resources.get_distribution('degnorm').version)
 
-    # sys.stdout.write('\n' + ''.join(welcome) + '\n'*4)
     logging.info('\n' + ''.join(welcome) + '\n'*4)
 
 
@@ -45,13 +53,13 @@ def create_output_dir(output_dir):
     :param output_dir: str desired path to DegNorm output directory
     :return: str path to newly created output directory
     """
-    output_dir = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
-    if os.path.isdir(output_dir):
+    dir_to_make = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+    while os.path.isdir(dir_to_make):
         time.sleep(2)
-        output_dir = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+        dir_to_make = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
 
-    os.makedirs(output_dir)
-    return output_dir
+    os.makedirs(dir_to_make)
+    return dir_to_make
 
 
 def subset_to_chrom(df, chrom, reindex=False):
@@ -79,19 +87,22 @@ def subset_to_chrom(df, chrom, reindex=False):
 
 
 def max_cpu():
+    """
+    :return: int number of CPUs available on a node minus 1
+    """
     return mp.cpu_count() - 1
 
 
-def flatten_2d(lst2d):
+def flatten_2d(lst2d, arr=True):
     """
-    Flatten a 2-dimensional list of lists or list of numpy arrays into a single numpy array.
+    Flatten a 2-dimensional list of lists or list of numpy arrays into a single list or numpy array.
 
-    :param lst2d: 2-dimensional list of lists or list of numpy arrays
-    :return: 1-dimensional numpy array
+    :param lst2d: 2-dimensional list of lists or list of 1-d numpy arrays
+    :param arr: Bool return numpy array or list?
+    :return: 1-dimensional list or numpy array
     """
-    arr1d = np.array([elt for lst1d in lst2d for elt in lst1d])
-
-    return arr1d
+    lst1d = [elt for lst1d in lst2d for elt in lst1d]
+    return np.array(lst1d) if arr else lst1d
 
 
 def find_software(software='samtools'):
@@ -108,6 +119,16 @@ def find_software(software='samtools'):
     return True
 
 
+def bai_from_bam_file(bam_file):
+    """
+    Simple helper function to change the file extension of a .bam file to .bai.
+    """
+    if not bam_file.endswith('.bam'):
+        raise ValueError('{0} must have a .bam extension.'.format(bam_file))
+
+    return bam_file[:-3] + 'bai'
+
+
 def create_index_file(bam_file):
     """
     Create a BAM index file with samtools.
@@ -115,9 +136,9 @@ def create_index_file(bam_file):
     :param bam_file: str realpath to .bam file for which we desire a .bai index file
     :return: str realpath to the created .bai file
     """
-    output_dir = os.path.dirname(bam_file)
-    bai_file = os.path.join(output_dir, bam_file[:-3] + 'bai')
+    bai_file = bai_from_bam_file(bam_file)
 
+    # check if samtools is available in $PATH.
     samtools_avail = find_software('samtools')
 
     # Note that samtools is only available for Linux and Mac OS:
@@ -126,23 +147,13 @@ def create_index_file(bam_file):
         raise EnvironmentError('samtools not in found in PATH. samtools is required to convert {0} -> {1}'
                                .format(bam_file, bai_file))
 
-    if not bam_file.endswith('.bam'):
-        raise ValueError('{0} is not a .bam file'.format(bam_file))
-
-    # check if a .bai file already exists; if it does, add salt by time.
-    while os.path.isfile(bai_file):
-        time.sleep(2)
-        bai = os.path.basename(bam_file).split('.')[:-1][0] + '_' + datetime.now().strftime('%m%d%Y_%H%M%S') + '.bai'
-        bai_file = os.path.join(output_dir, bai)
-
-    cmd = 'samtools index {0} -o {1}'.format(bam_file, bai_file)
+    # run samtools index
+    cmd = 'samtools index {0} {1}'.format(bam_file, bai_file)
     out = subprocess.run([cmd]
                          , shell=True)
 
     if out.returncode != 0:
         raise ValueError('{0} was not successfully converted into a .bai file'.format(bam_file))
-
-    return bai_file
 
 
 def split_into_chunks(x, n):
@@ -164,7 +175,7 @@ def split_into_chunks(x, n):
     return out
 
 
-def parse_args():
+def argparser():
     """
     Obtain degnorm CLI parameters.
 
@@ -235,13 +246,13 @@ def parse_args():
                                'Resulting coverage matrix estimates (and plots) will be re-interpolated back '
                                'to original size. '
                                'Use to speed up computation. Default is NO downsampling (i.e. downsample rate == 1.')
-    parser.add_argument( '--nmf-iter'
+    parser.add_argument('--nmf-iter'
                         , type=int
                         , default=100
                         , required=False
                         , help='Number of iterations to perform per NMF-OA computation per gene. '
                                'Different than number of DegNorm iterations (--iter flag). Default = 100.')
-    parser.add_argument( '--iter'
+    parser.add_argument('--iter'
                         , type=int
                         , default=5
                         , required=False
@@ -263,12 +274,14 @@ def parse_args():
                         , action='store_true'
                         , help='Only retain reads that were uniquely aligned. All reads with '
                                'the flag "NH:i:<x>" with x > 1 will be dropped.')
-    parser.add_argument('-c'
-                        , '--cpu'
+    parser.add_argument('-p'
+                        , '--proc-per-node'
                         , type=int
+                        , required=False
                         , default=max_cpu()
-                        , help='Number of cores for running DegNorm pipeline in parallel. '
-                               'Defaults to the number of available cores - 1.')
+                        , help='Number of processes to spawn per node, for within-node parallelization.'
+                               'Defaults to the number of available cores (on the worker node) - 1. '
+                               'If too high for a given node, reduce to the node\'s default.')
     parser.add_argument('-v'
                         , '--version'
                         , action='version'
@@ -282,18 +295,28 @@ def parse_args():
                                'Accompanies our 2018 research paper "Normalization of generalized '
                                'transcript degradation improves accuracy in RNA-seq analysis."')
 
+    return parser
+
+
+def parse_args():
+    """
+    Parse command line arguments.
+
+    :return: parsed argparse.ArgumentParser
+    """
+    parser = argparser()
     args = parser.parse_args()
 
     # check validity of cores selection.
-    avail_cores = max_cpu() + 1
-    if args.cpu > avail_cores:
-        logging.warning('{0} is greater than the number of available cores. Reducing to {1}'
-                        .format(args.cpu, avail_cores))
-        args.cpu = avail_cores
+    max_ppn = max_cpu() + 1
+    if args.proc_per_node > max_ppn:
+        warnings.warn('{0} is greater than the number of available cores ({1}). Reducing to {2}'
+                      .format(args.proc_per_node, max_ppn, max_ppn - 1))
+        args.proc_per_node = max_ppn - 1
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
-        raise NotADirectoryError('Cannot find output-dir {0}'.format(args.output_dir))
+        raise NotADirectoryError('Cannot find output directory {0} for saving output'.format(args.output_dir))
 
     # ensure that user has supplied fresh .bam/.bai files or a warm start directory.
     if (not args.bam_files and not args.bam_dir) and (not args.warm_start_dir):
@@ -332,10 +355,11 @@ def parse_args():
             logging.warning('Using warm-start directory. Supplied .bam files, .bam directory, '
                             'and genome annotation file will be ignored.')
 
-            args.bam_files = None
-            args.bai_files = None
-            args.bam_dir = None
-            args.genome_annotation = None
+        args.bam_files = None
+        args.bai_files = None
+        args.create_bai_files = None
+        args.bam_dir = None
+        args.genome_annotation = None
 
     # if not using a warm-start, parse input RNA-Seq + genome annotation files.
     else:
@@ -351,6 +375,7 @@ def parse_args():
         # check validity of file i/o selection.
         bam_files = list()
         bai_files = list()
+        create_bai_files = list()
 
         # INPUT OPTION 1: a --bam-dir was specified.
         if args.bam_dir:
@@ -378,9 +403,11 @@ def parse_args():
             for bam_file in bam_files:
                 bai_file = re.sub('.bam$', '.bai', bam_file)
 
-                # if .bai file under same basename as .bam file doesn't exist, try to create it.
+                # if .bai file under same basename as .bam file doesn't exist,
+                # add it to list of .bai files that need to be created.
                 if not os.path.isfile(bai_file):
-                    bai_files.append(create_index_file(bam_file))
+                    bai_files.append(bai_from_bam_file(bam_file))
+                    create_bai_files.append(bam_file)
                 else:
                     bai_files.append(bai_file)
 
@@ -390,6 +417,8 @@ def parse_args():
             for bam_file in args.bam_files:
                 if not bam_file.endswith('.bam'):
                     raise ValueError('{0} is not a .bam file.'.format(bam_file))
+                elif not os.path.isfile(bam_file):
+                    raise FileNotFoundError('Count not find .bam file {0}'.format(bam_file))
                 else:
                     bam_files.append(bam_file)
 
@@ -403,6 +432,8 @@ def parse_args():
                 for bai_file in args.bai_files:
                     if not bai_file.endswith('.bai'):
                         raise ValueError('{0} is not a .bai file.'.format(bai_file))
+                    elif not os.path.isfile(bai_file):
+                        raise FileNotFoundError('Count not find .bai file {0}'.format(bai_file))
                     else:
                         bai_files.append(bai_file)
 
@@ -412,9 +443,11 @@ def parse_args():
                 for bam_file in bam_files:
                     bai_file = re.sub('.bam$', '.bai', bam_file)
 
-                    # if .bai file under same name as .bam file doesn't exist, try to create it.
+                    # if .bai file under same name as .bam file doesn't exist,
+                    # add it to list of .bam files for which we need to create a .bai file.
                     if not os.path.isfile(bai_file):
-                        bai_files.append(create_index_file(bam_file))
+                        bai_files.append(bai_from_bam_file(bam_file))
+                        create_bai_files.append(bam_file)
                     else:
                         bai_files.append(bai_file)
 
@@ -429,20 +462,6 @@ def parse_args():
         # create parser attributes for bam/index files.
         args.bam_files = bam_files
         args.bai_files = bai_files
-
-        # ensure that all files can be found.
-        for f in args.bam_files + args.bai_files:
-            if not os.path.isfile(f):
-                raise FileNotFoundError('Input file {0} not found.'.format(f))
-
-        # ensure there are at least 2 experiment files.
-        if len(args.bam_files) == 1:
-            raise ValueError('Must input >= 2 unique aligned reads files! Cannot estimate coverage curve matrix '
-                             'approximations from a single experiment.')
-
+        args.create_bai_files = create_bai_files
 
     return args
-
-
-if __name__ == '__main__':
-    print(parse_args())

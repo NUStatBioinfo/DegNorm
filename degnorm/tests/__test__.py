@@ -35,5 +35,5 @@ def main():
     pytest.main(['-x', tests_dir])
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

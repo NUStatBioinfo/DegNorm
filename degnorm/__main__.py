@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+
+# ---------------------------------------------------------------------------- #
+# DegNorm CLI entrypoint for use on a single node with hyperthreading.
+# ---------------------------------------------------------------------------- #
+
+import sys
 from degnorm.reads import *
 from degnorm.coverage import *
 from degnorm.gene_processing import *
@@ -6,7 +13,6 @@ from degnorm.nmf import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
 from collections import OrderedDict
-import sys
 
 
 def main():
@@ -15,11 +21,21 @@ def main():
     # Load CLI arguments, display welcome message, create output directory
     # ---------------------------------------------------------------------------- #
     args = parse_args()
-    n_jobs = args.cpu
+    n_jobs = args.proc_per_node
     output_dir = create_output_dir(args.output_dir)
     configure_logger(output_dir)
     welcome()
     logging.info('DegNorm output directory -- {0}'.format(output_dir))
+
+    # ---------------------------------------------------------------------------- #
+    # If any Bam index (.bai) files need to be created, do that now.
+    # ---------------------------------------------------------------------------- #
+    if args.create_bai_files:
+        for file_idx in range(len(args.create_bai_files)):
+            bam_file = args.create_bai_files[file_idx]
+            logging.info('creating index file for {0} -- {1} / {2}'
+                         .format(bam_file, file_idx + 1, len(args.create_bai_files)))
+            out = create_index_file(bam_file)
 
     # ---------------------------------------------------------------------------- #
     # Path 1: warm-start path.
@@ -230,7 +246,7 @@ def main():
                  .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
     # ---------------------------------------------------------------------------- #
-    # Run NMF.
+    # Run NMF-OA.
     # ---------------------------------------------------------------------------- #
 
     # joblib overhead: specify temp folder if not in environment.
@@ -270,7 +286,6 @@ def main():
         plot_genes = np.intersect1d(args.plot_genes, nmfoa.genes)
 
         if len(plot_genes) > 0:
-
             logging.info('Generating coverage curve plots for specified genes.')
             out = get_coverage_plots(plot_genes
                                      , degnorm_dir=output_dir
@@ -281,8 +296,14 @@ def main():
     # Run summary report and exit.
     # ---------------------------------------------------------------------------- #
     logging.info('Rendering DegNorm summary report.')
+    degnorm_dat = {'degnorm_iter': args.iter
+                   , 'nmf_iter': args.nmf_iter
+                   , 'downsample_rate': args.downsample_rate
+                   , 'rho': nmfoa.rho
+                   , 'genes': nmfoa.genes}
+
     render_report(data_dir=output_dir
-                  , genenmfoa=nmfoa
+                  , degnorm_data=degnorm_dat
                   , bam_files=args.bam_files if not args.warm_start_dir else [args.warm_start_dir]
                   , sample_ids=sample_ids
                   , top_n_genes=5

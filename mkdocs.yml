@@ -4,10 +4,11 @@ nav:
 - How-Tos:
     - 'Installation': 'howtos/installation.md'
     - 'Running DegNorm': 'howtos/run_the_pipeline.md'
-    - 'Posthoc Analysis': 'howtos/posthoc_analysis.md'
+    - 'Speed enhancements': 'howtos/speedups.md'
+    - 'Posthoc analysis': 'howtos/posthoc_analysis.md'
 - About:
     - 'License': 'about/license.md'
-    - 'Release Notes': 'about/release.md'
+    - 'Release notes': 'about/release.md'
 theme:
   name: null
   custom_dir: 'cinder/'
