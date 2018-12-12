@@ -87,7 +87,13 @@
                         
                             
 <li >
-    <a href="../posthoc_analysis/">Posthoc Analysis</a>
+    <a href="../speedups/">Speed enhancements</a>
+</li>
+
+                        
+                            
+<li >
+    <a href="../posthoc_analysis/">Posthoc analysis</a>
 </li>
 
                         
@@ -108,7 +114,7 @@
                         
                             
 <li >
-    <a href="../../about/release/">Release Notes</a>
+    <a href="../../about/release/">Release notes</a>
 </li>
 
                         
@@ -130,7 +136,7 @@
                         </a>
                     </li>
                     <li >
-                        <a rel="prev" href="../posthoc_analysis/">
+                        <a rel="prev" href="../speedups/">
                             Next <i class="fa fa-arrow-right"></i>
                         </a>
                     </li>
@@ -161,17 +167,19 @@
         <div class="col-md-9" role="main">
 
 <h1 id="running-degnorm">Running DegNorm</h1>
-<p>DegNorm is a CLI tool. You can access it through the <code>degnorm</code> command.</p>
+<p>DegNorm is a command line interface (CLI) tool. You can access it through the <code>degnorm</code> command and the MPI-enabled
+distributed version is <code>degnorm_mpi</code>.</p>
+<hr />
 <h2 id="inputs">Inputs</h2>
 <p>You only need two types of files to supply <code>degnorm</code>: .bam (and their corresponding .bai files - <a href="https://www.biostars.org/p/15847/">bam index files</a>), and a .gtf file.
-If you have <code>samtools</code> in your <code>$PATH</code>, .bai files will be created for you if you do not have them.</p>
+If you have <code>samtools</code> in your <code>$PATH</code>, .bai files can be created for you automatically, if they are not supplied.</p>
 <h4 id="1-paired-or-single-end-aligned-and-sorted-reads-data">1. (Paired or single end) aligned and sorted reads data</h4>
-<p>At least two aligned reads files must be specieid, as inter-sample degradation normalization can't happen on a standalone 
-RNA-Seq expermient. Use <code>p</code> to refer to the total number of experiments.</p>
-<p>It is assumed your .bam files are <strong>sorted</strong> (i.e. with <code>samtools sort</code>), contain a header, and abide by the <a href="http://samtools.sourceforge.net/SAM1.pdf">conventions</a>. If .bai files are not submitted,
+<p>At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
+RNA-Seq sample. Use <code>p</code> to refer to the total number of samples.</p>
+<p>It is assumed your .bam files are <strong>sorted</strong> by leftmost start coordinate (i.e. with <code>samtools sort</code>), contain a header, and abide by the <a href="http://samtools.sourceforge.net/SAM1.pdf">conventions</a>. If .bai files are not submitted,
 <code>degnorm</code> will look for .bai files named after the .bam files only with the ".bai" extension. If no such file is found, <code>degnorm</code> will attempt to build one with the <code>samtools index</code> command. This will only work if the .bam files are sorted.
 Instead of specifying individual .bam and .bai files, you can just specify <code>--bam-dir</code>, a path to a directory holding the relevant .bam and .bai files.
-  With <code>--bam-dir</code>, it is assumed that the .bai files are named the same as the .bam files, they just have a different extension.</p>
+  With <code>--bam-dir</code>, it is assumed that the .bai files are named according to the .bam files, only with the ".bai" extension.</p>
 <p><strong>You can supply paired reads files or single end reads files</strong>.</p>
 <table>
 <thead>
@@ -195,7 +203,7 @@ Instead of specifying individual .bam and .bai files, you can just specify <code
 <tr>
 <td><code>--bam-dir</code></td>
 <td>If neither <code>--warm-start-dir</code> nor <code>--bam-files</code> are specified</td>
-<td>Directory containing .bam and .bai files for a pipeline run. It is assumed the .bai files are named after the .bam files.</td>
+<td>Directory containing .bam and .bai files for a pipeline run. It is assumed the .bai files have the same name as the .bam files, just with a different extension.</td>
 </tr>
 <tr>
 <td><code>-u</code>, <code>--unique-alignments</code></td>
@@ -205,8 +213,7 @@ Instead of specifying individual .bam and .bai files, you can just specify <code
 </tbody>
 </table>
 <h4 id="2-genome-annotation-file">2. Genome annotation file</h4>
-<p>DegNorm needs a .gtf file to determine the transcript for computing the per-gene coverage curves, which span a 
-concatenation of the coding regions only (introns are ignored). It is assumed your .gtf file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">conventions</a>.</p>
+<p>DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed your .gtf file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">conventions</a>.</p>
 <table>
 <thead>
 <tr>
@@ -224,8 +231,8 @@ concatenation of the coding regions only (introns are ignored). It is assumed yo
 </tbody>
 </table>
 <h2 id="using-a-warm-start-directory">Using a warm start directory</h2>
-<p>Loading multiple .bam files, parsing a .gtf files, and computing per-gene cross-sample coverage matrices and read counts, can take some time, but this is a one-time
- preprocessing cost given a specific set of RNA-Seq experiments. If you run the <code>degnorm</code> pipeline once, you can leverage
+<p>Loading multiple .bam files, parsing a .gtf file, and computing per-gene cross-sample coverage matrices and read counts, can take some time, but this is a one-time
+ preprocessing cost given a specific set of RNA-Seq samples. If you run the <code>degnorm</code> pipeline once, you can leverage
 the stored coverage, read counts, and parsed transcript data from an existing DegNorm output directory to start a a new DegNorm run where all of the
 preprocessing is completed ahead of time. When using <code>--warm-start-dir</code> you do <em>not</em> need to supply a .gtf file.</p>
 <table>
@@ -290,37 +297,47 @@ preprocessing is completed ahead of time. When using <code>--warm-start-dir</cod
 <td>EXPERIMENTAL. Flag to skip baseline selection, will greatly speed up DegNorm iterations.</td>
 </tr>
 <tr>
-<td><code>-c</code>, <code>--cpu</code></td>
+<td><code>-p</code>, <code>--proc-per-node</code></td>
 <td>No</td>
-<td>Integer number of threads. The more the better.</td>
+<td>Integer number of processes to spawn per compute node. The more the better.</td>
 </tr>
 </tbody>
 </table>
 <h2 id="example-usage">Example usage</h2>
-<p>Run <code>degnorm</code> with an input directory (containing multiple .bam files) with 20 threads, use 5 DegNorm iterations and 50 NMF iterations per gene per NMF iteration.
+<p>Run <code>degnorm</code> "the hard way" by enumerating each .bam file individually. Suppose we have two alignment files, <code>degnorm_data/GBM/S1.bam</code> and <code>degnorm_data/GBM/S2.bam</code>.
+ If we do not specify any .bai files, <code>degnorm</code> will search for "degnorm_data/GBM/S1.bai" and  "degnorm_data/GBM/S2.bai." If they cannot be found, they will be created within <code>degnorm_data/GBM</code> if <code>samtools</code> is in your <code>$PATH</code>.</p>
+<pre><code>degnorm --bam-files degnorm_data/GBM/S1.bam degnorm_data/GBM/S2.bam \
+    -g human.gtf \
+    -p 20 \
+    --nmf-iter 50 \
+    -o degnorm_output
+</code></pre>
+<p>It's probably just easier to supply <code>degnorm</code> with an input directory (containing multiple .bam files) with 20 threads, use 5 DegNorm iterations and 50 NMF iterations per gene per NMF iteration.
 Route output to a directory besides the current working directory.</p>
 <pre><code>degnorm --bam-dir degnorm_data/GBM \
     -g human.gtf \
-    -c 20 \
+    -p 20 \
     --nmf-iter 50 \
     -o degnorm_output
 </code></pre>
-<p>This is equivalent to simply enumerating the .bam files individually. Here, since .bai files are not explicitly specified, <code>degnorm</code> will look for 
-the files "degnorm_data/GBM/S1.bai" and  "degnorm_data/GBM/S2.bai":</p>
-<pre><code>degnorm --bam-files degnorm_data/GBM/S1.bam degnorm_data/GBM/S2.bam \
-    -g human.gtf \
-    -c 20 \
-    --nmf-iter 50 \
-    -o degnorm_output
-</code></pre>
-<p>After one pipeline run, we could start <code>degnorm</code> from a warm start directory (from a previous run). This time, do not include genes with a maximum coverage
-(across all samples) less than 20, and only run 3 DegNorm iterations.</p>
-<pre><code>degnorm --warm-start-dir degnorm_output/DegNorm_GBM_102018 \
-    -c 20 \
+<p>After one pipeline run, we could start <code>degnorm</code> from the output directory resulting from the first run - this directory is known as the "warm start" directory. This time, let's exclude genes with a maximum coverage
+(across all samples) less than 20, and run DegNorm with only 3 iterations. In this example, <code>DegNorm_102118_081045</code> was generated automatically from one of the prior DegNorm runs.</p>
+<pre><code>degnorm --warm-start-dir degnorm_output/DegNorm_102118_081045 \
+    -p 20 \
     -o degnorm_output \
     --minimax-coverage 20 \
     --iter 3
 </code></pre>
+<p>If the <code>mpi4py</code> python package has been installed (meaning that MPICH is available in your compute environment), try distributing the DegNorm
+ workload over multiple servers (also often referred to as "nodes") with <code>degnorm_mpi</code>. You can still specify the number of threads to use within each node with <code>-p</code>.</p>
+<pre><code>mpiexec -n 4 degnorm_mpi \
+    --warm-start-dir degnorm_output/DegNorm_GBM_102018 \
+    -p 20 \
+    -o degnorm_output \
+    --minimax-coverage 20
+    --nmf-iter 100
+</code></pre>
+<p>The functionality of <code>degnorm_mpi</code> is the same as the single-node <code>degnorm</code>, so you can continue using warm start directories just like you could with <code>degnorm</code>.</p>
 <h2 id="output">Output</h2>
 <p>Raw and estimated coverage data are stored in separate <code>.pkl</code> files, one file per chromosome. See the <a href="../posthoc_analysis/">posthoc analysis</a>
  documentation for helper functions to access coverage data.</p>
