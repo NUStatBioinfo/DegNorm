@@ -44,8 +44,7 @@ def bam_setup(request):
 @pytest.fixture
 def gtf_setup(request):
     gtf_file = os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
-    gtf_processor = GeneAnnotationProcessor(gtf_file
-                                            , n_jobs=1)
+    gtf_processor = GeneAnnotationProcessor(gtf_file)
     exons_df = gtf_processor.run()
     return exons_df
 

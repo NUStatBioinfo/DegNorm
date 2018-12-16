@@ -150,7 +150,6 @@ def main():
         if RANK == 0:
             mpi_logging_info('Begin genome annotation file processing...')
             gap = GeneAnnotationProcessor(args.genome_annotation
-                                          , n_jobs=n_jobs
                                           , verbose=True
                                           , chroms=chroms)
             exon_df = gap.run()
