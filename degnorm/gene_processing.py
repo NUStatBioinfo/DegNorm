@@ -128,7 +128,7 @@ class GeneAnnotationProcessor():
             exon_intrv = HTSeq.GenomicInterval(chrom, exon_start, exon_end, ".")
             gas[exon_intrv] += str(i)
 
-        # 3. Find exons in exon_df that overlap with other exons.
+        # Step 3. Find exons in exon_df that overlap with other exons.
         overlap_exons = list()
         for chrom in ex_df.chr.unique():
             # determine effective end of chromosome.
