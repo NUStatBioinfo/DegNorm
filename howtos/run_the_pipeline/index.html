@@ -152,14 +152,20 @@
         <li class="first-level active"><a href="#running-degnorm">Running DegNorm</a></li>
             <li class="second-level"><a href="#inputs">Inputs</a></li>
                 
-                <li class="third-level"><a href="#1-paired-or-single-end-aligned-and-sorted-reads-data">1. (Paired or single end) aligned and sorted reads data</a></li>
-                <li class="third-level"><a href="#2-genome-annotation-file">2. Genome annotation file</a></li>
+                <li class="third-level"><a href="#1-align-and-sort-reads-data">1. Align and sort reads data</a></li>
+                <li class="third-level"><a href="#2-paired-or-single-end-aligned-and-sorted-reads-data">2. (Paired or single end) aligned and sorted reads data</a></li>
+                <li class="third-level"><a href="#3-genome-annotation-file">3. Genome annotation file</a></li>
             <li class="second-level"><a href="#using-a-warm-start-directory">Using a warm start directory</a></li>
                 
             <li class="second-level"><a href="#runtime-and-algorithmic-parameters">Runtime and algorithmic parameters</a></li>
                 
             <li class="second-level"><a href="#example-usage">Example usage</a></li>
                 
+                <li class="third-level"><a href="#sorting-indexing-alignment-files">Sorting, indexing alignment files</a></li>
+                <li class="third-level"><a href="#launching-a-full-degnorm-run-the-verbose-way">Launching a full degnorm run "the verbose way"</a></li>
+                <li class="third-level"><a href="#launching-a-full-degnorm-run-the-easy-way">Launching a full degnorm run "the easy way"</a></li>
+                <li class="third-level"><a href="#using-a-warm-start-directory_1">Using a warm start directory</a></li>
+                <li class="third-level"><a href="#launching-distributed-runs-with-mpi">Launching distributed runs with MPI</a></li>
             <li class="second-level"><a href="#output">Output</a></li>
                 
     </ul>
@@ -171,13 +177,23 @@
 distributed version is <code>degnorm_mpi</code>.</p>
 <hr />
 <h2 id="inputs">Inputs</h2>
-<p>You only need two types of files to supply <code>degnorm</code>: .bam (and their corresponding .bai files - <a href="https://www.biostars.org/p/15847/">bam index files</a>), and a .gtf file.
-If you have <code>samtools</code> in your <code>$PATH</code>, .bai files can be created for you automatically, if they are not supplied.</p>
-<h4 id="1-paired-or-single-end-aligned-and-sorted-reads-data">1. (Paired or single end) aligned and sorted reads data</h4>
+<p>You only need two types of files to supply <code>degnorm</code> - .bam files and a .gtf file
+if you have <code>samtools</code> in your <code>$PATH</code>. If you do not have <code>samtools</code>, you will also need <a href="[bam index files](https://www.biostars.org/p/15847/)">bam index files</a> to accompany your .bam files.</p>
+<h4 id="1-align-and-sort-reads-data">1. Align and sort reads data</h4>
+<p>Before running DegNorm, you will need to sort (and optionally, index) them with <code>samtools sort</code>. This command just re-orders reads
+by chromosome and starting index, so that they can be more useful to DegNorm later on.</p>
+<p>To <a href="https://davetang.org/wiki/tiki-index.php?page=SAMTools#Sorting_a_BAM_file">sort</a> an alignment file, suppose it's called <code>S1.bam</code>, you can sort it with the following command:</p>
+<pre><code>samtools sort S1.bam -o S1_sorted.bam
+</code></pre>
+<p>DegNorm requires sorted .bam files because it really needs <a href="https://www.biostars.org/p/15847/">bam index files</a>. If you don't create them
+first, DegNorm will run <code>samtools index</code> to create an index file for each input alignment file:</p>
+<pre><code>samtools index S1_sorted.bam S1_sorted.bai
+</code></pre>
+<h4 id="2-paired-or-single-end-aligned-and-sorted-reads-data">2. (Paired or single end) aligned and sorted reads data</h4>
 <p>At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
 RNA-Seq sample. Use <code>p</code> to refer to the total number of samples.</p>
-<p>It is assumed your .bam files are <strong>sorted</strong> by leftmost start coordinate (i.e. with <code>samtools sort</code>), contain a header, and abide by the <a href="http://samtools.sourceforge.net/SAM1.pdf">conventions</a>. If .bai files are not submitted,
-<code>degnorm</code> will look for .bai files named after the .bam files only with the ".bai" extension. If no such file is found, <code>degnorm</code> will attempt to build one with the <code>samtools index</code> command. This will only work if the .bam files are sorted.
+<p>If .bai files are not submitted, <code>degnorm</code> will look for .bai files named after the .bam files only with the ".bai" extension.
+If no such file is found, <code>degnorm</code> will attempt to build one with the <code>samtools index</code> command. This will only work if the .bam files are sorted.
 Instead of specifying individual .bam and .bai files, you can just specify <code>--bam-dir</code>, a path to a directory holding the relevant .bam and .bai files.
   With <code>--bam-dir</code>, it is assumed that the .bai files are named according to the .bam files, only with the ".bai" extension.</p>
 <p><strong>You can supply paired reads files or single end reads files</strong>.</p>
@@ -212,7 +228,7 @@ Instead of specifying individual .bam and .bai files, you can just specify <code
 </tr>
 </tbody>
 </table>
-<h4 id="2-genome-annotation-file">2. Genome annotation file</h4>
+<h4 id="3-genome-annotation-file">3. Genome annotation file</h4>
 <p>DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed your .gtf file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">conventions</a>.</p>
 <table>
 <thead>
@@ -304,22 +320,42 @@ preprocessing is completed ahead of time. When using <code>--warm-start-dir</cod
 </tbody>
 </table>
 <h2 id="example-usage">Example usage</h2>
-<p>Run <code>degnorm</code> "the hard way" by enumerating each .bam file individually. Suppose we have two alignment files, <code>degnorm_data/GBM/S1.bam</code> and <code>degnorm_data/GBM/S2.bam</code>.
- If we do not specify any .bai files, <code>degnorm</code> will search for "degnorm_data/GBM/S1.bai" and  "degnorm_data/GBM/S2.bai." If they cannot be found, they will be created within <code>degnorm_data/GBM</code> if <code>samtools</code> is in your <code>$PATH</code>.</p>
-<pre><code>degnorm --bam-files degnorm_data/GBM/S1.bam degnorm_data/GBM/S2.bam \
+<h3 id="sorting-indexing-alignment-files">Sorting, indexing alignment files</h3>
+<p>Remember - we have to sort and index the alignment files first, and then we can run <code>degnorm</code>. Suppose we have set of alignment
+files in our current working directory that we would like to send through DegNorm:</p>
+<pre><code># sort and index alignment files in current working directory.
+for FILE in ./*.bam
+do
+    echo 'sorting '$FILE
+    samtools sort $FILE -o ${FILE/.bam/}'_sorted.bam'
+    echo 'indexing '${FILE/.bam/}'_sorted.bam'
+    samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/.bai}
+done
+</code></pre>
+<h3 id="launching-a-full-degnorm-run-the-verbose-way">Launching a full <code>degnorm</code> run "the verbose way"</h3>
+<p>Next, after the alignment files have been sorted (and optionally indexed), let's run <code>degnorm</code> "the verbose way" by enumerating 
+each .bam and .bai file individually. Suppose we have two sorted alignment files, <code>S1_sorted.bam</code> and <code>S2_sorted.bam</code>.</p>
+<pre><code># run degnorm on two samples on 20 cores, using 100 NMF iterations per gene
+degnorm --bam-files S1_sorted.bam S2_sorted.bam \
+    --bai-files S1_sorted.bai S2_sorted.bai \
     -g human.gtf \
     -p 20 \
-    --nmf-iter 50 \
     -o degnorm_output
 </code></pre>
-<p>It's probably just easier to supply <code>degnorm</code> with an input directory (containing multiple .bam files) with 20 threads, use 5 DegNorm iterations and 50 NMF iterations per gene per NMF iteration.
-Route output to a directory besides the current working directory.</p>
+<p>If we did not specify any <code>--bai-files</code>, then DegNorm would automatically search for files "S1_sorted.bai" and "S2_sorted.bai" because they're named after
+the alignment files, "S1_sorted.bam" and "S2_sorted.bam." If those index files cannot be found, they will be created in the same directory
+  containing the input .bam files, only if <code>samtools</code> is in your <code>$PATH</code>.</p>
+<h3 id="launching-a-full-degnorm-run-the-easy-way">Launching a full <code>degnorm</code> run "the easy way"</h3>
+<p>It's probably just easier to supply <code>degnorm</code> with an input directory containing all of our .bam files, instead of each .bam file individually.
+Suppose that data directory is located at <code>degnorm_data/GBM</code>.
+ Let's also use 5 DegNorm iterations, 50 NMF iterations per gene per NMF iteration, and route output to a directory besides the current working directory.</p>
 <pre><code>degnorm --bam-dir degnorm_data/GBM \
     -g human.gtf \
     -p 20 \
     --nmf-iter 50 \
     -o degnorm_output
 </code></pre>
+<h3 id="using-a-warm-start-directory_1">Using a warm start directory</h3>
 <p>After one pipeline run, we could start <code>degnorm</code> from the output directory resulting from the first run - this directory is known as the "warm start" directory. This time, let's exclude genes with a maximum coverage
 (across all samples) less than 20, and run DegNorm with only 3 iterations. In this example, <code>DegNorm_102118_081045</code> was generated automatically from one of the prior DegNorm runs.</p>
 <pre><code>degnorm --warm-start-dir degnorm_output/DegNorm_102118_081045 \
@@ -328,16 +364,20 @@ Route output to a directory besides the current working directory.</p>
     --minimax-coverage 20 \
     --iter 3
 </code></pre>
-<p>If the <code>mpi4py</code> python package has been installed (meaning that MPICH is available in your compute environment), try distributing the DegNorm
- workload over multiple servers (also often referred to as "nodes") with <code>degnorm_mpi</code>. You can still specify the number of threads to use within each node with <code>-p</code>.</p>
-<pre><code>mpiexec -n 4 degnorm_mpi \
+<h3 id="launching-distributed-runs-with-mpi">Launching distributed runs with MPI</h3>
+<p>Let's speed this up by distributing DegNorm's workload over multiple servers with <code>degnorm_mpi</code>!
+ If the <code>mpi4py</code> python package has been installed (meaning that MPICH is available in your compute environment).
+ You can still specify the number of cores to use on each node with <code>-p</code>.</p>
+<pre><code># run degnorm_mpi using 4 nodes ("-n 4")
+mpiexec -n 4 degnorm_mpi \
     --warm-start-dir degnorm_output/DegNorm_GBM_102018 \
     -p 20 \
     -o degnorm_output \
     --minimax-coverage 20
     --nmf-iter 100
 </code></pre>
-<p>The functionality of <code>degnorm_mpi</code> is the same as the single-node <code>degnorm</code>, so you can continue using warm start directories just like you could with <code>degnorm</code>.</p>
+<p>The functionality of <code>degnorm_mpi</code> is the same as the single-node <code>degnorm</code>, so you can continue using warm start directories just like you could with <code>degnorm</code>.
+ If you are unfamiliar with MPI, a great </p>
 <h2 id="output">Output</h2>
 <p>Raw and estimated coverage data are stored in separate <code>.pkl</code> files, one file per chromosome. See the <a href="../posthoc_analysis/">posthoc analysis</a>
  documentation for helper functions to access coverage data.</p>
@@ -347,15 +387,15 @@ The report will render as an .html file, but if you have <code>pandoc</code> ins
 it will be converted to a .pdf.</p>
 <pre><code>├── degnorm.log
 ├── degradation_index_scores.csv
-├── ran_baseline_selection.csv
-├── adjusted_read_counts.csv
-├── read_counts.csv
-├── adjusted_read_counts.csv
-├── SAMPLE_1
-│   ├── sample_SAMPLE_1_chr1.npz
+├── ran_baseline_selection.csv  # matrix of Booleans: which genes go thru baseline selection
+├── gene_exon_metadata.csv  # chromosome, gene, exon relationship data
+├── read_counts.csv  # raw read counts
+├── adjusted_read_counts.csv  # degradation normalized read counts
+├── &lt;SAMPLE_1&gt;
+│   ├── sample_SAMPLE_1_chr1.npz  # full chrom coverage for sample 1 in compressed matrix.
 │   ├── sample_SAMPLE_1_chr2.npz
 │   ├── &lt;more sample chromosome coverage .npz files&gt;
-├── SAMPLE_2
+├── &lt;SAMPLE_2&gt;
 │   ├── sample_SAMPLE_2_chr1.npz
 │   ├── sample_SAMPLE_2_chr2.npz
 │   ├── &lt;more per-sample chromosome coverage .npz files&gt;
@@ -363,8 +403,8 @@ it will be converted to a .pdf.</p>
 ├── chr1
 │   ├── GAPDH_coverage.png
 │   ├── &lt;more coverage plots&gt;
-│   ├── coverage_matrices_chr1.pkl
-│   └── estimated_coverage_matrices_chr1.pkl
+│   ├── coverage_matrices_chr1.pkl  # (gene, raw coverage matrix) pairs in serialized python object.
+│   └── estimated_coverage_matrices_chr1.pkl # (gene, estimated coverage matrix) pairs in serialized python object.
 ├── chr2
 │   ├── coverage_matrices_chr2.pkl
 │   └── estimated_coverage_matrices_chr2.pkl

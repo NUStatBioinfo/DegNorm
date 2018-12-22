@@ -168,7 +168,7 @@ DegNorm is only supported on *Nix platforms.</p>
 <hr />
 <h2 id="installing-degnorm-in-a-conda-environment">Installing DegNorm in a conda environment</h2>
 <h4 id="1-clone-the-degnorm-repository-and-cd-into-it">1. Clone the DegNorm repository and <code>cd</code> into it.</h4>
-<pre><code>git clone git@github.com:NUStatBioinfo/DegNorm.git
+<pre><code>git clone https://github.com/NUStatBioinfo/DegNorm.git
 cd DegNorm
 </code></pre>
 
@@ -180,15 +180,16 @@ source activate degnorm
 <pre><code>./install
 </code></pre>
 <h2 id="requirements-for-degnorm_mpi">Requirements for <code>degnorm_mpi</code></h2>
-<p>To make use of <code>degnorm_mpi</code>, the <a href="https://mpi4py.readthedocs.io/en/stable/index.html">mpi4py</a> package must be installed.
+<p><code>degnorm_mpi</code> is the distributed implementation of the DegNorm pipeline.</p>
+<p>To use <code>degnorm_mpi</code>, the <a href="https://mpi4py.readthedocs.io/en/stable/index.html">mpi4py</a> package must be installed.
 This requires the MPICH MPI library be installed and configured across your computing environment.</p>
-<p>From the <code>install</code> script, <code>mpi4py</code> will be installed for you if the <code>mpiexec</code> command is available in your <code>$PATH</code>. This installation
-is simply <code>pip install mpi4py</code>, given that MPI is available. If you're running DegNorm in a high performance computing environment (e.g. if you're at a university or research institute),
- it is most likely the case that MPI is already installed and available to you. Just check that the <code>mpiexec</code> and/or 
+<p>From the <code>install</code> script, <code>mpi4py</code> will be installed for you if the <code>mpiexec</code> command is available in your <code>$PATH</code>, indicating that MPI
+ is available in your computing environment. If you're running DegNorm in a high performance computing environment (e.g. if you're at a university or research institute),
+ it is most likely the case that MPI is already installed and available to you in the form of an <a href="http://modules.sourceforge.net/">environment module</a>. Just check that the <code>mpiexec</code> and/or 
 <code>mpirun</code> commands are available to you at the command line when running <code>./install</code>, and you should be 
 all set to run the distributed pipeline with <code>degnorm_mpi</code>.</p>
 <p>If MPI is not installed in your compute environment, you will need to
-take additional steps to do so. See <a href="https://en.wikipedia.org/wiki/MPICH">MPICH home</a>.</p>
+take additional steps to do so, or contact your system administrator. See <a href="https://en.wikipedia.org/wiki/MPICH">MPICH home</a> for details.</p>
 <h1 id="testing">Testing</h1>
 <p>Check the successful installation of <code>degnorm</code> on your machine with the <code>degnorm_test</code> command. This runs all unit tests
 and a minimal DegNorm pipeline run on a small batch of sample data. If you have installed the mpi4py package, and
