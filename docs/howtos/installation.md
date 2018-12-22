@@ -8,7 +8,7 @@ DegNorm is only supported on *Nix platforms.
 
 #### 1. Clone the DegNorm repository and `cd` into it.
 ```
-git clone git@github.com:NUStatBioinfo/DegNorm.git
+git clone https://github.com/NUStatBioinfo/DegNorm.git
 cd DegNorm
 ```
 
@@ -24,18 +24,19 @@ cd DegNorm
     
     
 ## Requirements for `degnorm_mpi`
+`degnorm_mpi` is the distributed implementation of the DegNorm pipeline.
 
-To make use of `degnorm_mpi`, the [mpi4py](https://mpi4py.readthedocs.io/en/stable/index.html) package must be installed.
+To use `degnorm_mpi`, the [mpi4py](https://mpi4py.readthedocs.io/en/stable/index.html) package must be installed.
 This requires the MPICH MPI library be installed and configured across your computing environment.
 
-From the `install` script, `mpi4py` will be installed for you if the `mpiexec` command is available in your `$PATH`. This installation
-is simply `pip install mpi4py`, given that MPI is available. If you're running DegNorm in a high performance computing environment (e.g. if you're at a university or research institute),
- it is most likely the case that MPI is already installed and available to you. Just check that the `mpiexec` and/or 
+From the `install` script, `mpi4py` will be installed for you if the `mpiexec` command is available in your `$PATH`, indicating that MPI
+ is available in your computing environment. If you're running DegNorm in a high performance computing environment (e.g. if you're at a university or research institute),
+ it is most likely the case that MPI is already installed and available to you in the form of an [environment module](http://modules.sourceforge.net/). Just check that the `mpiexec` and/or 
 `mpirun` commands are available to you at the command line when running `./install`, and you should be 
 all set to run the distributed pipeline with `degnorm_mpi`.
 
 If MPI is not installed in your compute environment, you will need to
-take additional steps to do so. See [MPICH home](https://en.wikipedia.org/wiki/MPICH).
+take additional steps to do so, or contact your system administrator. See [MPICH home](https://en.wikipedia.org/wiki/MPICH) for details.
 
 
 # Testing
