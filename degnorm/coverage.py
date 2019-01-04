@@ -132,13 +132,13 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
                     pbar.update(5)
                     gene_idx += 1
 
-        # close progress bar if using one.
-        if use_pbar:
-            pbar.close()
+    # close progress bar if using one.
+    if use_pbar:
+        pbar.close()
 
-        # free up memory allocation for dense coverage matrix, exon data subset.
-        del cov_mat, sub_exon_chrom_df
-        gc.collect()
+    # free up memory allocation for dense coverage matrix, exon data subset.
+    del cov_mat, sub_exon_chrom_df
+    gc.collect()
 
     # if a target location is specified, save {gene: coverage matrix} data per chromosome in a
     # new directory named after the chromosome.
