@@ -42,14 +42,20 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
                                               , axis=0)
     genes = exon_chrom_df['gene'].unique()
     n_genes = len(genes)
-    gene_splits = np.linspace(0
-                              , stop=n_genes
-                              , num=mem_splits
-                              , endpoint=True
-                              , dtype=int).tolist()
 
     # if no breaks (e.g. if set of genes very small), the breaks are [0, number of genes]
-    gene_splits = [0, n_genes] if mem_splits == 1 else gene_splits
+    if mem_splits == 1:
+        gene_splits = [0, n_genes]
+    else:
+        gene_splits = np.linspace(0
+                                  , stop=n_genes
+                                  , num=mem_splits
+                                  , endpoint=True
+                                  , dtype=int).tolist()
+        gene_splits = list(set(gene_splits))
+        gene_splits.sort()
+
+    mem_splits = len(gene_splits) - 1
 
     # output storage: (gene name, coverage matrix) key-value pairs.
     gene_cov_dict = dict()
@@ -70,15 +76,15 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
                              , unit='%')
 
     # create the coverage matrix for each subset of genes.
-    for i in range(mem_splits - 1):
+    for i in range(mem_splits):
 
         # subset exon data to current gene subset.
         sub_genes = genes[gene_splits[i]:gene_splits[i + 1]].tolist()
         sub_exon_chrom_df = exon_chrom_df[exon_chrom_df.gene.isin(sub_genes)]
 
         # determine gene span: we only need a subset of the chromosome's coverage for gene subset.
-        start_pos = sub_exon_chrom_df.gene_start.min()
-        end_pos = sub_exon_chrom_df.gene_end.max()
+        start_pos = int(sub_exon_chrom_df.gene_start.min())
+        end_pos = int(sub_exon_chrom_df.gene_end.max() + 1)
 
         # load up gene span's coverage matrix.
         idx = 0
@@ -87,7 +93,7 @@ def gene_coverage(exon_df, chrom, coverage_files, output_dir=None, verbose=True)
             npz_file = list(filter(r.search, coverage_files[sample_id]))[0]
 
             # load the gene span of a sample's compressed sparse row chromosome coverage array
-            cov_vec_sp = sparse.load_npz(npz_file).transpose()[start_pos:end_pos]
+            cov_vec_sp = sparse.load_npz(npz_file).transpose()[start_pos:end_pos, :]
 
             # initialize coverage matrix (len(chrom) x p) with copy of first experiment's coverage array.
             if idx == 0:
