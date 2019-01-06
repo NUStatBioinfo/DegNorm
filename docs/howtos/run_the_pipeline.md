@@ -66,21 +66,23 @@ Argument    | Required? |    Meaning
 ----------- | --------- | ------------
 `-o`, `--output-dir` | No | Defaults to the current working directory. Use to specify location where pipeline output directory will be written.
 `--plot-genes` | No | Names of genes for which to render coverage plots. Sequence of explictly stated gene names or a .txt file containing one gene name per line.
-`-d`, `--downsample-rate` | No | EXPERIMENTAL. Integer downsampling rate. Systematic samples of a coverage matrix are used to speed up NMF iterations.
+`-d`, `--downsample-rate` | No | Integer downsampling rate. Systematic samples of a coverage matrix are used to speed up NMF iterations.
 `--nmf-iter` | No | Number of iterations per NMF-OA approximation. The higher the more accurate the approximation, but the more costly in terms of time.
 `--iter` | No | Number of whole DegNorm iterations. Default is 5.
 `--minimax-coverage` | No | Minimum cross-sample maximum coverage for a gene before it is included in the DegNorm pipeline. Can be used to exclude relatively low-coverage genes.
- `-s`, `--skip-baseline-selection` | No | EXPERIMENTAL. Flag to skip baseline selection, will greatly speed up DegNorm iterations.
+ `-s`, `--skip-baseline-selection` | No | Flag to skip baseline selection, will greatly speed up DegNorm iterations.
+ `-u`, `--unique-alignments` | No | Flag, only keep uniquely mapped reads (reads with `NH` (number of hits) == 1)
  `-p`, `--proc-per-node` | No | Integer number of processes to spawn per compute node. The more the better.
 
 
 ## Example usage
 
 
-### Sorting, indexing alignment files
+### Required: sorting, indexing alignment files
 
-Remember - we have to sort and index the alignment files first, and then we can run `degnorm`. Suppose we have set of alignment
-files in our current working directory that we would like to send through DegNorm:
+Remember - prior to running `degnorm`, you must `sort` your aligned reads and create index files (.bai files).
+Suppose we have set of .bam files in our current working directory that we would like to send through DegNorm, the following
+commands will sort the .bam files and create .bai files, all with `samtools`:
 
     # sort and index alignment files in current working directory.
     for FILE in ./*.bam

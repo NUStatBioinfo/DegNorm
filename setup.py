@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='DegNorm',
-    version='0.1.2',
+    version='0.1.3',
     packages=['degnorm', 'degnorm.tests'],
     entry_points={
         'console_scripts': ['degnorm=degnorm.__main__:main',
