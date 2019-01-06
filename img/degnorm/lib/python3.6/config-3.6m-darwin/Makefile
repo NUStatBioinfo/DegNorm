@@ -27,10 +27,10 @@ MODLIBS=        $(LOCALMODLIBS) $(BASEMODLIBS)
 
 # === Variables set by configure
 VERSION=	3.6
-srcdir=		..
-VPATH=		..
-abs_srcdir=	/opt/concourse/worker/volumes/live/01879411-92c1-4675-40c5-2f387b937fc4/volume/python_1507307948734/work/build-static/..
-abs_builddir=	/opt/concourse/worker/volumes/live/01879411-92c1-4675-40c5-2f387b937fc4/volume/python_1507307948734/work/build-static
+srcdir=		/opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/work
+VPATH=		/opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/work
+abs_srcdir=	/opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/work
+abs_builddir=	/opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/work/build-static
 
 
 CC=		x86_64-apple-darwin13.4.0-clang
@@ -47,7 +47,7 @@ GITTAG=
 GITBRANCH=	
 PGO_PROF_GEN_FLAG=-fprofile-instr-generate
 PGO_PROF_USE_FLAG=-fprofile-instr-use=code.profclangd
-LLVM_PROF_MERGER=/Users/fineiskid/anaconda3/bin/llvm-profdata merge -output=code.profclangd *.profclangr
+LLVM_PROF_MERGER=/opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/_build_env/bin/llvm-profdata merge -output=code.profclangd *.profclangr
 LLVM_PROF_FILE=LLVM_PROFILE_FILE="code-%p.profclangr"
 LLVM_PROF_ERR=no
 DTRACE=         
@@ -73,21 +73,21 @@ INSTALL_DATA=	${INSTALL} -m 644
 # Also, making them read-only seems to be a good idea...
 INSTALL_SHARED= ${INSTALL} -m 555
 
-MKDIR_P=	../install-sh -c -d
+MKDIR_P=	/opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/work/install-sh -c -d
 
 MAKESETUP=      $(srcdir)/Modules/makesetup
 
 # Compiler options
-OPT=		-DNDEBUG -fwrapv -O2 -Wall -Wstrict-prototypes
-BASECFLAGS=	 -fno-strict-aliasing -Wsign-compare -Wunreachable-code
+OPT=		-DNDEBUG -fwrapv -O2 -Wall
+BASECFLAGS=	 -Wno-unused-result -Wsign-compare -Wunreachable-code
 BASECPPFLAGS=	-IObjects -IInclude -IPython
-CONFIGURE_CFLAGS=	-isysroot /opt/MacOSX10.9.sdk -march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE -fstack-protector-strong -O2 -pipe  
+CONFIGURE_CFLAGS=	-isysroot /opt/MacOSX10.9.sdk -march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE -fstack-protector-strong -O2 -pipe  -fdebug-prefix-map=${SRC_DIR}=/usr/local/src/conda/${PKG_NAME}-${PKG_VERSION} -fdebug-prefix-map=${PREFIX}=/usr/local/src/conda-prefix 
 # CFLAGS_NODIST is used for building the interpreter and stdlib C extensions.
 # Use it when a compiler flag should _not_ be part of the distutils CFLAGS
 # once Python is installed (Issue #21121).
-CONFIGURE_CFLAGS_NODIST= -std=c99
+CONFIGURE_CFLAGS_NODIST= -std=c99 -Wextra -Wno-unused-result -Wno-unused-parameter -Wno-missing-field-initializers -Wstrict-prototypes
 CONFIGURE_CPPFLAGS=	-isysroot /opt/MacOSX10.9.sdk -D_FORTIFY_SOURCE=2 -mmacosx-version-min=10.9 -I/Users/fineiskid/anaconda3/include
-CONFIGURE_LDFLAGS=	-isysroot /opt/MacOSX10.9.sdk -Wl,-pie -Wl,-headerpad_max_install_names -Wl,-rpath,/Users/fineiskid/anaconda3/lib -L/Users/fineiskid/anaconda3/lib
+CONFIGURE_LDFLAGS=	-isysroot /opt/MacOSX10.9.sdk -Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -Wl,-rpath,/Users/fineiskid/anaconda3/lib -L/Users/fineiskid/anaconda3/lib
 # Avoid assigning CFLAGS, LDFLAGS, etc. so users can use them on the
 # command line to append to these values without stomping the pre-set
 # values.
@@ -189,11 +189,11 @@ EXEMODE=	755
 FILEMODE=	644
 
 # configure script arguments
-CONFIG_ARGS=	 '--prefix=/Users/fineiskid/anaconda3' '--build=x86_64-apple-darwin13.4.0' '--host=x86_64-apple-darwin13.4.0' '--enable-ipv6' '--with-ensurepip=no' '--with-computed-gotos' '--with-system-ffi' '--enable-loadable-sqlite-extensions' '--with-tcltk-includes=-I/Users/fineiskid/anaconda3/include' '--with-tcltk-libs=-L/Users/fineiskid/anaconda3/lib -ltcl8.6 -ltk8.6' '--enable-optimizations' '--with-lto' '--disable-shared' 'build_alias=x86_64-apple-darwin13.4.0' 'host_alias=x86_64-apple-darwin13.4.0' 'CC=x86_64-apple-darwin13.4.0-clang' 'CFLAGS=-isysroot /opt/MacOSX10.9.sdk -march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE -fstack-protector-strong -O2 -pipe  ' 'LDFLAGS=-isysroot /opt/MacOSX10.9.sdk -Wl,-pie -Wl,-headerpad_max_install_names -Wl,-rpath,/Users/fineiskid/anaconda3/lib -L/Users/fineiskid/anaconda3/lib' 'CPPFLAGS=-isysroot /opt/MacOSX10.9.sdk -D_FORTIFY_SOURCE=2 -mmacosx-version-min=10.9 -I/Users/fineiskid/anaconda3/include' 'PKG_CONFIG_PATH=/Users/fineiskid/anaconda3/lib/pkgconfig'
+CONFIG_ARGS=	 '--prefix=/Users/fineiskid/anaconda3' '--build=x86_64-apple-darwin13.4.0' '--host=x86_64-apple-darwin13.4.0' '--enable-ipv6' '--with-ensurepip=no' '--with-computed-gotos' '--with-system-ffi' '--enable-loadable-sqlite-extensions' '--with-tcltk-includes=-I/Users/fineiskid/anaconda3/include' '--with-tcltk-libs=-L/Users/fineiskid/anaconda3/lib -ltcl8.6 -ltk8.6' '--enable-optimizations' '--with-lto' '--disable-shared' 'build_alias=x86_64-apple-darwin13.4.0' 'host_alias=x86_64-apple-darwin13.4.0' 'CC=x86_64-apple-darwin13.4.0-clang' 'CFLAGS=-isysroot /opt/MacOSX10.9.sdk -march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE -fstack-protector-strong -O2 -pipe  -fdebug-prefix-map=${SRC_DIR}=/usr/local/src/conda/${PKG_NAME}-${PKG_VERSION} -fdebug-prefix-map=${PREFIX}=/usr/local/src/conda-prefix ' 'LDFLAGS=-isysroot /opt/MacOSX10.9.sdk -Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -Wl,-rpath,/Users/fineiskid/anaconda3/lib -L/Users/fineiskid/anaconda3/lib' 'CPPFLAGS=-isysroot /opt/MacOSX10.9.sdk -D_FORTIFY_SOURCE=2 -mmacosx-version-min=10.9 -I/Users/fineiskid/anaconda3/include' 'PKG_CONFIG_PATH=/Users/fineiskid/anaconda3/lib/pkgconfig'
 
 
 # Subdirectories with code
-SRCDIRS= 	Parser Grammar Objects Python Modules Mac Programs
+SRCDIRS= 	Parser Objects Python Modules Programs
 
 # Other subdirectories
 SUBDIRSTOO=	Include Lib Misc
@@ -231,6 +231,7 @@ PYTHON=		python$(EXE)
 BUILDPYTHON=	python$(BUILDEXE)
 
 PYTHON_FOR_REGEN=python3.6
+UPDATE_FILE=python3.6 $(srcdir)/Tools/scripts/update_file.py
 PY_BUILD_ENVIRON=
 PYTHON_FOR_BUILD=./$(BUILDPYTHON) -E
 _PYTHON_HOST_PLATFORM=darwin
@@ -453,7 +454,17 @@ DTRACE_DEPS = \
 
 # Default target
 all:		profile-opt
-build_all:	$(BUILDPYTHON) oldsharedmods sharedmods gdbhooks Programs/_testembed python-config
+build_all:	check-clean-src $(BUILDPYTHON) oldsharedmods sharedmods gdbhooks \
+		Programs/_testembed python-config
+
+# Check that the source is clean when building out of source.
+check-clean-src:
+	@if test -n "$(VPATH)" -a -f "$(srcdir)/Programs/python.o"; then \
+		echo "Error: The source directory ($(srcdir)) is not clean" ; \
+		echo "Building Python out of the source tree (in $(abs_builddir)) requires a clean source tree ($(abs_srcdir))" ; \
+		echo "Try to run: make -C \"$(srcdir)\" clean" ; \
+		exit 1; \
+	fi
 
 # Compile a binary with profile guided optimization.
 profile-opt:
@@ -476,7 +487,7 @@ profile-opt:
 	$(MAKE) profile-removal
 
 build_all_generate_profile:
-	$(MAKE) build_all CFLAGS_NODIST="$(CFLAGS) $(PGO_PROF_GEN_FLAG)  -Wl,-export_dynamic" LDFLAGS="$(LDFLAGS) $(PGO_PROF_GEN_FLAG)  -Wl,-export_dynamic" LIBS="$(LIBS)"
+	$(MAKE) build_all CFLAGS_NODIST="$(CFLAGS) $(PGO_PROF_GEN_FLAG)  -Wl,-export_dynamic -g" LDFLAGS="$(LDFLAGS) $(PGO_PROF_GEN_FLAG)  -Wl,-export_dynamic -g" LIBS="$(LIBS)"
 
 run_profile_task:
 	: # FIXME: can't run for a cross build
@@ -486,7 +497,7 @@ build_all_merge_profile:
 	$(LLVM_PROF_MERGER)
 
 build_all_use_profile:
-	$(MAKE) build_all CFLAGS_NODIST="$(CFLAGS) $(PGO_PROF_USE_FLAG)  -Wl,-export_dynamic" LDFLAGS="$(LDFLAGS)  -Wl,-export_dynamic"
+	$(MAKE) build_all CFLAGS_NODIST="$(CFLAGS) $(PGO_PROF_USE_FLAG)  -Wl,-export_dynamic -g" LDFLAGS="$(LDFLAGS)  -Wl,-export_dynamic -g"
 
 # Compile and run with gcov
 .PHONY=coverage coverage-lcov coverage-report
@@ -541,9 +552,8 @@ coverage-report: regen-grammar regen-importlib
 	$(MAKE) coverage-lcov
 
 # Run "Argument Clinic" over all source files
-# (depends on python having already been built)
 .PHONY=clinic
-clinic: $(BUILDPYTHON) $(srcdir)/Modules/_blake2/blake2s_impl.c
+clinic: check-clean-src $(BUILDPYTHON) $(srcdir)/Modules/_blake2/blake2s_impl.c
 	$(RUNSHARED) $(PY_BUILD_ENVIRON) $(PYTHON_FOR_BUILD) ./Tools/clinic/clinic.py --make
 
 # Build the interpreter
@@ -574,19 +584,23 @@ Modules/_math.o: Modules/_math.c Modules/_math.h
 	$(CC) -c $(CCSHARED) $(PY_CORE_CFLAGS) -o $@ $<
 
 # blake2s is auto-generated from blake2b
-$(srcdir)/Modules/_blake2/blake2s_impl.c: $(BUILDPYTHON) $(srcdir)/Modules/_blake2/blake2b_impl.c $(srcdir)/Modules/_blake2/blake2b2s.py
-	$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Modules/_blake2/blake2b2s.py
-	$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/clinic/clinic.py -f $@
+$(srcdir)/Modules/_blake2/blake2s_impl.c: $(srcdir)/Modules/_blake2/blake2b_impl.c $(srcdir)/Modules/_blake2/blake2b2s.py
+	$(PYTHON_FOR_REGEN) $(srcdir)/Modules/_blake2/blake2b2s.py
+	$(PYTHON_FOR_REGEN) $(srcdir)/Tools/clinic/clinic.py -f $@
 
 # Build the shared modules
 # Under GNU make, MAKEFLAGS are sorted and normalized; the 's' for
 # -s, --silent or --quiet is always the first char.
 # Under BSD make, MAKEFLAGS might be " -s -v x=y".
+# Ignore macros passed by GNU make, passed after --
 sharedmods: $(BUILDPYTHON) pybuilddir.txt Modules/_math.o
-	@case "$$MAKEFLAGS" in \
+	@case "`echo X $$MAKEFLAGS | sed 's/^X //;s/ -- .*//'`" in \
 	    *\ -s*|s*) quiet="-q";; \
 	    *) quiet="";; \
 	esac; \
+	echo "$(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' \
+		_TCLTK_INCLUDES='$(TCLTK_INCLUDES)' _TCLTK_LIBS='$(TCLTK_LIBS)' \
+		$(PYTHON_FOR_BUILD) $(srcdir)/setup.py $$quiet build"; \
 	$(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' \
 		_TCLTK_INCLUDES='$(TCLTK_INCLUDES)' _TCLTK_LIBS='$(TCLTK_LIBS)' \
 		$(PY_BUILD_ENVIRON) $(PYTHON_FOR_BUILD) $(srcdir)/setup.py $$quiet build
@@ -710,18 +724,21 @@ regen-importlib: Programs/_freeze_importlib
 	# from Lib/importlib/_bootstrap_external.py using _freeze_importlib
 	./Programs/_freeze_importlib \
 	    $(srcdir)/Lib/importlib/_bootstrap_external.py \
-	    $(srcdir)/Python/importlib_external.h
+	    $(srcdir)/Python/importlib_external.h.new
+	$(UPDATE_FILE) $(srcdir)/Python/importlib_external.h $(srcdir)/Python/importlib_external.h.new
 	# Regenerate Python/importlib.h from Lib/importlib/_bootstrap.py
 	# using _freeze_importlib
 	./Programs/_freeze_importlib \
 	    $(srcdir)/Lib/importlib/_bootstrap.py \
-	    $(srcdir)/Python/importlib.h
+	    $(srcdir)/Python/importlib.h.new
+	$(UPDATE_FILE) $(srcdir)/Python/importlib.h $(srcdir)/Python/importlib.h.new
 
 
 ############################################################################
 # Regenerate all generated files
 
-regen-all: regen-opcode regen-opcode-targets regen-typeslots regen-grammar regen-ast regen-importlib
+regen-all: regen-opcode regen-opcode-targets regen-typeslots regen-grammar \
+	regen-ast regen-importlib clinic
 
 ############################################################################
 # Special rules for object files
@@ -789,8 +806,10 @@ regen-grammar: $(PGEN)
 	# from Grammar/Grammar using pgen
 	@$(MKDIR_P) Include
 	$(PGEN) $(srcdir)/Grammar/Grammar \
-		$(srcdir)/Include/graminit.h \
-		$(srcdir)/Python/graminit.c
+		$(srcdir)/Include/graminit.h.new \
+		$(srcdir)/Python/graminit.c.new
+	$(UPDATE_FILE) $(srcdir)/Include/graminit.h $(srcdir)/Include/graminit.h.new
+	$(UPDATE_FILE) $(srcdir)/Python/graminit.c $(srcdir)/Python/graminit.c.new
 
 Parser/grammar.o:	$(srcdir)/Parser/grammar.c \
 				$(srcdir)/Include/token.h \
@@ -808,13 +827,15 @@ regen-ast:
 	# Regenerate Include/Python-ast.h using Parser/asdl_c.py -h
 	$(MKDIR_P) $(srcdir)/Include
 	$(PYTHON_FOR_REGEN) $(srcdir)/Parser/asdl_c.py \
-		-h $(srcdir)/Include \
+		-h $(srcdir)/Include/Python-ast.h.new \
 		$(srcdir)/Parser/Python.asdl
+	$(UPDATE_FILE) $(srcdir)/Include/Python-ast.h $(srcdir)/Include/Python-ast.h.new
 	# Regenerate Python/Python-ast.c using Parser/asdl_c.py -c
 	$(MKDIR_P) $(srcdir)/Python
 	$(PYTHON_FOR_REGEN) $(srcdir)/Parser/asdl_c.py \
-		-c $(srcdir)/Python \
+		-c $(srcdir)/Python/Python-ast.c.new \
 		$(srcdir)/Parser/Python.asdl
+	$(UPDATE_FILE) $(srcdir)/Python/Python-ast.c $(srcdir)/Python/Python-ast.c.new
 
 .PHONY: regen-opcode
 regen-opcode:
@@ -822,7 +843,8 @@ regen-opcode:
 	# using Tools/scripts/generate_opcode_h.py
 	$(PYTHON_FOR_REGEN) $(srcdir)/Tools/scripts/generate_opcode_h.py \
 		$(srcdir)/Lib/opcode.py \
-		$(srcdir)/Include/opcode.h
+		$(srcdir)/Include/opcode.h.new
+	$(UPDATE_FILE) $(srcdir)/Include/opcode.h $(srcdir)/Include/opcode.h.new
 
 Python/compile.o Python/symtable.o Python/ast.o: $(srcdir)/Include/graminit.h $(srcdir)/Include/Python-ast.h
 
@@ -879,7 +901,8 @@ regen-opcode-targets:
 	# Regenerate Python/opcode_targets.h from Lib/opcode.py
 	# using Python/makeopcodetargets.py
 	$(PYTHON_FOR_REGEN) $(srcdir)/Python/makeopcodetargets.py \
-		$(srcdir)/Python/opcode_targets.h
+		$(srcdir)/Python/opcode_targets.h.new
+	$(UPDATE_FILE) $(srcdir)/Python/opcode_targets.h $(srcdir)/Python/opcode_targets.h.new
 
 Python/ceval.o: $(srcdir)/Python/opcode_targets.h $(srcdir)/Python/ceval_gil.h
 
@@ -906,7 +929,8 @@ regen-typeslots:
 	# using Objects/typeslots.py
 	$(PYTHON_FOR_REGEN) $(srcdir)/Objects/typeslots.py \
 		< $(srcdir)/Include/typeslots.h \
-		$(srcdir)/Objects/typeslots.inc
+		$(srcdir)/Objects/typeslots.inc.new
+	$(UPDATE_FILE) $(srcdir)/Objects/typeslots.inc $(srcdir)/Objects/typeslots.inc.new
 
 ############################################################################
 # Header files
@@ -1095,7 +1119,7 @@ altinstall: commoninstall
 			$$ensurepip --root=$(DESTDIR)/ ; \
 	fi
 
-commoninstall:   \
+commoninstall:  check-clean-src  \
 		altbininstall libinstall inclinstall libainstall \
 		sharedinstall oldsharedinstall altmaninstall \
 		
@@ -1593,10 +1617,9 @@ autoconf:
 
 # Create a tags file for vi
 tags::
-	cd $(srcdir); \
-	ctags -w Include/*.h; \
-	for i in $(SRCDIRS); do ctags -w -a $$i/*.[ch]; \
-	done; \
+	ctags -w $(srcdir)/Include/*.h
+	for i in $(SRCDIRS); do ctags -f tags -w -a $(srcdir)/$$i/*.[ch]; done
+	ctags -f tags -w -a $(srcdir)/Modules/_ctypes/*.[ch]
 	LC_ALL=C sort -o tags tags
 
 # Create a tags file for GNU Emacs
@@ -1718,7 +1741,7 @@ patchcheck: build_all
 Python/thread.o:  $(srcdir)/Python/thread_foobar.h $(srcdir)/Python/thread_nt.h $(srcdir)/Python/thread_pthread.h
 
 # Declare targets that aren't real files
-.PHONY: all build_all sharedmods oldsharedmods test quicktest
+.PHONY: all build_all sharedmods check-clean-src oldsharedmods test quicktest
 .PHONY: install altinstall oldsharedinstall bininstall altbininstall
 .PHONY: maninstall libinstall inclinstall libainstall sharedinstall
 .PHONY: frameworkinstall frameworkinstallframework frameworkinstallstructure

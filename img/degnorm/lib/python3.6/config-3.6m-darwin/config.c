@@ -1,4 +1,4 @@
-/* Generated automatically from ../Modules/config.c.in by makesetup. */
+/* Generated automatically from /opt/concourse/worker/volumes/live/06420965-3647-4da8-6994-ec8bba117f76/volume/python_1540319581657/work/Modules/config.c.in by makesetup. */
 /* -*- C -*- ***********************************************
 Copyright (c) 2000, BeOpen.com.
 Copyright (c) 1995-2000, Corporation for National Research Initiatives.

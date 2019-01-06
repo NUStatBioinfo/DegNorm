@@ -161,7 +161,7 @@
                 
             <li class="second-level"><a href="#example-usage">Example usage</a></li>
                 
-                <li class="third-level"><a href="#sorting-indexing-alignment-files">Sorting, indexing alignment files</a></li>
+                <li class="third-level"><a href="#required-sorting-indexing-alignment-files">Required: sorting, indexing alignment files</a></li>
                 <li class="third-level"><a href="#launching-a-full-degnorm-run-the-verbose-way">Launching a full degnorm run "the verbose way"</a></li>
                 <li class="third-level"><a href="#launching-a-full-degnorm-run-the-easy-way">Launching a full degnorm run "the easy way"</a></li>
                 <li class="third-level"><a href="#using-a-warm-start-directory_1">Using a warm start directory</a></li>
@@ -290,7 +290,7 @@ preprocessing is completed ahead of time. When using <code>--warm-start-dir</cod
 <tr>
 <td><code>-d</code>, <code>--downsample-rate</code></td>
 <td>No</td>
-<td>EXPERIMENTAL. Integer downsampling rate. Systematic samples of a coverage matrix are used to speed up NMF iterations.</td>
+<td>Integer downsampling rate. Systematic samples of a coverage matrix are used to speed up NMF iterations.</td>
 </tr>
 <tr>
 <td><code>--nmf-iter</code></td>
@@ -310,7 +310,12 @@ preprocessing is completed ahead of time. When using <code>--warm-start-dir</cod
 <tr>
 <td><code>-s</code>, <code>--skip-baseline-selection</code></td>
 <td>No</td>
-<td>EXPERIMENTAL. Flag to skip baseline selection, will greatly speed up DegNorm iterations.</td>
+<td>Flag to skip baseline selection, will greatly speed up DegNorm iterations.</td>
+</tr>
+<tr>
+<td><code>-u</code>, <code>--unique-alignments</code></td>
+<td>No</td>
+<td>Flag, only keep uniquely mapped reads (reads with <code>NH</code> (number of hits) == 1)</td>
 </tr>
 <tr>
 <td><code>-p</code>, <code>--proc-per-node</code></td>
@@ -320,9 +325,10 @@ preprocessing is completed ahead of time. When using <code>--warm-start-dir</cod
 </tbody>
 </table>
 <h2 id="example-usage">Example usage</h2>
-<h3 id="sorting-indexing-alignment-files">Sorting, indexing alignment files</h3>
-<p>Remember - we have to sort and index the alignment files first, and then we can run <code>degnorm</code>. Suppose we have set of alignment
-files in our current working directory that we would like to send through DegNorm:</p>
+<h3 id="required-sorting-indexing-alignment-files">Required: sorting, indexing alignment files</h3>
+<p>Remember - prior to running <code>degnorm</code>, you must <code>sort</code> your aligned reads and create index files (.bai files).
+Suppose we have set of .bam files in our current working directory that we would like to send through DegNorm, the following
+commands will sort the .bam files and create .bai files, all with <code>samtools</code>:</p>
 <pre><code># sort and index alignment files in current working directory.
 for FILE in ./*.bam
 do
