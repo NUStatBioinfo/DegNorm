@@ -1,5 +1,14 @@
 # Release Notes
 
+## ``v0.1.3`` (January 2019)
+- Improve upon memory efficiency in `coverage.gene_coverage` - now sparse
+chromosome-wide coverage matrices are diced into approximately equally-sized chunks so that
+ the dense versions of the coverage chunks are approximately ~0.5Gb memory, instead of
+ calling <sparse>.todense() on a whole chromosome's coverage matrix.
+- Enlist `HTSeq` package in .gtf file parsing to speed up identification of genes with
+intersecting exons. GeneAnnotationProcessor now single-process, much faster.
+- GH Readme points to DegNorm homepage.
+
 ## ``v0.1.2`` (December 2018)
 - ``degnorm_mpi`` entrypoint available for distributed pipeline runs.
 - change `-c` (cores flag) to `-p` (processes per node flag) to reflect that degnorm_mpi

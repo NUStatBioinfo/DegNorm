@@ -150,7 +150,6 @@ def main():
         if RANK == 0:
             mpi_logging_info('Begin genome annotation file processing...')
             gap = GeneAnnotationProcessor(args.genome_annotation
-                                          , n_jobs=n_jobs
                                           , verbose=True
                                           , chroms=chroms)
             exon_df = gap.run()
@@ -177,6 +176,8 @@ def main():
         # coverage arrays and and compute gene read counts.
         # (Each worker gets ~ same number of .bam files to process.)
         # ---------------------------------------------------------------------------- #
+
+        # initialize objects to be gathered later.
         sample_ids = list()
         cov_files = dict()
         read_count_dict = dict()
@@ -185,23 +186,29 @@ def main():
         # and save them to .npz files.
         my_files_idx = split_into_chunks(range(n_samples)
                                          , n=SIZE)
-        for idx in my_files_idx[RANK]:
-            mpi_logging_info('Loading RNA-seq data file {0} -- {1}/{2}'
-                             .format(args.bam_files[idx], idx + 1, n_samples))
 
-            reader = BamReadsProcessor(bam_file=args.bam_files[idx]
-                                       , index_file=args.bai_files[idx]
-                                       , chroms=chroms
-                                       , n_jobs=n_jobs
-                                       , output_dir=output_dir
-                                       , verbose=True)
+        # distributed processing of alignment files
+        if len(my_files_idx[RANK]) > 0:
+            for idx in my_files_idx[RANK]:
+                mpi_logging_info('Loading RNA-seq data file {0} -- {1}/{2}'
+                                 .format(args.bam_files[idx], idx + 1, n_samples))
 
-            sample_id = reader.sample_id
-            sample_ids.append(sample_id)
-            cov_files[sample_id], read_count_dict[sample_id] = reader.coverage_read_counts(genes_df)
+                reader = BamReadsProcessor(bam_file=args.bam_files[idx]
+                                           , index_file=args.bai_files[idx]
+                                           , chroms=chroms
+                                           , n_jobs=n_jobs
+                                           , output_dir=output_dir
+                                           , verbose=True)
 
-        del reader
-        gc.collect()
+                sample_id = reader.sample_id
+                sample_ids.append(sample_id)
+                cov_files[sample_id], read_count_dict[sample_id] = reader.coverage_read_counts(genes_df)
+
+            del reader
+            gc.collect()
+
+        if RANK == 0:
+            mpi_logging_info('Master gathering sample IDs, coverage file manifest, and read count data from workers.')
 
         # everyone gives sample_ids, cov_file map, and read_counts to master.
         sample_ids = COMM.gather(sample_ids, root=0)
@@ -227,8 +234,7 @@ def main():
                 cov_files[sample_id] = cov_files_unordered.get(sample_id)
 
             # Celebrate successful parsing of .bam files.
-            mpi_logging_info('Successfully processed chromosome read coverage and gene read counts for all experiments.'
-                             .format(len(sample_ids)))
+            mpi_logging_info('Successfully processed chromosome read coverage and gene read counts for all experiments.')
             mpi_logging_info('RNA-seq sample identifiers: \n\t' + ', '.join(sample_ids))
 
             read_count_df = read_count_dict[sample_ids[0]]

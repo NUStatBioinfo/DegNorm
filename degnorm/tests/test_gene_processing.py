@@ -12,8 +12,7 @@ THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 @pytest.fixture
 def gene_processor_setup():
     gtf_file = os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
-    gtf_processor = GeneAnnotationProcessor(gtf_file
-                                            , n_jobs=1)
+    gtf_processor = GeneAnnotationProcessor(gtf_file)
     return gtf_processor
 
 
