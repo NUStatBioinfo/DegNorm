@@ -1,8 +1,10 @@
 import os
 import shutil
+import gc
 import pickle as pkl
 from numpy import intersect1d
 from pandas import read_csv
+from collections import OrderedDict
 
 
 def load_from_previous(degnorm_dir, new_dir):
@@ -46,17 +48,12 @@ def load_from_previous(degnorm_dir, new_dir):
     genes_df = genes_df[genes_df.gene.isin(intersect_genes)]
     read_count_df = read_count_df[read_count_df.gene.isin(intersect_genes)]
 
-    # sort transcript and read count data in same order.
-    genes_df.sort_values(['chr', 'gene'], inplace=True)
-    genes_df.reset_index(inplace=True, drop=True)
-    read_count_df.sort_values(['chr', 'gene'], inplace=True)
-    read_count_df.reset_index(inplace=True, drop=True)
-
     # grab required data: sample IDs, gene manifest, chromosomes encompassed in gene manifest.
     sample_ids = read_count_df.columns.tolist()[2:]
     chroms = genes_df.chr.unique().tolist()
-    chrom_gene_cov_dict = dict()
+    gene_cov_dict = OrderedDict()
 
+    # load coverage matrices one chromosome at a time.
     for idx in range(len(chroms)):
         chrom = chroms[idx]
 
@@ -70,11 +67,36 @@ def load_from_previous(degnorm_dir, new_dir):
 
         # load the coverage matrices for the genes in this chromosome.
         with open(cov_file, 'rb') as f:
-            chrom_gene_cov_dict[chrom] = pkl.load(f)
+            cov_dat = pkl.load(f)
+
+        for gene in cov_dat:
+            if gene in intersect_genes:
+                gene_cov_dict[gene] = cov_dat[gene]
+
+    # free up some mem.
+    del cov_dat
+    gc.collect()
+
+    genes = list(gene_cov_dict.keys())
+
+    # order read counts and genes according to order of loaded gene coverage matrices:
+    # (1) set index to gene names, .loc[genes], making genes a column again by dropping index.
+    genes_df.set_index('gene'
+                       , inplace=True)
+    read_count_df.set_index('gene'
+                            , inplace=True)
+
+    genes_df = genes_df.loc[genes]
+    read_count_df = read_count_df.loc[genes]
+
+    genes_df.reset_index(drop=False
+                         , inplace=True)
+    read_count_df.reset_index(drop=False
+                              , inplace=True)
 
     # merge data into a dict to return.
     output = dict()
-    output['chrom_gene_cov_dict'] = chrom_gene_cov_dict
+    output['gene_cov_dict'] = gene_cov_dict
     output['read_count_df'] = read_count_df
     output['genes_df'] = genes_df
     output['sample_ids'] = sample_ids

@@ -1,4 +1,6 @@
+import pickle as pkl
 from pandas import DataFrame, concat
+from collections import OrderedDict
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
 from joblib import Parallel, delayed
@@ -55,14 +57,39 @@ def cigar_segment_bounds(cigar, start):
     return match_idx_list
 
 
+def fill_in_bounds(bounds_vec, endpoint=False):
+    """
+    Fill in the outline of contiguous integer regions with integers. For example:
+    [10, 13, 20, 24] -> [10, 11, 12, 20, 21, 22, 23]
+
+    :param bounds_vec: list of int or 1-d numpy array of int, outline of contiguous integer regions. Must
+    have even number of elements.
+    :param endpoint: bool should odd-indexed elements of bounds_vec (the region endpoints) be included
+    in the filled in output? Same as numpy.linspace `endpoint` parameter.
+    :return: 1-d numpy array of int
+    """
+    n = len(bounds_vec)
+
+    if n % 2 != 0:
+        raise ValueError('bounds_vec must have even number of values.')
+
+    if not endpoint:
+        filled_in = np.concatenate([np.arange(bounds_vec[j - 1], bounds_vec[j])
+                                    for j in np.arange(1, n, step=2)])
+    else:
+        filled_in = np.concatenate([np.arange(bounds_vec[j - 1], bounds_vec[j]+1)
+                                    for j in np.arange(1, n, step=2)])
+
+    return filled_in
+
+
 class BamReadsProcessor():
     def __init__(self, bam_file, index_file, chroms=None, n_jobs=max_cpu(),
                  output_dir=None, unique_alignment=False, verbose=True):
         """
-        Genome coverage reader for a single RNA-seq experiment, contained in a .bam file.
-        The main method for this class is coverage_read_counts, which computes the per-chromosome
-        coverage array, saving it to a compressed sparse numpy array in the meantime, for each chromosome,
-        in parallel.
+        Transcript coverage and read counts processor, for a single alignment file (.bam).
+        The main method for this class is coverage_read_counts, which computes coverage arrays and read counts
+        for each gene, on in parallel over chromosomes.
 
         :param bam_file: str .bam filename
         :param index_file: str corresponding .bai (.bam index file) filename
@@ -76,16 +103,16 @@ class BamReadsProcessor():
         """
         self.filename = bam_file
 
-        # determine where to dump coverage .npz files.
+        # determine directory where we can dump coverage, reads files.
         if not output_dir:
             output_dir = os.path.join(os.path.dirname(self.filename), 'tmp')
 
         file_basename = '.'.join(os.path.basename(self.filename).split('.')[:-1])
-        self.save_dir = os.path.join(output_dir, file_basename)
         self.index_filename = index_file
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.sample_id = file_basename
+        self.save_dir = os.path.join(output_dir, self.sample_id)
         self.header = None
         self.paired = None
         self.chroms = chroms
@@ -149,7 +176,7 @@ class BamReadsProcessor():
             qnames.append(read.query_name)
             ctr += 1
 
-            if ctr > 500:
+            if ctr > 300:
                 break
 
         # close .bam file connection.
@@ -218,21 +245,91 @@ class BamReadsProcessor():
 
         return df
 
-    def chromosome_coverage_read_counts(self, gene_sub_df, chrom):
+    @staticmethod
+    def get_gene_intersections(gene_df, exon_df):
         """
-        Determine per-chromosome reads coverage and per-gene read counts from an RNA-seq experiment.
+        Remove reads that meet the following criteria for being useless:
+         1. Reads without any overlap with a single gene
+         2. Reads that overlap with multiple genes, as such reads come from an ambiguous gene transcript.
+
+        :param gene_df: pandas.DataFrame containing a chromosome's genes' location data, has at least these columns:
+        `gene` (str name of gene), `gene_start` (int leftmost base position of gene), `gene_end` (int rightmost
+        base position of gene)
+        :param exon_df: pandas.DataFrame containing a chromosome's genes' exon composition, has at least these columns:
+        `gene` (str name of gene), `start` (int leftmost exon base position), `end` (int rightmost exon base position),
+        each row is an exon, one gene can map to multiple exons.
+        :return: dict of OrderedDicts. Each key is a gene, each subkey is another gene that intersects with the first
+        key. Values of subkeys are 1-d numpy arrays of exon boundaries [E1 start, E1 end, E2 start, E2 end, ...]
+        """
+        # find rightmost read base position based on cigar score.
+        gene_starts = gene_df.gene_start.values
+        gene_ends = gene_df.gene_end.values
+        gene_intersection_dat = dict()
+
+        for i in range(gene_df.shape[0]):
+            gene, gene_start, gene_end = gene_df[['gene', 'gene_start', 'gene_end']].iloc[i].values
+            gene_intersection_dat[gene] = OrderedDict()
+
+            # identify and store current gene's exon boundaries.
+            my_exon_df = exon_df[exon_df.gene == gene]
+            e_starts, e_ends = np.sort(my_exon_df.start.values), np.sort(my_exon_df.end.values)
+            gene_intersection_dat[gene][gene] = np.concatenate(
+                [[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
+
+            # find intersecting genes.
+            gene_intersect = ((gene_starts <= gene_start) & (gene_ends >= gene_start)) | \
+                             ((gene_starts < gene_end) & (gene_ends >= gene_end)) | \
+                             ((gene_starts >= gene_start) & (gene_ends <= gene_end))
+
+            gene_intersect_df = gene_df.iloc[gene_intersect]
+            gene_intersect = gene_intersect_df.gene
+
+            for int_gene in gene_intersect:
+                # identify intersecting gene's exon boundaries.
+                my_exon_df = exon_df[exon_df.gene == int_gene]
+                e_starts, e_ends = np.sort(my_exon_df.start.values), np.sort(my_exon_df.end.values)
+                gene_intersection_dat[gene][int_gene] = np.concatenate(
+                    [[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
+
+        return gene_intersection_dat
+
+    @staticmethod
+    def determine_full_inclusion(read_idx, gene_idx_list):
+        """
+        Determine which genes' exon regions fully include a read's base positions.
+        For example:
+        read_idx: [3, 4, 5]
+        gene_idx_list: [[1, 2, 3, 4], [2, 3, 4, 5, 6], [11, 14, 15, 16]]
+        -> array([1])
+
+        :param read_idx: list of int or 1-d numpy array of int, read's base positions
+        :param gene_idx_list: list of list of int or 1-d numpy array of int, a set of genes' exon positions,
+        one sublist per gene.
+        :return: 1-d numpy array with integer indices of genes in gene_idx_list that fully include read's bases
+        """
+        gene_capture = np.where(list(map(lambda y: len(np.setdiff1d(read_idx, y)) == 0, gene_idx_list)))[0]
+
+        return gene_capture
+
+    def chromosome_coverage_read_counts(self, chrom_gene_df, chrom_exon_df, chrom):
+        """
+        Determine per-chromosome reads coverage and per-gene read counts from an RNA-seq experiment in
+        a way that properly considers ambiguous reads - if a (paired) read falls entirely within the
+        exonic regions of a *single* gene, only then does read contribute to read count and coverage.
         The cigar scores from single and paired reads are parsed according to cigar_segment_bounds.
 
-        Saves compressed coverage array to self.save_dir with file name 'sample_[sample_id]_[chrom].npz'
+        1. Saves compressed coverage array to self.save_dir with file name 'sample_[sample_id]_[chrom].npz'
+        2. Saves read counts to self.save_dir with file name 'read_counts_[sample_id]_[chrom].csv'
 
-        :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
+        :param chrom_gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome, must be
         subset to the chromosome in study.
+        :param chrom_exon_df: pandas.DataFrame with `chr`, `gene`, `start`, `end` columns that delineate
+        the start and end positions of exons on a gene.
         :param chrom: str chromosome name
         :return: str full file path to where coverage array is saved in a compressed .npz file.
         """
-
-        # First, parse this chromosome's reads.
+        # First, load this chromosome's reads.
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} begin loading reads from {2}'
                          .format(self.sample_id, chrom, self.filename))
@@ -243,103 +340,201 @@ class BamReadsProcessor():
             logging.info('SAMPLE {0}: CHROMOSOME {1} reads successfully loaded -- shape: {2}'
                          .format(self.sample_id, chrom, reads_df.shape))
 
-        # Second, if working with paired reads,
+        # append end position to reads based on cigar score.
+        reads_df['end_pos'] = reads_df['pos'] + reads_df['cigar'].apply(
+            lambda x: sum([int(k) for k, v in re.findall(r'(\d+)([A-Z]?)', x)]))
+
+        # assign row number to read ID column, then use as index.
+        reads_df['read_id'] = range(reads_df.shape[0])
+        reads_df.set_index('read_id'
+                           , drop=False
+                           , inplace=True)
+
+        # If working with paired reads,
         # ensure that we've sequestered paired reads (eliminate any query names only occurring once).
         if self.paired:
             qname_counts = reads_df.qname_unpaired.value_counts()
             paired_occ_reads = qname_counts[qname_counts == 2].index.values.tolist()
             reads_df = reads_df[reads_df.qname_unpaired.isin(paired_occ_reads)]
 
-        # start computing coverage from pos and cigar fields.
+        # get gene intersection data to guide ambiguous read detection.
+        gene_intersection_dat = self.get_gene_intersections(chrom_gene_df
+                                                            , exon_df=chrom_exon_df)
+
+        # initialize read count storage
+        read_count_df = DataFrame({self.sample_id: 0}
+                                  , index=chrom_gene_df.gene.values)
+
+        # start getting coverage: iterate over genes.
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} begin computing coverage.'.format(self.sample_id, chrom))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} begin computing coverage for {2} genes.'
+                         .format(self.sample_id, chrom, chrom_gene_df.shape[0]))
 
-        # grab cigar string and read starting position. Initialize coverage array.
-        dat = reads_df[['cigar', 'pos']].values
-        chrom_len = self.header[self.header.chr == chrom].length.iloc[0]
-        cov_vec = np.zeros([chrom_len])
+        gene_cov_dat = dict()
+        for i in range(chrom_gene_df.shape[0]):
+            # extract this gene's start, end positions.
+            gene, gene_start, gene_end = chrom_gene_df[['gene', 'gene_start', 'gene_end']].iloc[i].values
 
-        # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
-        if self.paired:
-            for i in np.arange(1, dat.shape[0], 2):
-                bounds_1 = cigar_segment_bounds(dat[i - 1, 0], start=dat[i - 1, 1])
-                bounds_2 = cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
+            # initialize gene coverage array (will be pared down to exon regions later).
+            cov_vec = np.zeros(gene_end - gene_start + 1)
 
-                # leverage nature of alignments of paired reads to find disjoint coverage ranges.
-                min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
-                min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
+            # obtain exon regions for each gene that intersects this gene (incl original gene).
+            transcript_idx = list()
+            for intersect_gene in gene_intersection_dat[gene]:
+                exon_bounds = gene_intersection_dat[gene][intersect_gene]
+                transcript_idx.append(fill_in_bounds(exon_bounds))
 
-                if max_bounds_2 > max_bounds_1:
-                    bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
-                else:
-                    bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
-                    bounds_2.sort()
+            # storage for reads to drop.
+            drop_reads = list()
 
-                bounds = bounds_1 + bounds_2
-                for j in np.arange(1, len(bounds), 2):
-                    cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
+            # subset reads to those that start and end within scope of gene.
+            gene_reads_df = reads_df[((reads_df.pos >= gene_start) & (reads_df.end_pos <= gene_end))]
+            dat = gene_reads_df[['cigar', 'pos', 'read_id']].values
 
-        # for single-read RNA-Seq experiments, we do not need such special consideration.
-        else:
-            for i in np.arange(dat.shape[0]):
-                bounds = cigar_segment_bounds(dat[i, 0], start=dat[i, 1])
+            # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
+            if self.paired:
+                for ii in np.arange(1, dat.shape[0], 2):
 
-                for j in np.arange(1, len(bounds), 2):
-                    cov_vec[(bounds[j - 1]):(bounds[j] + 1)] += 1
+                    # obtain read region bounds.
+                    bounds_1 = cigar_segment_bounds(dat[ii - 1, 0]
+                                                    , start=dat[ii - 1, 1])
+                    bounds_2 = cigar_segment_bounds(dat[ii, 0]
+                                                    , start=dat[ii, 1])
 
-        if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} length: {2}'.format(self.sample_id, chrom, len(cov_vec)))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} max read coverage: {2:.4}'
-                         .format(self.sample_id, chrom, str(np.max(cov_vec))))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} mean read coverage: {2:.4}'
-                         .format(self.sample_id, chrom, str(np.mean(cov_vec))))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} % of chromosome covered: {2:.4}'
-                         .format(self.sample_id, chrom, str(np.mean(cov_vec > 0))))
+                    # leverage nature of alignments of paired reads to find disjoint coverage ranges.
+                    min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
+                    min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
 
-        # create output directory if it does not exist, and then make output file name.
-        out_file = os.path.join(self.save_dir, 'sample_' + self.sample_id + '_' + chrom + '.npz')
+                    if max_bounds_2 >= max_bounds_1:
+                        bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
+                    else:
+                        # bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
+                        bounds_2 = [min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]
+                        bounds_2.sort()
 
-        if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} saving csr-compressed coverage array to {2}'
-                         .format(self.sample_id, chrom, out_file))
+                    # aggregate read pair's bounds.
+                    bounds = bounds_1 + bounds_2
 
-        # save coverage vector as a compressed-sparse row matrix.
-        sparse.save_npz(out_file
-                        , matrix=sparse.csr_matrix(cov_vec))
+                    read_idx = fill_in_bounds(bounds
+                                              , endpoint=True)
 
-        # free up memory, delete coverage vector (it's saved to disk).
-        del cov_vec
+                    # find genes that fully include this read.
+                    caught_genes = self.determine_full_inclusion(read_idx
+                                                                 , gene_idx_list=transcript_idx)
+
+                    # Ambiguous read determination logic:
+                    # - if paired reads lie fully within 0 or 2+ genes, do not use the reads pair and drop them.
+                    # - if read lies fully within a single gene:
+                    #   - do not drop it.
+                    #   - if the caught gene is the current gene being analyzed, use the read. Otherwise, do not.
+                    drop_read = False
+                    if len(caught_genes) != 1:
+                        use_read = False
+                        drop_read = True
+
+                    else:
+                        use_read = caught_genes[0] == 0
+
+                    # if only full intersection is with original gene, increment coverage and read count.
+                    if use_read:
+                        cov_vec[read_idx - gene_start] += 1
+                        read_count_df.loc[gene][self.sample_id] += 1
+
+                    # append read pair to list of reads to drop if need be.
+                    if drop_read:
+                        drop_reads.extend([dat[ii - 1, 2], dat[ii, 2]])
+
+            # for single-read RNA-Seq experiments, we do not need such special consideration.
+            else:
+                for ii in np.arange(dat.shape[0]):
+
+                    # obtain read regions bounds.
+                    bounds = cigar_segment_bounds(dat[ii, 0]
+                                                  , start=dat[ii, 1])
+
+                    # assemble read positions.
+                    read_idx = fill_in_bounds(bounds
+                                              , endpoint=True)
+
+                    # find genes that fully include this read.
+                    caught_genes = self.determine_full_inclusion(read_idx
+                                                                 , gene_idx_list=transcript_idx)
+
+                    # Ambiguous read determination logic:
+                    # - if read lies fully within 0 or 2+ genes, do not use the read and drop it.
+                    # - if read lies fully within a single gene:
+                    #   - do not drop it.
+                    #   - if the caught gene is the current gene being analyzed, use the read. Otherwise, do not.
+                    drop_read = False
+                    if len(caught_genes) != 1:
+                        use_read = False
+                        drop_read = True
+
+                    else:
+                        use_read = caught_genes[0] == 0
+
+                    # if only full intersection with original gene, increment coverage and read count.
+                    if use_read:
+                        cov_vec[read_idx - gene_start] += 1
+                        read_count_df.loc[gene][self.sample_id] += 1
+
+                    # add read to list of reads to drop if need be.
+                    if drop_read:
+                        drop_reads.extend(dat[ii, 2])
+
+            # store exonic regions of gene coverage array as sample coverage matrix.
+            gene_cov_dat[gene] = cov_vec[transcript_idx[0] - gene_start]
+
+            # do not consider the current gene later on in the intersecting genes' reads parsing.
+            for other_gene in list(gene_intersection_dat[gene].keys())[1:]:
+                if gene in gene_intersection_dat[other_gene]:
+                    del gene_intersection_dat[other_gene][gene]
+
+            # drop ambiguous reads from larger set of chromosome reads,
+            # should speed up gene-read searches in the future.
+            if drop_reads:
+                reads_df.drop(drop_reads
+                              , inplace=True)
+
+        # free up some memory -- delete chromosome reads data.
+        del reads_df
         gc.collect()
 
-        # finally, parse gene read counts.
-        n_genes = gene_sub_df.shape[0]
-        counts = np.zeros(n_genes)
-        dat = gene_sub_df[['gene_start', 'gene_end']].values
+        # save gene coverage dictionary to disk as pickle file.
+        pkl_file = os.path.join(self.save_dir, 'coverage_' + self.sample_id + '_' + chrom + '.pkl')
 
-        # iterate over genes, count number of reads (entirely) falling between gene_start and gene_end.
-        qname_col = 'qname_unpaired' if self.paired else 'qname'
-        for i in range(n_genes):
-            # entire read must fall w/in gene start/end
-            counts_df = reads_df[reads_df.pos.between(dat[i, 0], dat[i, 1])]
-            counts[i] = counts_df[qname_col].unique().shape[0]
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} saving {2} coverage arrays to {3}'
+                         .format(self.sample_id, chrom, len(gene_cov_dat), pkl_file))
 
-        # turn read counts into a DataFrame so we can join on genes later.
-        read_count_df = DataFrame({'chr': chrom
-                                      , 'gene': gene_sub_df.gene.values
-                                      , 'read_count': counts})
+        with open(pkl_file, 'wb') as f:
+            pkl.dump(gene_cov_dat, f)
 
-        # quality control.
-        if read_count_df.empty:
-            raise ValueError('Missing read counts!')
+        # free up memory, delete gene coverage data.
+        del gene_cov_dat
+        gc.collect()
+
+        # use `gene` as a column instead of an index in read_count_df.
+        read_count_df.reset_index(inplace=True)
+        read_count_df.rename(columns={'index': 'gene'}
+                             , inplace=True)
 
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} mean per-gene read count: {2:.4}'
-                         .format(self.sample_id, chrom, read_count_df.read_count.mean()))
+                         .format(self.sample_id, chrom, read_count_df[self.sample_id].mean()))
+
+        # write sample chromosome read counts to .csv for joining later.
+        read_count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + chrom + '.csv')
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} saving read counts {2}'
+                         .format(self.sample_id, chrom, read_count_file))
+        read_count_df.to_csv(read_count_file
+                             , index=False)
 
         # return per-chromosome coverage array filename and per-chromosome read counts.
-        return out_file, read_count_df
+        return pkl_file, read_count_file
 
-    def coverage_read_counts(self, gene_df):
+    def coverage_read_counts(self, gene_df, exon_df):
         """
         Main function for computing coverage arrays in parallel over chromosomes.
 
@@ -361,12 +556,41 @@ class BamReadsProcessor():
         par_output = Parallel(n_jobs=min(self.n_jobs, len(self.chroms))
                               , verbose=0
                               , backend='threading')(delayed(self.chromosome_coverage_read_counts)(
-            gene_sub_df=subset_to_chrom(gene_df, chrom=chrom),
+            chrom_gene_df=subset_to_chrom(gene_df, chrom=chrom),
+            chrom_exon_df=subset_to_chrom(exon_df, chrom=chrom),
             chrom=chrom)
             for chrom in self.chroms)
 
         # parse output from parallel workers.
         cov_filepaths = [x[0] for x in par_output]
-        read_count_dfs = [x[1] for x in par_output]
+        read_count_filepaths = [x[1] for x in par_output]
 
-        return cov_filepaths, concat(read_count_dfs)
+        return cov_filepaths, read_count_filepaths
+
+
+if __name__ == '__main__':
+    from degnorm.gene_processing import GeneAnnotationProcessor
+
+    data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
+    bam_file = os.path.join(data_path, 'hg_small_1.bam')
+    bai_file = os.path.join(data_path, 'hg_small_1.bai')
+    gtf_file = os.path.join(data_path, 'chr1_small.gtf')
+
+    gtf_processor = GeneAnnotationProcessor(gtf_file)
+    exon_df = gtf_processor.run()
+    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+
+    output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
+
+    reader = BamReadsProcessor(bam_file=bam_file
+                               , index_file=bai_file
+                               , chroms=['chr1']
+                               , n_jobs=1
+                               , output_dir=output_dir
+                               , verbose=True)
+
+    sample_id = reader.sample_id
+    print('found sample id {0}'.format(sample_id))
+
+    cov_files, read_count_files = reader.coverage_read_counts(gene_df
+                                                              , exon_df=exon_df)

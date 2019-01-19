@@ -4,7 +4,7 @@ import shutil
 from pandas import DataFrame
 from random import choice
 from pysam.libcalignmentfile import AlignmentFile
-from degnorm.reads import BamReadsProcessor, cigar_segment_bounds
+from degnorm.reads import *
 from degnorm.gene_processing import GeneAnnotationProcessor
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,11 +42,11 @@ def bam_setup(request):
 # need .gtf file in order to test coverage parsing.
 # GeneAnnotationLoader should have already been tested.
 @pytest.fixture
-def gtf_setup(request):
+def gtf_setup():
     gtf_file = os.path.join(THIS_DIR, 'data', 'chr1_small.gtf')
     gtf_processor = GeneAnnotationProcessor(gtf_file)
-    exons_df = gtf_processor.run()
-    return exons_df
+    exon_df = gtf_processor.run()
+    return exon_df
 
 # ----------------------------------------------------- #
 # BamReadsCoverageProcessor tests
@@ -97,27 +97,38 @@ def test_bam_load_single(bam_setup):
 
 def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     bam_setup = bam_setup[0]
-    exons_df = gtf_setup
-    fps, read_count_df = bam_setup.coverage_read_counts(exons_df)
-    assert isinstance(read_count_df, DataFrame)
-    assert read_count_df.shape[1] == 3
-    assert all([os.path.isfile(x) for x in fps])
+    exon_df = gtf_setup
+    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+
+    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_df, exon_df=exon_df)
+
+    assert isinstance(coverage_fps, list)
+    assert isinstance(read_count_fps, list)
+    assert len(coverage_fps) == 1
+    assert len(read_count_fps) == 1
+    assert all([os.path.isfile(x) for x in coverage_fps])
+    assert all([os.path.isfile(x) for x in read_count_fps])
 
 
 def test_bam_coverage_counts_single(bam_setup, gtf_setup):
     bam_setup = bam_setup[1]
-    exons_df = gtf_setup
-    fps, read_count_df = bam_setup.coverage_read_counts(exons_df)
-    assert isinstance(read_count_df, DataFrame)
-    assert read_count_df.shape[1] == 3
-    assert all([os.path.isfile(x) for x in fps])
+    exon_df = gtf_setup
+    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+
+    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_df, exon_df=exon_df)
+
+    assert isinstance(coverage_fps, list)
+    assert isinstance(read_count_fps, list)
+    assert len(coverage_fps) == 1
+    assert len(read_count_fps) == 1
+    assert all([os.path.isfile(x) for x in coverage_fps])
+    assert all([os.path.isfile(x) for x in read_count_fps])
 
 
 # ----------------------------------------------------- #
 # Other degnorm.reads module tests
 # ----------------------------------------------------- #
 def test_cigar_parser():
-    print('TESTING cigar_segment_bounds function')
 
     # one match, all 100 base pairs covering positions 0 through 99 (inclusive)
     cigar_1 = '100M'
@@ -130,3 +141,30 @@ def test_cigar_parser():
 
     cigar_2_parse = cigar_segment_bounds(cigar_2, 0)
     assert cigar_2_parse == [0, 12, 33, 132]
+
+
+def test_fill_in_bounds():
+
+    bounds_pass = np.array([10, 15, 40, 50, 60, 65])
+    expected_vec = np.array([10, 11, 12, 13, 14, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 60, 61, 62, 63, 64])
+    fill_vec = fill_in_bounds(bounds_pass)
+    assert np.array_equal(fill_vec, expected_vec)
+
+    bounds_fail = bounds_pass[0:5]
+    ValueError('bounds_vec must have even number of values.')
+    with pytest.raises(ValueError, message='bounds_vec must have even number of values.'):
+        fill_in_bounds(bounds_fail)
+
+
+# ----------------------------------------------------- #
+# degnorm.reads_merge module tests
+# (do here because of required reads parsing set-up)
+# ----------------------------------------------------- #
+
+def test_merge_read_count_files(bam_setup, gtf_setup):
+    bam_setup = bam_setup[0]
+    exon_df = gtf_setup
+    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+
+    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_df, exon_df=exon_df)
+

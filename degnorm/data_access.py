@@ -210,41 +210,41 @@ def get_coverage_data(genes, degnorm_dir, save_dir=None):
 
     # iterate over loaded genes.
     ctr = 0
-    for gene in cov_ldr.cov_dict:
+    for this_gene in cov_ldr.cov_dict:
 
         # extract coverage.
-        raw_cov = cov_ldr.cov_dict[gene]['raw']
-        est_cov = cov_ldr.cov_dict[gene]['estimate']
+        raw_cov = cov_ldr.cov_dict[this_gene]['raw']
+        est_cov = cov_ldr.cov_dict[this_gene]['estimate']
 
         # store coverage as Li x p DataFrames.
-        cov_dat_output[gene] = dict()
-        cov_dat_output[gene]['raw'] = DataFrame(raw_cov.T
-                                                , columns=cov_ldr.sample_ids)
-        cov_dat_output[gene]['estimate'] = DataFrame(est_cov.T
+        cov_dat_output[this_gene] = dict()
+        cov_dat_output[this_gene]['raw'] = DataFrame(raw_cov.T
                                                      , columns=cov_ldr.sample_ids)
+        cov_dat_output[this_gene]['estimate'] = DataFrame(est_cov.T
+                                                          , columns=cov_ldr.sample_ids)
 
         # protocol to save raw and estimated coverage to disk...
         if save_dir:
 
             # extract gene's chromosome name.
-            chrom = cov_ldr.exon_df[cov_ldr.exon_df.gene == gene].chr.iloc[0]
+            chrom = cov_ldr.exon_df[cov_ldr.exon_df.gene == this_gene].chr.iloc[0]
 
             # ensure writability of coverage data: create missing directories.
             if not os.path.isdir(os.path.join(save_dir, chrom)):
                 os.makedirs(os.path.join(save_dir, chrom))
 
-            raw_save_file = os.path.join(save_dir, chrom, '{0}_raw_coverage.txt'.format(gene))
-            est_save_file = os.path.join(save_dir, chrom, '{0}_estimated_coverage.txt'.format(gene))
+            raw_save_file = os.path.join(save_dir, chrom, '{0}_raw_coverage.txt'.format(this_gene))
+            est_save_file = os.path.join(save_dir, chrom, '{0}_estimated_coverage.txt'.format(this_gene))
 
             # write coverage.
-            cov_dat_output[gene]['raw'].to_csv(raw_save_file
-                                               , index=None
-                                               , sep=' '
-                                               , float_format='%.5f')
-            cov_dat_output[gene]['estimate'].to_csv(est_save_file
+            cov_dat_output[this_gene]['raw'].to_csv(raw_save_file
                                                     , index=None
                                                     , sep=' '
                                                     , float_format='%.5f')
+            cov_dat_output[this_gene]['estimate'].to_csv(est_save_file
+                                                         , index=None
+                                                         , sep=' '
+                                                         , float_format='%.5f')
 
             ctr += 1
 
