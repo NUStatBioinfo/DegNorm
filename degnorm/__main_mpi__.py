@@ -10,7 +10,7 @@ except ImportError as e:
     raise e
 
 from degnorm.reads import *
-from degnorm.coverage import *
+from degnorm.reads_merge import *
 from degnorm.gene_processing import *
 from degnorm.data_access import *
 from degnorm.nmf_mpi import *
@@ -102,7 +102,7 @@ def main():
                              .format(args.warm_start_dir))
             load_dat = load_from_previous(args.warm_start_dir
                                           , new_dir=output_dir)
-            chrom_gene_cov_dict = load_dat['chrom_gene_cov_dict']
+            gene_cov_dict = load_dat['gene_cov_dict']
             read_count_df = load_dat['read_count_df']
             genes_df = load_dat['genes_df']
             sample_ids = load_dat['sample_ids']
@@ -180,7 +180,7 @@ def main():
         # initialize objects to be gathered later.
         sample_ids = list()
         cov_files = dict()
-        read_count_dict = dict()
+        read_count_files = dict()
 
         # iterate over node's .bam/.bai files; compute each sample's chromosomes' coverage arrays
         # and save them to .npz files.
@@ -202,7 +202,8 @@ def main():
 
                 sample_id = reader.sample_id
                 sample_ids.append(sample_id)
-                cov_files[sample_id], read_count_dict[sample_id] = reader.coverage_read_counts(genes_df)
+                cov_files[sample_id], read_count_files[sample_id] = reader.coverage_read_counts(genes_df
+                                                                                                , exon_df=exon_df)
 
             del reader
             gc.collect()
@@ -210,10 +211,10 @@ def main():
         if RANK == 0:
             mpi_logging_info('Master gathering sample IDs, coverage file manifest, and read count data from workers.')
 
-        # everyone gives sample_ids, cov_file map, and read_counts to master.
+        # everyone gives sample_ids, cov_file map, and read count files to master.
         sample_ids = COMM.gather(sample_ids, root=0)
         cov_files = COMM.gather(cov_files, root=0)
-        read_count_dict = COMM.gather(read_count_dict, root=0)
+        read_count_files = COMM.gather(read_count_files, root=0)
 
         # ---------------------------------------------------------------------------- #
         # Master to merge per-sample gene read count matrices:
@@ -225,46 +226,66 @@ def main():
             # collapse sample_ids and read_count_dict from list of lists to something useful.
             sample_ids = flatten_2d(sample_ids).tolist()
             cov_files_unordered = {k: v for d in cov_files for k, v in d.items()}
-            read_count_dict = {k: v for d in read_count_dict for k, v in d.items()}
+            read_count_files_unordered = {k: v for d in read_count_files for k, v in d.items()}
 
-            # order the cov_files by sample_id.
+            # order the coverage files and read count files by sample_id.
             cov_files = OrderedDict()
+            read_count_files = OrderedDict()
 
             for sample_id in sample_ids:
                 cov_files[sample_id] = cov_files_unordered.get(sample_id)
+                read_count_files[sample_id] = read_count_files_unordered.get(sample_id)
 
             # Celebrate successful parsing of .bam files.
             mpi_logging_info('Successfully processed chromosome read coverage and gene read counts for all experiments.')
             mpi_logging_info('RNA-seq sample identifiers: \n\t' + ', '.join(sample_ids))
 
-            read_count_df = read_count_dict[sample_ids[0]]
-            read_count_df.rename(columns={'read_count': sample_ids[0]}, inplace=True)
+            # ---------------------------------------------------------------------------- #
+            # Merge, load per-sample files:
+            # 1. obtain read count DataFrame containing X, an n (genes) x p (samples) matrix.
+            # 2. per-sample gene coverage matrices,
+            #    and save them back to disk in .pkl files on per-chromosome basis.
+            # ---------------------------------------------------------------------------- #
+            mpi_logging_info('Merging read counts across samples.')
+            read_count_df = merge_read_count_files(read_count_files
+                                                   , chroms=chroms)
+            mpi_logging_info('Read counts merge successful. Read count data shape: {0}'.format(read_count_df.shape))
 
-            for sample_id in sample_ids[1:]:
-                read_count_df = pd.merge(read_count_df
-                                         , read_count_dict[sample_id].rename(columns={'read_count': sample_id})
-                                         , how='inner'
-                                         , on=['chr', 'gene'])
+            mpi_logging_info('Merging gene coverage arrays across samples and saving results to chromosome directories.')
+            gene_cov_dict = merge_gene_coverage_files(cov_files
+                                                      , chroms=chroms
+                                                      , save_dir=output_dir)
+            mpi_logging_info('Coverage merge successful. Number of loaded coverage arrays: {0}'
+                             .format(len(gene_cov_dict)))
 
-            mpi_logging_info('Successfully merged sample read counts ({0} samples) -- shape: {1}'
-                             .format(len(sample_ids), read_count_df.shape))
+            # remove raw sample coverage, read count files.
+            for s_id in sample_ids:
+                shutil.rmtree(os.path.join(output_dir, s_id))
 
-            del read_count_dict
             gc.collect()
 
             # ---------------------------------------------------------------------------- #
             # Save gene annotation metadata and original read counts.
             # ---------------------------------------------------------------------------- #
+            genes = list(gene_cov_dict.keys())
 
-            # subset genes, exons to genes in intersection of experiments.
-            genes_df = genes_df[genes_df.gene.isin(read_count_df.gene.unique())]
-            exon_df = exon_df[exon_df.gene.isin(read_count_df.gene.unique())]
+            # order genes and read counts by order in coverage set by
+            # setting index to gene names, loc[genes], making genes a column again by dropping index.
+            genes_df.set_index('gene'
+                               , inplace=True)
+            read_count_df.set_index('gene'
+                                    , inplace=True)
 
-            # re-order genes, read counts so that they're parsimonious in chromosome + gene ordering.
-            genes_df.sort_values(['chr', 'gene'], inplace=True)
-            genes_df.reset_index(inplace=True, drop=True)
-            read_count_df.sort_values(['chr', 'gene'], inplace=True)
-            read_count_df.reset_index(inplace=True, drop=True)
+            genes_df = genes_df.loc[genes]
+            read_count_df = read_count_df.loc[genes]
+
+            genes_df.reset_index(drop=False
+                                 , inplace=True)
+            read_count_df.reset_index(drop=False
+                                      , inplace=True)
+
+            # only keep exons for genes in coverage set.
+            exon_df = exon_df[exon_df.gene.isin(genes)]
 
             # quality control.
             if genes_df.shape[0] != read_count_df.shape[0]:
@@ -276,73 +297,25 @@ def main():
             exon_df.to_csv(exon_output_file
                            , index=False)
 
-            # save read counts.
+            # save merged read counts.
             read_count_file = os.path.join(output_dir, 'read_counts.csv')
             mpi_logging_info('Saving original read counts to {0}'.format(read_count_file))
             read_count_df.to_csv(read_count_file
                                  , index=False)
 
-            # ensure chromosomes still reflective of genes to be processed.
-            chroms = read_count_df.chr.unique().tolist()
-
         else:
             # only MASTER has genes_df and read_count_df. Everyone else will get them later on.
-            exon_df = None
-            chroms = None
+            sample_ids = None
 
         # give everyone the exon data, updated chromosome set,
         # sample_ids, and coverage files for coverage matrix parsing
-        exon_df = COMM.bcast(exon_df, root=0)
-        chroms = COMM.bcast(chroms, root=0)
-        cov_files = COMM.bcast(cov_files, root=0)
         sample_ids = COMM.bcast(sample_ids, root=0)
-
-        # ---------------------------------------------------------------------------- #
-        # Slice up genome coverage matrix for each gene according to exon positioning.
-        # Run in parallel across workers.
-        # ---------------------------------------------------------------------------- #
-        chrom_chunks = split_into_chunks(chroms
-                                         , n=SIZE)
-
-        # if there are enough chromosome chunks to distribute to workers, disseminate chromosomes,
-        # otherwise this worker gets no chromosomes to dice up.
-        if RANK < len(chrom_chunks):
-            my_chroms = chrom_chunks[RANK]
-            gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(my_chroms))
-                           , verbose=0
-                           , backend='threading')(delayed(gene_coverage)(
-                exon_df=exon_df,
-                chrom=chrom,
-                coverage_files=cov_files,
-                output_dir=output_dir,
-                verbose=True) for chrom in my_chroms)
-
-            # convert list of tuples into 2-d dictionary: {chrom: {gene: coverage matrix}}
-            chrom_gene_cov_dict = {my_chroms[idx]: gene_cov_dicts[idx] for idx in range(len(my_chroms))}
-
-            del gene_cov_dicts, exon_df
-            gc.collect()
-
-            # workers give their coverage matrix data to master.
-            if RANK > 0:
-                COMM.send(chrom_gene_cov_dict
-                          , dest=0
-                          , tag=66)
-
-        # host assembles chromosome gene coverage matrix dictionary.
-        if (RANK == 0) and (len(chrom_chunks) > 1):
-            for worker_id in range(1, len(chrom_chunks)):
-                chrom_gene_cov_dict.update(COMM.recv(source=worker_id
-                                                     , tag=66))
 
     # ---------------------------------------------------------------------------- #
     # PATHS MERGE: warm-start and input-file paths meet.
     # Process gene coverage matrices prior to running NMF.
     # ---------------------------------------------------------------------------- #
     if RANK == 0:
-        # initialize an OrderedDict to store coverage matrices that pass DegNorm inclusion
-        # criteria in order.
-        gene_cov_dict = OrderedDict()
 
         # Determine for which genes to run DegNorm, and for genes where we will run DegNorm,
         # which transcript regions to filter out prior to running DegNorm.
@@ -350,11 +323,10 @@ def main():
         delete_idx = list()
 
         for i in range(genes_df.shape[0]):
-            chrom = genes_df.chr.iloc[i]
             gene = genes_df.gene.iloc[i]
 
             # extract gene's p x Li coverage matrix. We got chrom_gene_cov_dict from prior gather.
-            cov_mat = chrom_gene_cov_dict[chrom][gene]
+            cov_mat = gene_cov_dict[gene]
 
             # do not add gene if there are any 100%-zero coverage samples.
             # do not add gene if maximum coverage is < minimum maximum coverage threshold.
@@ -364,10 +336,9 @@ def main():
             if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
                     or (cov_mat.shape[1] > 9e6) or (cov_mat.shape[1] <= args.downsample_rate) \
                     or (cov_mat.max() > 2147483647):
-                delete_idx.append(i)
 
-            else:
-                gene_cov_dict[gene] = cov_mat
+                delete_idx.append(i)
+                del gene_cov_dict[gene]
 
         if delete_idx:
             read_count_df = read_count_df.drop(delete_idx
@@ -384,15 +355,11 @@ def main():
         if len(gene_cov_dict.keys()) != read_count_df.shape[0]:
             raise ValueError('Number of coverage matrices not equal to number of genes in read count DataFrame!')
 
-        # free up more memory: delete exon / genome annotation data
-        del chrom_gene_cov_dict
-        gc.collect()
-
         # briefly summarize DegNorm input and settings.
         mpi_logging_info('DegNorm will run on {0} genes, downsampling rate = 1 / {1}, {2} baseline selection.'
                          .format(len(gene_cov_dict), args.downsample_rate, 'without' if args.skip_baseline_selection else 'with'))
 
-        # write gene_cov_dict to disk, avoid MPI errors in trying to broadcast this large structure.
+        # write gene_cov_dict to disk, avoid MPI errors in trying to broadcast this large dictionary.
         with open(os.path.join(output_dir, 'TMP_gene_cov_dict.pkl'), 'wb') as f:
             pkl.dump(gene_cov_dict, f)
 
