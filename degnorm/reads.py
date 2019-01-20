@@ -404,8 +404,7 @@ class BamReadsProcessor():
             drop_reads = list()
 
             # subset reads to those that start and end within scope of gene.
-            gene_reads_df = reads_df[((reads_df.pos >= gene_start) & (reads_df.end_pos <= gene_end))]
-            dat = gene_reads_df[['cigar', 'pos', 'read_id']].values
+            dat = reads_df[((reads_df.pos >= gene_start) & (reads_df.end_pos <= gene_end))][['cigar', 'pos', 'read_id']].values
 
             # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
             if self.paired:
@@ -545,8 +544,8 @@ class BamReadsProcessor():
                 reads_df.drop(drop_reads
                               , inplace=True)
 
-        # free up some memory -- delete chromosome reads data.
-        del reads_df
+        # free up some memory -- delete large memory objects.
+        del reads_df, dat, cov_vec, gene_intersection_dat, drop_reads
         gc.collect()
 
         # save gene coverage dictionary to disk as pickle file.
@@ -563,10 +562,7 @@ class BamReadsProcessor():
         del gene_cov_dat
         gc.collect()
 
-        # use `gene` as a column instead of an index in read_count_df.
-        # read_count_df.reset_index(inplace=True)
-        # read_count_df.rename(columns={'index': 'gene'}
-        #                      , inplace=True)
+        # build read counts DataFrame.
         read_count_df = DataFrame({'gene': chrom_gene_df.gene.values
                                       , self.sample_id: read_counts})
 
