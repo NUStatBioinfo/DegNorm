@@ -333,6 +333,9 @@ class BamReadsProcessor():
         1. Saves compressed coverage array to self.save_dir with file name 'sample_[sample_id]_[chrom].npz'
         2. Saves read counts to self.save_dir with file name 'read_counts_[sample_id]_[chrom].csv'
 
+        It is assumed that overlapping gene exons have been removed from exon set.
+        See gene_processing.GeneAnnotationProcessor.remove_multigene_exons method.
+
         :param chrom_gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome, must be
         subset to the chromosome in study.
@@ -402,6 +405,7 @@ class BamReadsProcessor():
 
             # storage for reads to drop.
             drop_reads = list()
+            read_count = 0
 
             # subset reads to those that start and end within scope of gene.
             dat = reads_df[((reads_df.pos >= gene_start) & (reads_df.end_pos <= gene_end))][['cigar', 'pos', 'read_id']].values
@@ -430,49 +434,51 @@ class BamReadsProcessor():
                     # aggregate read pair's bounds.
                     bounds = bounds_1 + bounds_2
 
-                    # store set of genes that intersect read's matching regions as well as
-                    # indicator for whether or not read is *fully* captured within a gene's exons.
-                    read_genes = list()
-                    captured = True
-
                     # search for read's matching regions within gene exon gas:
-                    # for each matching region, find genes' exons that intersect with it.
+                    # For each read matching region, find names of genes whose exons fully capture the region.
+                    read_gene = None  # storage for the single capturing gene.
                     for j in np.arange(1, stop=len(bounds), step=2):
+
                         gas_steps = [(st[0], sorted(st[1])) for st in
                                      gas[HTSeq.GenomicInterval('chrom', bounds[j - 1], bounds[j] + 1, '.')].steps()]
 
-                        # for each gas search result step, determine how many genes' exons fully caught read region.
-                        for jj in range(len(gas_steps)):
-                            region = gas_steps[jj][1]
-                            if not region:
-                                captured = False
-                            else:
-                                read_genes.extend(region)
+                        # if match region broken up over multiple intervals, there is no hope for a full capture.
+                        # Otherwise, need to check how many distinct genes' fully capture this match region with
+                        # their exons. Note: if one gene has contiguous exons, e.g. [100, 130][130, 150], GAS
+                        # considers this one GenomicInterval.
+                        if len(gas_steps) == 1:
+                            capture_genes = gas_steps[0][1]
+                            n_capture_genes = len(capture_genes)
 
-                    # pare down gene capture list to unique captures.
-                    read_genes = list(set(read_genes))
+                            # only if number of fully capturing genes is exactly 1 for this match region,
+                            # we might consider it.
+                            if n_capture_genes == 1:
+                                # if analyzing the first match region, the read_gene is set to the capturing gene.
+                                if j == 1:
+                                    read_gene = capture_genes[0]
+                                # if analyzing another match region, only consider read_gene if it's equal to
+                                # the first capturing gene.
+                                else:
+                                    if read_gene != capture_genes[0]:
+                                        read_gene = None
 
                     # Ambiguous read determination logic:
                     use_read = False
                     drop_read = False
 
-                    # if read does not fully lie within any genes, drop it.
-                    if not captured:
-                        drop_read = True
-
                     # if paired reads lie fully within only 1 gene, keep it.
-                    elif len(read_genes) == 1:
+                    if read_gene is not None:
                         # if that capturing gene is the gene in question, use the read.
-                        if read_genes[0] == gene:
-                            use_read = True
+                        # Otherwise, do not use read but do not drop read.
+                        use_read = read_gene == gene
 
-                    # if 0 or >1 genes capture read, drop read, do not use.
+                    # if 0 or 2+ genes capture read, drop read and do not use.
                     else:
                         drop_read = True
 
                     if use_read:
                         cov_vec[fill_in_bounds(bounds, endpoint=True) - gene_start] += 1
-                        read_counts[i] += 1
+                        read_count += 1
 
                     # append read pair to list of reads to drop if need be.
                     if drop_read:
@@ -486,45 +492,51 @@ class BamReadsProcessor():
                     bounds = cigar_segment_bounds(dat[ii, 0]
                                                   , start=dat[ii, 1])
 
-                    # search for read's matching regions within gene exon gas.
-                    read_genes = list()
-                    captured = True
+                    # search for read's matching regions within gene exon gas:
+                    # For each read matching region, find names of genes whose exons fully capture the region.
+                    read_gene = None  # storage for the single capturing gene.
                     for j in np.arange(1, stop=len(bounds), step=2):
+
                         gas_steps = [(st[0], sorted(st[1])) for st in
                                      gas[HTSeq.GenomicInterval('chrom', bounds[j - 1], bounds[j] + 1, '.')].steps()]
 
-                        # for each gas search result step, determine how many genes' exons fully caught read region.
-                        for jj in range(len(gas_steps)):
-                            region = gas_steps[jj][1]
-                            if not region:
-                                captured = False
-                            else:
-                                read_genes.extend(region)
+                        # if match region broken up over multiple intervals, there is no hope for a full capture.
+                        # Otherwise, need to check how many distinct genes' fully capture this match region with
+                        # their exons. Note: if one gene has contiguous exons, e.g. [100, 130][130, 150], GAS
+                        # considers this one GenomicInterval.
+                        if len(gas_steps) == 1:
+                            capture_genes = gas_steps[0][1]
+                            n_capture_genes = len(capture_genes)
 
-                    # pare down gene capture list to unique captures.
-                    read_genes = list(set(read_genes))
+                            # only if number of fully capturing genes is exactly 1 for this match region,
+                            # we might consider it.
+                            if n_capture_genes == 1:
+                                # if analyzing the first match region, the read_gene is set to the capturing gene.
+                                if j == 1:
+                                    read_gene = capture_genes[0]
+                                # if analyzing another match region, only consider read_gene if it's equal to
+                                # the first capturing gene.
+                                else:
+                                    if read_gene != capture_genes[0]:
+                                        read_gene = None
 
                     # Ambiguous read determination logic:
                     use_read = False
                     drop_read = False
 
-                    # if read does not fully lie within any genes, drop it.
-                    if not captured:
-                        drop_read = True
-
-                    #if paired reads lie fully within only 1 gene, keep it.
-                    elif len(read_genes) == 1:
+                    # if read lies fully within only 1 gene, keep it.
+                    if read_gene is not None:
                         # if that capturing gene is the gene in question, use the read.
-                        if read_genes[0] == gene:
-                            use_read = True
+                        # Otherwise, do not use read but do not drop read.
+                        use_read = read_gene == gene
 
-                    # if 0 or 2+ genes capture read, drop read, do not use.
+                    # if 0 or 2+ genes capture read, drop read and do not use.
                     else:
                         drop_read = True
 
                     if use_read:
                         cov_vec[fill_in_bounds(bounds, endpoint=True) - gene_start] += 1
-                        read_counts[i] += 1
+                        read_count += 1
 
                     # add read to list of reads to drop if need be.
                     if drop_read:
@@ -532,6 +544,9 @@ class BamReadsProcessor():
 
             # store exonic regions of gene coverage array as sample coverage matrix.
             gene_cov_dat[gene] = cov_vec[transcript_idx - gene_start]
+
+            # store read count.
+            read_counts[i] = read_count
 
             # do not consider the current gene later on in the intersecting genes' reads parsing.
             for other_gene in list(gene_intersection_dat[gene].keys())[1:]:
