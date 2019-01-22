@@ -574,7 +574,7 @@ class BamReadsProcessor():
         gc.collect()
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} Rate of 0-capture reads: {0} / {1}'
+            logging.info('SAMPLE {0}: CHROMOSOME {1} Rate of 0-capture reads: {2} / {3}'
                          .format(self.sample_id, chrom, miss_reads, total_reads))
 
         # save gene coverage dictionary to disk as pickle file.
