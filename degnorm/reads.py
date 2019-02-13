@@ -346,8 +346,8 @@ class BamReadsProcessor():
         -> array([1])
 
         :param read_idx: list of int or 1-d numpy array of int, read's base positions
-        :param gene_idx_list: list of list of int or 1-d numpy array of int, a set of genes' exon positions,
-        one sublist per gene.
+        :param gene_idx_list: list of list of int or 1-d numpy array of int, details on a group of genes'
+        exon positions, one sublist element of positions per gene. len(gene_idx_list) = number of genes in group.
         :return: 1-d numpy array with integer indices of genes in gene_idx_list that fully include read's bases
         """
         gene_capture = np.where(list(map(lambda y: len(np.setdiff1d(read_idx, y)) == 0, gene_idx_list)))[0]
@@ -555,11 +555,12 @@ class BamReadsProcessor():
                 intersect_gene_end = intersect_gene_df.gene_end.max()
 
                 # obtain exon regions for each gene in intersection group.
+                # Exon starts/ends are 1-indexed, change them to be 0-indexed.
                 transcript_idx = list()
                 for igene in intersect_genes:
                     igene_exon_df = chrom_exon_df[chrom_exon_df.gene == igene]
-                    e_starts, e_ends = np.sort(igene_exon_df.start.values), np.sort(igene_exon_df.end.values)
-                    exon_bounds = np.concatenate([[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
+                    e_starts, e_ends = np.sort(igene_exon_df.start.values - 1), np.sort(igene_exon_df.end.values - 1)
+                    exon_bounds = np.unique(np.concatenate([[e_starts[j], e_ends[j]] for j in range(len(e_starts))]))
                     transcript_idx.append(fill_in_bounds(exon_bounds
                                                          , endpoint=True))
 
@@ -567,8 +568,9 @@ class BamReadsProcessor():
                 drop_reads = list()
 
                 # subset reads to those that start and end within scope of this bloc of intersecting genes.
+                # Since read positions are still 1-indexed, use 1-indexed gene start/ends for reads subsetting.
                 intersect_reads_dat = reads_df[(reads_df.pos >= intersect_gene_start) &
-                                               (reads_df.end_pos <= intersect_gene_end)][['bounds', 'read_id']].values()
+                                               (reads_df.end_pos <= intersect_gene_end)][['bounds', 'read_id']].values
 
                 # for single-read RNA-Seq experiments, we do not need such special consideration.
                 for ii in np.arange(intersect_reads_dat.shape[0]):
@@ -576,7 +578,7 @@ class BamReadsProcessor():
                     # obtain read regions bounds.
                     bounds, read_id = intersect_reads_dat[ii, :].values
 
-                    # obtain read positions, shift by -1 so we zero-index reads.
+                    # obtain read positions, shift by -1 so we 0-index read positions.
                     read_idx = fill_in_bounds(bounds
                                               , endpoint=True) - 1
 
@@ -587,23 +589,32 @@ class BamReadsProcessor():
                     # Ambiguous read determination logic:
                     # - if paired reads lie fully within 0 or 2+ genes, do not use the reads pair and drop them.
                     # - if read lies fully within a single gene:
-                    #   - do not drop it.
-                    #   - if the caught gene is the current gene being analyzed, use the read. Otherwise, do not.
-                    drop_read = False
+                    #    - do not drop it.
+                    #    - if the caught gene is the current gene being analyzed, use the read. O/w do not.
                     read_gene = None
+                    n_caught_genes = len(caught_genes)
 
-                    # if more than one gene fully captures read, drop and do not use.
-                    if len(caught_genes) != 1:
+                    # if only one gene captures read, use the read and identify capturing gene for
+                    # incrementing count, but drop it from consideration later (it's been accounted for).
+                    if n_caught_genes == 1:
+                        use_read = True
+                        drop_read = True
+                        read_gene = intersect_genes[caught_genes[0]]
+
+                    # if no gene fully captures the read, do not use read *but do not drop it*,
+                    # for the possibility that some isolated gene captures the read later on.
+                    elif n_caught_genes == 0:
+                        use_read = False
+                        drop_read = False
+
+                    # if > 1 gene fully captures the read,
+                    # do not use read and drop it from consideration.
+                    else:
                         use_read = False
                         drop_read = True
 
-                    # if only one gene captures read, use the read + identify capturing gene for incrementing count.
-                    else:
-                        use_read = caught_genes[0] == 0
-                        read_gene = intersect_genes[caught_genes[0]]
-
                     # if only full intersection is with with a single gene, increment coverage and read count
-                    # for that gene.
+                    # for that gene. Note: cov_vec is 0-indexed, so use 0-indexed read positions.
                     if use_read:
                         cov_vec[read_idx] += 1
                         read_count_dict[read_gene] += 1
@@ -622,12 +633,12 @@ class BamReadsProcessor():
             del gene_overlap_dat['overlap_genes'], intersect_reads_dat
             gc.collect()
 
-        if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} -- overlapping gene coverage, read counting successful.'
-                         .format(self.sample_id, chrom))
+            if self.verbose:
+                logging.info('SAMPLE {0}: CHROMOSOME {1} -- overlapping gene coverage, read counting successful.'
+                             .format(self.sample_id, chrom))
 
         # ---------------------------------------------------------------------- #
-        # Step 4. Compute coverage, reads for invidual isolated genes.
+        # Step 4. Compute coverage, reads for individual isolated genes.
         # ---------------------------------------------------------------------- #
         if n_isolated_genes > 0:
 
@@ -643,6 +654,7 @@ class BamReadsProcessor():
                                   , dtype=int)
 
             # identify regions of chromosome covered by isolated genes.
+            # change gene starts/ends to 0-indexed to match 0-indexed tscript_vec array.
             gene_starts = chrom_gene_df.gene_start.values - 1
             gene_ends = chrom_gene_df.gene_end.values - 1
             for i in range(len(gene_starts)):
@@ -657,7 +669,7 @@ class BamReadsProcessor():
                 if np.sum(tscript_vec[(read_start - 1):(read_end - 1)]) > 0:
                     drop_reads.append(read_id)
 
-            # drop large memory structures.
+            # drop memory hogs.
             del dat, gene_starts, gene_ends, tscript_vec
 
             if drop_reads:
@@ -668,7 +680,7 @@ class BamReadsProcessor():
             del drop_reads
             gc.collect()
 
-            # only continue if we have any reads intersecting isolated genes (a precaution).
+            # (a precaution) only continue if we have any reads intersecting isolated genes.
             if not reads_df.empty:
 
                 # add IntervalIndex index to chromosome gene data
