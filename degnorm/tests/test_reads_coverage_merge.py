@@ -2,7 +2,7 @@ import pytest
 import shutil
 from random import choice
 from degnorm.reads import *
-from degnorm.gene_processing import GeneAnnotationProcessor
+from degnorm.gene_processing import GeneAnnotationProcessor, get_gene_overlap_structure
 from degnorm.reads_coverage_merge import *
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +55,7 @@ def gtf_setup():
 def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     exon_df = gtf_setup
     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+    gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
 
     cov_files = OrderedDict()
     read_count_files = OrderedDict()
@@ -63,7 +64,8 @@ def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     for i in [1, 2]:
         sample_id = bam_setup[i].sample_id
         sample_ids.append(sample_id)
-        cov_files[sample_id], read_count_files[sample_id] = bam_setup[i].coverage_read_counts(gene_df
+        cov_files[sample_id], read_count_files[sample_id] = bam_setup[i].coverage_read_counts(gene_overlap_dat
+                                                                                              , gene_df=gene_df
                                                                                               , exon_df=exon_df)
 
     read_counts_df = merge_read_count_files(read_count_files

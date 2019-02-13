@@ -1,8 +1,4 @@
-import pickle as pkl
-import HTSeq
-import networkx as nx
-from pandas import DataFrame, concat, IntervalIndex
-from collections import OrderedDict
+from pandas import DataFrame, IntervalIndex
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
 from joblib import Parallel, delayed
@@ -73,7 +69,7 @@ def fill_in_bounds(bounds_vec, endpoint=False):
     n = len(bounds_vec)
 
     if n % 2 != 0:
-        raise ValueError('bounds_vec must have even number of values.')
+        raise ValueError('bounds_vec = {0}, must have even number of values!'.format(bounds_vec))
 
     if not endpoint:
         filled_in = np.concatenate([np.arange(bounds_vec[j - 1], bounds_vec[j])
@@ -248,95 +244,6 @@ class BamReadsProcessor():
         return df
 
     @staticmethod
-    def get_gene_overlap_structure(gene_df):
-        """
-        Build gene intersection matrix (a type of adjacency matrix), splitting genes into groups
-        of mutually overlapping genes (i.e. groups of genes that are reachable on paths within
-        adjacency matrix) and isolated genes that have no overlap with others.
-
-        :param gene_df: pandas.DataFrame containing a chromosome's genes' location data, has at least these columns:
-        `gene` (str name of gene), `gene_start` (int leftmost base position of gene), `gene_end` (int rightmost
-        base position of gene)
-        :return: dict of two elements, 'overlap_genes' which is a list of lists (sublists are groups of overlapping genes,
-        e.g. if gene A overlaps gene B and gene B overlaps gene C - no assurance that gene A overlaps gene C - then
-        genes A, B, and C form a group). Second element is 'isolated genes', a list of genes that have no overlap
-        with others.
-        """
-
-        genes = gene_df.gene.values
-        n_genes = len(genes)
-
-        # initialize gene overlap adjacency matrix.
-        adj_mat = np.zeros([n_genes, n_genes])
-
-        gene_starts = gene_df.gene_start.values
-        gene_ends = gene_df.gene_end.values
-        gas = HTSeq.GenomicArrayOfSets(['chrom']
-                                       , stranded=False)
-
-        # build gene locator gas. Use 0-indexing.
-        for i in range(n_genes):
-            iv = HTSeq.GenomicInterval('chrom', gene_starts[i] - 1, gene_ends[i], '.')
-            gas[iv] += str(i)
-
-        # iterate over genes, find other genes that have overlap.
-        # for genes with overlap, store their exon region bounds.
-        for i in range(n_genes):
-            gene_start, gene_end = gene_starts[i] - 1, gene_ends[i]
-
-            # search gas for overlapping genes.
-            gas_intersect = [(st[0], sorted(st[1])) for
-                             st in gas[HTSeq.GenomicInterval('chrom', gene_start, gene_end, '.')].steps()]
-
-            # parse results from gas search, identify intersecting genes.
-            gene_intersect = list()
-            for ii in range(len(gas_intersect)):
-                cross_genes = gas_intersect[ii][1]
-                if cross_genes:
-                    gene_intersect.extend(cross_genes)
-
-            # get indices of intersecting genes, update row of adjacency matrix.
-            gene_intersect = [int(x) for x in list(set(gene_intersect))]
-            if gene_intersect:
-                adj_mat[i, gene_intersect] = 1
-
-        # build network graph from adjacency (overlap) matrix.
-        graph = nx.from_numpy_matrix(adj_mat)
-
-        # now, parse graph:
-        # 1. starting with one gene, find all genes reachable from this gene. This is one
-        # adjacency group. If no other genes are reachable, gene is isolated.
-        # 2. Find set diff of adjacency groups with remaining genes, start search step 1. with
-        # any of these remaining genes.
-        # (continue iterating 1. and 2. until all genes have been grouped or labeled isolated.)
-        search_gene_idx = 0
-        progress = 0
-        isolated_genes = list()
-        overlap_genes = list()  # overlap_genes will be list of lists (sublists are groups of overlapping genes)
-        gene_ids = list(range(n_genes))
-        while progress < n_genes:
-            # get gene id's for all genes reachable from search_gene_idx
-            reachable_gene_idx = list(nx.single_source_shortest_path(graph, search_gene_idx).keys())
-            progress += len(reachable_gene_idx)
-
-            # if gene is only reachable to itself -->> no overlap, append name to list of isolated genes.
-            if len(reachable_gene_idx) == 1:
-                isolated_genes.append(genes[reachable_gene_idx[0]])
-
-            # if gene is in group of overlapping genes -->> store entire this set of overlapping genes.
-            else:
-                overlap_genes.append(genes[[x for x in reachable_gene_idx]].tolist())
-
-            gene_ids = list(set(gene_ids) - set(reachable_gene_idx))
-            if gene_ids:
-                search_gene_idx = gene_ids[0]
-            else:
-                break
-
-        return {'overlap_genes': overlap_genes
-                , 'isolated_genes': isolated_genes}
-
-    @staticmethod
     def determine_full_inclusion(read_idx, gene_idx_list):
         """
         Determine which genes' exon regions fully include a read's base positions.
@@ -354,7 +261,7 @@ class BamReadsProcessor():
 
         return gene_capture
 
-    def chromosome_coverage_read_counts(self, chrom_gene_df, chrom_exon_df, chrom):
+    def chromosome_coverage_read_counts(self, gene_overlap_dat, chrom_gene_df, chrom_exon_df, chrom):
         """
         Determine per-chromosome reads coverage and per-gene read counts from an RNA-seq experiment in
         a way that properly considers ambiguous reads - if a (paired) read falls entirely within the
@@ -370,6 +277,9 @@ class BamReadsProcessor():
         :param chrom_gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome, must be
         subset to the chromosome in study.
+        :param gene_overlap_dat: dictionary with keys 'isolated_genes' and 'overlap_genes' detailing
+        groups of genes that do not overlap with others and then groups of genes that share any overlap.
+        See gene_processing.get_gene_overlap_structure function.
         :param chrom_exon_df: pandas.DataFrame with `chr`, `gene`, `start`, `end` columns that delineate
         the start and end positions of exons on a gene.
         :param chrom: str chromosome name
@@ -382,6 +292,17 @@ class BamReadsProcessor():
 
         # assess how many genes we have.
         n_genes = chrom_gene_df.shape[0]
+
+        # gene_overlap_dat data check: ensure that number isolated genes + number overlapping genes
+        # == number of genes in genes DataFrame.
+        n_isolated_genes = len(gene_overlap_dat['isolated_genes'])
+
+        n_overlap_genes = 0
+        if gene_overlap_dat['overlap_genes']:
+            n_overlap_genes = np.sum([len(x) for x in gene_overlap_dat['overlap_genes']])
+
+        if n_isolated_genes + n_overlap_genes != n_genes:
+            raise ValueError('number of genes contained in gene_overlap_dat does not match that of chrom_gene_df.')
 
         # ---------------------------------------------------------------------- #
         # Step 1. Load chromosome's reads and index them.
@@ -463,6 +384,15 @@ class BamReadsProcessor():
                 # aggregate read pair's bounds.
                 bounds = bounds_1 + bounds_2
 
+                if len(bounds) % 2 != 0:
+                    print('problem with paired read cigar parsing:')
+                    print('cigar1 = {0}, cigar 2 = {1}'.format(dat[ii - 1, 0], dat[ii, 0]))
+                    print('start 1 = {0}, start 2 = {1}'.format(dat[ii - 1, 1], dat[ii, 1]))
+                    print('bounds_1 = {0}'.format(bounds_1))
+                    print('bounds_2 = {0}'.format(bounds_2))
+                    print('bounds = {0}'.format(bounds))
+                    raise ValueError('len(bounds) is not divisible by 2')
+
                 # iterate over match regions. If a single region is not fully contained
                 # within exon regions, drop the pair.
                 drop_read = False
@@ -530,10 +460,6 @@ class BamReadsProcessor():
         # initialize read count dictionary.
         read_count_dict = {gene: 0 for gene in chrom_gene_df.gene}
 
-        # get gene intersection structure to guide ambiguous read detection.
-        gene_overlap_dat = self.get_gene_overlap_structure(chrom_gene_df)
-        n_isolated_genes = len(gene_overlap_dat['isolated_genes'])
-
         # display summary statistics around rate of gene intersection.
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} -- {2} / {3} genes have overlap with others.\n'
@@ -545,7 +471,7 @@ class BamReadsProcessor():
                            , dtype=int)
 
         # for genes in a group of overlapping genes, compute read coverage + count.
-        if gene_overlap_dat['overlap_genes']:
+        if n_overlap_genes > 0:
 
             # iterate over groups of overlapping genes.
             for intersect_genes in gene_overlap_dat['overlap_genes']:
@@ -670,7 +596,7 @@ class BamReadsProcessor():
                     drop_reads.append(read_id)
 
             # drop memory hogs.
-            del dat, gene_starts, gene_ends, tscript_vec
+            del dat, gene_starts, gene_ends, tscript_vec, gene_overlap_dat
 
             if drop_reads:
                 print('Dropping {0} reads that do not lie completely within isolated genes'.format(len(drop_reads)))
@@ -754,10 +680,12 @@ class BamReadsProcessor():
         # return per-chromosome coverage array filename and per-chromosome read counts.
         return cov_file, count_file
 
-    def coverage_read_counts(self, gene_df, exon_df):
+    def coverage_read_counts(self, gene_overlap_dict, gene_df, exon_df):
         """
         Main function for computing coverage arrays in parallel over chromosomes.
 
+        :param gene_overlap_dat: dictionary, keys are chromosomes, values are sub-dicts
+         with output from gene_processing.get_gene_overlap_structure function.
         :param gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome. See
         GeneAnnotationProcessor.
@@ -776,6 +704,7 @@ class BamReadsProcessor():
         par_output = Parallel(n_jobs=min(self.n_jobs, len(self.chroms))
                               , verbose=0
                               , backend='threading')(delayed(self.chromosome_coverage_read_counts)(
+            gene_overlap_dat=gene_overlap_dict.get(chrom),
             chrom_gene_df=subset_to_chrom(gene_df, chrom=chrom),
             chrom_exon_df=subset_to_chrom(exon_df, chrom=chrom),
             chrom=chrom)
@@ -788,29 +717,31 @@ class BamReadsProcessor():
         return cov_filepaths, read_count_filepaths
 
 
-# if __name__ == '__main__':
-#     from degnorm.gene_processing import GeneAnnotationProcessor
-#
-#     data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
-#     bam_file = os.path.join(data_path, 'hg_small_1.bam')
-#     bai_file = os.path.join(data_path, 'hg_small_1.bai')
-#     gtf_file = os.path.join(data_path, 'chr1_small.gtf')
-#
-#     gtf_processor = GeneAnnotationProcessor(gtf_file)
-#     exon_df = gtf_processor.run()
-#     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
-#
-#     output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
-#
-#     reader = BamReadsProcessor(bam_file=bam_file
-#                                , index_file=bai_file
-#                                , chroms=['chr1']
-#                                , n_jobs=1
-#                                , output_dir=output_dir
-#                                , verbose=True)
-#
-#     sample_id = reader.sample_id
-#     print('found sample id {0}'.format(sample_id))
-#
-#     cov_files, read_count_files = reader.coverage_read_counts(gene_df
-#                                                               , exon_df=exon_df)
+if __name__ == '__main__':
+    from degnorm.gene_processing import GeneAnnotationProcessor, get_gene_overlap_structure
+
+    data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
+    bam_file = os.path.join(data_path, 'hg_small_1.bam')
+    bai_file = os.path.join(data_path, 'hg_small_1.bai')
+    gtf_file = os.path.join(data_path, 'chr1_small.gtf')
+
+    gtf_processor = GeneAnnotationProcessor(gtf_file)
+    exon_df = gtf_processor.run()
+    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+    gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
+
+    output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
+
+    reader = BamReadsProcessor(bam_file=bam_file
+                               , index_file=bai_file
+                               , chroms=['chr1']
+                               , n_jobs=1
+                               , output_dir=output_dir
+                               , verbose=True)
+
+    sample_id = reader.sample_id
+    print('found sample id {0}'.format(sample_id))
+
+    cov_files, read_count_files = reader.coverage_read_counts(gene_overlap_dat
+                                                              , gene_df=gene_df
+                                                              , exon_df=exon_df)

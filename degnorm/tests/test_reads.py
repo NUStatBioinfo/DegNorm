@@ -5,7 +5,7 @@ from pandas import DataFrame
 from random import choice
 from pysam.libcalignmentfile import AlignmentFile
 from degnorm.reads import *
-from degnorm.gene_processing import GeneAnnotationProcessor
+from degnorm.gene_processing import GeneAnnotationProcessor, get_gene_overlap_structure
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -99,8 +99,11 @@ def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     bam_setup = bam_setup[0]
     exon_df = gtf_setup
     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+    gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
 
-    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_df, exon_df=exon_df)
+    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_overlap_dat
+                                                                  , gene_df=gene_df
+                                                                  , exon_df=exon_df)
 
     assert isinstance(coverage_fps, list)
     assert isinstance(read_count_fps, list)
@@ -114,8 +117,11 @@ def test_bam_coverage_counts_single(bam_setup, gtf_setup):
     bam_setup = bam_setup[1]
     exon_df = gtf_setup
     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+    gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
 
-    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_df, exon_df=exon_df)
+    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_overlap_dat
+                                                                  , gene_df=gene_df
+                                                                  , exon_df=exon_df)
 
     assert isinstance(coverage_fps, list)
     assert isinstance(read_count_fps, list)
@@ -154,17 +160,4 @@ def test_fill_in_bounds():
     ValueError('bounds_vec must have even number of values.')
     with pytest.raises(ValueError, message='bounds_vec must have even number of values.'):
         fill_in_bounds(bounds_fail)
-
-
-# ----------------------------------------------------- #
-# degnorm.reads_merge module tests
-# (do here because of required reads parsing set-up)
-# ----------------------------------------------------- #
-
-def test_merge_read_count_files(bam_setup, gtf_setup):
-    bam_setup = bam_setup[0]
-    exon_df = gtf_setup
-    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
-
-    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_df, exon_df=exon_df)
 

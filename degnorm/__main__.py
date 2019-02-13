@@ -97,6 +97,19 @@ def main():
         logging.info('Found {0} chromosomes in intersection of all experiments and gene annotation data:\n'
                      '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
+        # break down gene overlap structures by chromosome, will need to feed it to coverage_read_counts method.
+        logging.info('Determining gene overlap structure across chromosomes.')
+        gene_overlap_dict = dict()
+        n_overlap = 0
+        n_isolated = 0
+        for chrom in chroms:
+            gene_overlap_dict[chrom] = get_gene_overlap_structure(subset_to_chrom(genes_df
+                                                                                  , chrom=chrom))
+            n_overlap += len(gene_overlap_dict[chrom]['overlap_genes'])
+            n_isolated += len(gene_overlap_dict[chrom]['isolated_genes'])
+
+        logging.info('Rate of gene overlap: {0} / {1}'.format(n_overlap, n_isolated + n_overlap))
+
         # ---------------------------------------------------------------------------- #
         # Load .bam files while simultaneously parsing into coverage arrays. Store chromosome
         # coverage arrays and and compute gene read counts.
@@ -116,7 +129,8 @@ def main():
 
             sample_id = reader.sample_id
             sample_ids.append(sample_id)
-            cov_files[sample_id], read_count_files[sample_id] = reader.coverage_read_counts(genes_df
+            cov_files[sample_id], read_count_files[sample_id] = reader.coverage_read_counts(gene_overlap_dict
+                                                                                            , gene_df=genes_df
                                                                                             , exon_df=exon_df)
 
         logging.info('Successfully processed chromosome read coverage and gene read counts for all {0} experiments'

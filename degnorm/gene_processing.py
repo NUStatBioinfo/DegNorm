@@ -1,4 +1,5 @@
 import HTSeq
+import networkx as nx
 import pandas as pd
 from degnorm.utils import *
 from degnorm.loaders import GeneAnnotationLoader
@@ -202,6 +203,113 @@ class GeneAnnotationProcessor():
             logging.info('Genome annotation file processing successful. Final shape -- {0}'.format(exon_df.shape))
 
         return exon_df
+
+
+def get_gene_overlap_structure(gene_df):
+    """
+    Build gene intersection matrix (a type of adjacency matrix), splitting genes into groups
+    of mutually overlapping genes (i.e. groups of genes that are reachable on paths within
+    adjacency matrix) and isolated genes that have no overlap with others.
+
+    Example: Let gene_df be the pandas.DataFrame
+
+    +-----------+-------------+-------------------+-------------------+
+    |    chr    |    gene     |    gene_start     |     gene_end      |
+    +===========+=============+===================+===================+
+    |   chr3    |     WASH7P  |     100           |     200           |
+    +-----------+-------------+-------------------+-------------------+
+    |    chr3   |  MIR6859-3  |     150           |     230           |
+    +-----------+-------------+-------------------+-------------------+
+    |    chr3   |     RDVC    |     215           |     280           |
+    +-----------+-------------+-------------------+-------------------+
+    |    chr3   |     EZH2    |     600           |      822          |
+    +-----------+-------------+-------------------+-------------------+
+
+    then get_gene_overlap_structure will return
+    {'isolated_genes': ['EZH2'], 'overlap_genes': ['WASH7P', 'MIR6895-3', 'RDVC']}
+
+
+    :param gene_df: pandas.DataFrame containing a chromosome's genes' location data, has at least these columns:
+    `gene` (str name of gene), `gene_start` (int leftmost base position of gene), `gene_end` (int rightmost
+    base position of gene)
+    :return: dict of two elements, 'overlap_genes' which is a list of lists (sublists are groups of overlapping genes,
+    e.g. if gene A overlaps gene B and gene B overlaps gene C - no assurance that gene A overlaps gene C - then
+    genes A, B, and C form a group). Second element is 'isolated genes', a list of genes that have no overlap
+    with others.
+    """
+
+    genes = gene_df.gene.values
+    n_genes = len(genes)
+
+    # initialize gene overlap adjacency matrix.
+    adj_mat = np.zeros([n_genes, n_genes])
+
+    gene_starts = gene_df.gene_start.values
+    gene_ends = gene_df.gene_end.values
+    gas = HTSeq.GenomicArrayOfSets(['chrom']
+                                   , stranded=False)
+
+    # build gene locator gas. Use 0-indexing.
+    for i in range(n_genes):
+        iv = HTSeq.GenomicInterval('chrom', gene_starts[i] - 1, gene_ends[i], '.')
+        gas[iv] += str(i)
+
+    # iterate over genes, find other genes that have overlap.
+    # for genes with overlap, store their exon region bounds.
+    for i in range(n_genes):
+        gene_start, gene_end = gene_starts[i] - 1, gene_ends[i]
+
+        # search gas for overlapping genes.
+        gas_intersect = [(st[0], sorted(st[1])) for
+                         st in gas[HTSeq.GenomicInterval('chrom', gene_start, gene_end, '.')].steps()]
+
+        # parse results from gas search, identify intersecting genes.
+        gene_intersect = list()
+        for ii in range(len(gas_intersect)):
+            cross_genes = gas_intersect[ii][1]
+            if cross_genes:
+                gene_intersect.extend(cross_genes)
+
+        # get indices of intersecting genes, update row of adjacency matrix.
+        gene_intersect = [int(x) for x in list(set(gene_intersect))]
+        if gene_intersect:
+            adj_mat[i, gene_intersect] = 1
+
+    # build network graph from adjacency (overlap) matrix.
+    graph = nx.from_numpy_matrix(adj_mat)
+
+    # now, parse graph:
+    # 1. starting with one gene, find all genes reachable from this gene. This is one
+    # adjacency group. If no other genes are reachable, gene is isolated.
+    # 2. Find set diff of adjacency groups with remaining genes, start search step 1. with
+    # any of these remaining genes.
+    # (continue iterating 1. and 2. until all genes have been grouped or labeled isolated.)
+    search_gene_idx = 0
+    progress = 0
+    isolated_genes = list()
+    overlap_genes = list()  # overlap_genes will be list of lists (sublists are groups of overlapping genes)
+    gene_ids = list(range(n_genes))
+    while progress < n_genes:
+        # get gene id's for all genes reachable from search_gene_idx
+        reachable_gene_idx = list(nx.single_source_shortest_path(graph, search_gene_idx).keys())
+        progress += len(reachable_gene_idx)
+
+        # if gene is only reachable to itself -->> no overlap, append name to list of isolated genes.
+        if len(reachable_gene_idx) == 1:
+            isolated_genes.append(genes[reachable_gene_idx[0]])
+
+        # if gene is in group of overlapping genes -->> store entire this set of overlapping genes.
+        else:
+            overlap_genes.append(genes[[x for x in reachable_gene_idx]].tolist())
+
+        gene_ids = list(set(gene_ids) - set(reachable_gene_idx))
+        if gene_ids:
+            search_gene_idx = gene_ids[0]
+        else:
+            break
+
+    return {'overlap_genes': overlap_genes
+            , 'isolated_genes': isolated_genes}
 
 
 # if __name__ == '__main__':
