@@ -576,7 +576,7 @@ class BamReadsProcessor():
                 for ii in np.arange(intersect_reads_dat.shape[0]):
 
                     # obtain read regions bounds.
-                    bounds, read_id = intersect_reads_dat[ii, :].values
+                    bounds, read_id = intersect_reads_dat[ii, :]
 
                     # obtain read positions, shift by -1 so we 0-index read positions.
                     read_idx = fill_in_bounds(bounds
