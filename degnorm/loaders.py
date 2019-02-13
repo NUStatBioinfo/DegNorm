@@ -100,7 +100,7 @@ class GeneAnnotationLoader(Loader):
         :param exprs: list of compiled regex expressions to use to find a gene_id or gene_name
         :return: str a gene_id or gene_name parsed out of attribute string
         """
-        splt = attribute.split(';')
+        splt = [x.strip() for x in attribute.split(';')]
         gene = False
         expr_idx = 0
         while not gene:
@@ -144,7 +144,7 @@ class GeneAnnotationLoader(Loader):
         df = df[df.feature.apply(lambda x: x.lower()) == 'exon']
 
         # parse out gene identifiers from attribute strings.
-        find_me = [re.compile('gene_id'), re.compile('gene_name')]
+        find_me = [re.compile('gene_name'), re.compile('gene_id')]
         df['gene'] = df.attribute.apply(lambda x: self._attribute_to_gene(x, exprs=find_me))
 
         # subset to the data we'll actually need, turning data into a .bed file format.

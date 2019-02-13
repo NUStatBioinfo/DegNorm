@@ -90,7 +90,7 @@ commands will sort the .bam files and create .bai files, all with `samtools`:
         echo 'sorting '$FILE
         samtools sort $FILE -o ${FILE/.bam/}'_sorted.bam'
         echo 'indexing '${FILE/.bam/}'_sorted.bam'
-        samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/.bai}
+        samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/}'_sorted.bai'
     done
 
 ### Launching a full `degnorm` run "the verbose way"

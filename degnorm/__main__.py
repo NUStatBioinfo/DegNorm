@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------- #
 
 from degnorm.reads import *
-from degnorm.reads_merge import *
+from degnorm.reads_coverage_merge import *
 from degnorm.gene_processing import *
 from degnorm.data_access import *
 from degnorm.nmf import *
@@ -85,11 +85,15 @@ def main():
                                       , verbose=True
                                       , chroms=chroms)
         exon_df = gap.run()
-        genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
 
         # take intersection of chromosomes available in genome annotation file and those in the reads data,
         # if for some reason annotation file only contains subset.
-        chroms = np.intersect1d(chroms, genes_df.chr.unique()).tolist()
+        chroms = np.intersect1d(chroms, exon_df.chr.unique()).tolist()
+
+        # subset exon (and therefore gene) data based on chromosome set.
+        exon_df = exon_df[exon_df.chr.isin(chroms)]
+        genes_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+
         logging.info('Found {0} chromosomes in intersection of all experiments and gene annotation data:\n'
                      '\t{1}'.format(len(chroms), ', '.join(chroms)))
 
@@ -134,9 +138,13 @@ def main():
 
         logging.info('Merging gene coverage arrays across samples and saving results to chromosome directories.')
         gene_cov_dict = merge_gene_coverage_files(cov_files
-                                                  , chroms=chroms
-                                                  , save_dir=output_dir)
-        logging.info('Coverage merge successful. Number of loaded coverage arrays: {0}'.format(len(gene_cov_dict)))
+                                                  , exon_df=exon_df
+                                                  , n_jobs=n_jobs
+                                                  , output_dir=output_dir
+                                                  , verbose=True)
+
+        logging.info('Complete coverage merge successful. Number of loaded coverage arrays: {0}'
+                     .format(len(gene_cov_dict)))
 
         # remove raw sample coverage, read count files.
         for s_id in sample_ids:

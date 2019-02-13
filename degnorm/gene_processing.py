@@ -125,7 +125,7 @@ class GeneAnnotationProcessor():
         # Step 2: Add exon features to gas.
         for i in range(ex_df.shape[0]):
             chrom, exon_start, exon_end, gene = ex_df.iloc[i].values
-            exon_intrv = HTSeq.GenomicInterval(chrom, exon_start, exon_end, ".")
+            exon_intrv = HTSeq.GenomicInterval(chrom, exon_start, exon_end + 1, ".")
             gas[exon_intrv] += str(i)
 
         # Step 3. Find exons in exon_df that overlap with other exons.
@@ -136,7 +136,7 @@ class GeneAnnotationProcessor():
 
             # extract indices of chromosome's overlapping exons.
             chrom_steps = [(st[0], sorted(st[1])) for st in
-                           gas[HTSeq.GenomicInterval(chrom, 0, chrom_end, '.')].steps()]
+                           gas[HTSeq.GenomicInterval(chrom, 0, chrom_end + 1, '.')].steps()]
             chrom_ol_exons = [chrom_steps[i][1] for i in range(len(chrom_steps)) if len(chrom_steps[i][1]) > 1]
 
             # cast exon id strings to int, extend set of overlap_exons.

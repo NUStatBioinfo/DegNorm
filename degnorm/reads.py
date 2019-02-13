@@ -1,6 +1,7 @@
 import pickle as pkl
 import HTSeq
-from pandas import DataFrame, concat
+import networkx as nx
+from pandas import DataFrame, concat, IntervalIndex
 from collections import OrderedDict
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
@@ -247,63 +248,93 @@ class BamReadsProcessor():
         return df
 
     @staticmethod
-    def get_gene_intersections(gene_df, exon_df):
+    def get_gene_overlap_structure(gene_df):
         """
-        Remove reads that meet the following criteria for being useless:
-         1. Reads without any overlap with a single gene
-         2. Reads that overlap with multiple genes, as such reads come from an ambiguous gene transcript.
+        Build gene intersection matrix (a type of adjacency matrix), splitting genes into groups
+        of mutually overlapping genes (i.e. groups of genes that are reachable on paths within
+        adjacency matrix) and isolated genes that have no overlap with others.
 
         :param gene_df: pandas.DataFrame containing a chromosome's genes' location data, has at least these columns:
         `gene` (str name of gene), `gene_start` (int leftmost base position of gene), `gene_end` (int rightmost
         base position of gene)
-        :param exon_df: pandas.DataFrame containing a chromosome's genes' exon composition, has at least these columns:
-        `gene` (str name of gene), `start` (int leftmost exon base position), `end` (int rightmost exon base position),
-        each row is an exon, one gene can map to multiple exons.
-        :return: dict of OrderedDicts. Each key is a gene, each subkey is another gene that intersects with the first
-        key. Values of subkeys are 1-d numpy arrays of exon boundaries [E1 start, E1 end, E2 start, E2 end, ...]
+        :return: dict of two elements, 'overlap_genes' which is a list of lists (sublists are groups of overlapping genes,
+        e.g. if gene A overlaps gene B and gene B overlaps gene C - no assurance that gene A overlaps gene C - then
+        genes A, B, and C form a group). Second element is 'isolated genes', a list of genes that have no overlap
+        with others.
         """
-        # initialize output storage.
-        gene_intersection_dat = dict()
 
-        # initialize GenomicArrayOfSets to hold gene locations.
-        dat = exon_df[['gene', 'start', 'end']].values
-        gas = HTSeq.GenomicArrayOfSets(['chrom'], stranded=False)
+        genes = gene_df.gene.values
+        n_genes = len(genes)
 
-        # build gene locator gas.
-        for i in range(dat.shape[0]):
-            iv = HTSeq.GenomicInterval('chrom', dat[i, 1], dat[i, 2], '.')
-            gas[iv] += dat[i, 0]
+        # initialize gene overlap adjacency matrix.
+        adj_mat = np.zeros([n_genes, n_genes])
+
+        gene_starts = gene_df.gene_start.values
+        gene_ends = gene_df.gene_end.values
+        gas = HTSeq.GenomicArrayOfSets(['chrom']
+                                       , stranded=False)
+
+        # build gene locator gas. Use 0-indexing.
+        for i in range(n_genes):
+            iv = HTSeq.GenomicInterval('chrom', gene_starts[i] - 1, gene_ends[i], '.')
+            gas[iv] += str(i)
 
         # iterate over genes, find other genes that have overlap.
         # for genes with overlap, store their exon region bounds.
-        for i in range(gene_df.shape[0]):
-            gene, gene_start, gene_end = gene_df[['gene', 'gene_start', 'gene_end']].iloc[i].values
-            gene_intersection_dat[gene] = OrderedDict()
+        for i in range(n_genes):
+            gene_start, gene_end = gene_starts[i] - 1, gene_ends[i]
 
             # search gas for overlapping genes.
             gas_intersect = [(st[0], sorted(st[1])) for
                              st in gas[HTSeq.GenomicInterval('chrom', gene_start, gene_end, '.')].steps()]
 
-            # parse results from gas search.
+            # parse results from gas search, identify intersecting genes.
             gene_intersect = list()
             for ii in range(len(gas_intersect)):
                 cross_genes = gas_intersect[ii][1]
                 if cross_genes:
                     gene_intersect.extend(cross_genes)
 
-            # reorder union of intersecting genes so that gene of interest leads.
-            gene_intersect = list(set(gene_intersect))
-            gene_intersect.remove(gene)
-            gene_intersect = [gene] + gene_intersect
+            # get indices of intersecting genes, update row of adjacency matrix.
+            gene_intersect = [int(x) for x in list(set(gene_intersect))]
+            if gene_intersect:
+                adj_mat[i, gene_intersect] = 1
 
-            # for overlapping genes, identify corresponding exon boundaries.
-            for int_gene in gene_intersect:
-                my_exon_df = exon_df[exon_df.gene == int_gene]
-                e_starts, e_ends = np.sort(my_exon_df.start.values), np.sort(my_exon_df.end.values)
-                gene_intersection_dat[gene][int_gene] = np.concatenate(
-                    [[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
+        # build network graph from adjacency (overlap) matrix.
+        graph = nx.from_numpy_matrix(adj_mat)
 
-        return gene_intersection_dat
+        # now, parse graph:
+        # 1. starting with one gene, find all genes reachable from this gene. This is one
+        # adjacency group. If no other genes are reachable, gene is isolated.
+        # 2. Find set diff of adjacency groups with remaining genes, start search step 1. with
+        # any of these remaining genes.
+        # (continue iterating 1. and 2. until all genes have been grouped or labeled isolated.)
+        search_gene_idx = 0
+        progress = 0
+        isolated_genes = list()
+        overlap_genes = list()  # overlap_genes will be list of lists (sublists are groups of overlapping genes)
+        gene_ids = list(range(n_genes))
+        while progress < n_genes:
+            # get gene id's for all genes reachable from search_gene_idx
+            reachable_gene_idx = list(nx.single_source_shortest_path(graph, search_gene_idx).keys())
+            progress += len(reachable_gene_idx)
+
+            # if gene is only reachable to itself -->> no overlap, append name to list of isolated genes.
+            if len(reachable_gene_idx) == 1:
+                isolated_genes.append(genes[reachable_gene_idx[0]])
+
+            # if gene is in group of overlapping genes -->> store entire this set of overlapping genes.
+            else:
+                overlap_genes.append(genes[[x for x in reachable_gene_idx]].tolist())
+
+            gene_ids = list(set(gene_ids) - set(reachable_gene_idx))
+            if gene_ids:
+                search_gene_idx = gene_ids[0]
+            else:
+                break
+
+        return {'overlap_genes': overlap_genes
+                , 'isolated_genes': isolated_genes}
 
     @staticmethod
     def determine_full_inclusion(read_idx, gene_idx_list):
@@ -349,6 +380,12 @@ class BamReadsProcessor():
             logging.info('SAMPLE {0}: CHROMOSOME {1} begin loading reads from {2}'
                          .format(self.sample_id, chrom, self.filename))
 
+        # assess how many genes we have.
+        n_genes = chrom_gene_df.shape[0]
+
+        # ---------------------------------------------------------------------- #
+        # Step 1. Load chromosome's reads and index them.
+        # ---------------------------------------------------------------------- #
         reads_df = self.load_chromosome_reads(chrom)
 
         if self.verbose:
@@ -365,6 +402,11 @@ class BamReadsProcessor():
                            , drop=False
                            , inplace=True)
 
+        # easy wins: drop reads whose start position is < minimum start position of a gene,
+        # and drop reads whose end position is > maximum start position of a gene
+        min_gene_start, max_gene_end = chrom_gene_df.gene_start.min(), chrom_gene_df.gene_end.max()
+        reads_df = reads_df[(reads_df.pos >= min_gene_start) & (reads_df.end_pos <= max_gene_end)]
+
         # If working with paired reads,
         # ensure that we've sequestered paired reads (eliminate any query names only occurring once).
         if self.paired:
@@ -372,243 +414,333 @@ class BamReadsProcessor():
             paired_occ_reads = qname_counts[qname_counts == 2].index.values.tolist()
             reads_df = reads_df[reads_df.qname_unpaired.isin(paired_occ_reads)]
 
-        # get gene intersection data to guide ambiguous read detection.
-        gene_intersection_dat = self.get_gene_intersections(chrom_gene_df
-                                                            , exon_df=chrom_exon_df)
+        # ---------------------------------------------------------------------- #
+        # Step 2. Drop reads that don't fully fall within union of all exons.
+        # ---------------------------------------------------------------------- #
+        chrom_len = self.header[self.header.chr == chrom].length.iloc[0]
+        tscript_vec = np.ones([chrom_len]
+                              , dtype=int)  # costly memory-wise!
+
+        # build binary 0/1 exon/intron indicator vector.
+        # Need to account for exon data being 1-indexed, tscript_vec is 0-indexed.
+        exon_starts = chrom_exon_df.start.values - 1
+        exon_ends = chrom_exon_df.end.values - 1
+        for i in range(len(exon_starts)):
+            tscript_vec[exon_starts[i]:exon_ends[i]] = 0
+
+        del exon_starts, exon_ends
+        gc.collect()
+
+        # use values array, faster access.
+        dat = reads_df[['cigar', 'pos', 'read_id']].values
+
+        # store read_ids of reads to drop.
+        drop_reads = list()
+
+        # store read match region bounds, so that we only parse CIGAR strings once.
+        read_bounds = list()
+
+        # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
+        if self.paired:
+            for ii in np.arange(1, dat.shape[0], 2):
+
+                # obtain read region bounds.
+                bounds_1 = cigar_segment_bounds(dat[ii - 1, 0]
+                                                , start=dat[ii - 1, 1])
+                bounds_2 = cigar_segment_bounds(dat[ii, 0]
+                                                , start=dat[ii, 1])
+
+                # leverage nature of alignments of paired reads to find disjoint coverage ranges.
+                min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
+                min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
+
+                if max_bounds_2 >= max_bounds_1:
+                    bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
+                else:
+                    bounds_2 = [min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]
+                    bounds_2.sort()
+
+                # aggregate read pair's bounds.
+                bounds = bounds_1 + bounds_2
+
+                # iterate over match regions. If a single region is not fully contained
+                # within exon regions, drop the pair.
+                drop_read = False
+                for j in np.arange(1, len(bounds), step=2):
+
+                    # check whether matching regions on tscript_vec are fully contained within exonic regions.
+                    # note that bounds are 1-indexed, tscript_vec is 0-indexed.
+                    if np.sum(tscript_vec[(bounds[j - 1] - 1):bounds[j]]) > 0:
+                        drop_read = True
+
+                # append read id to set of read indices to drop (if appropriate).
+                if drop_read:
+                    drop_reads.extend([dat[ii - 1, 2], dat[ii, 2]])
+
+                # otherwise, append match region bounds list. Note: endpoints of regions are inclusive.
+                else:
+                    read_bounds.append(bounds)
+
+        # for single-read RNA-Seq experiments, we do not need such special consideration.
+        else:
+            for ii in np.arange(dat.shape[0]):
+                # obtain read regions bounds.
+                bounds = cigar_segment_bounds(dat[ii, 0]
+                                              , start=dat[ii, 1])
+
+                # iterate over match regions. If a single region is not fully contained
+                # within exon regions, drop the read.
+                drop_read = False
+                for j in np.arange(1, len(bounds), step=2):
+
+                    if np.sum(tscript_vec[(bounds[j - 1] - 1):bounds[j]]) > 0:
+                        drop_read = True
+
+                # append read id to set of read indices to drop (if appropriate).
+                if drop_read:
+                    drop_reads.append(dat[ii, 2])
+
+                # otherwise, append match region bounds list. Note: endpoints of regions are inclusive.
+                else:
+                    read_bounds.append(bounds)
+
+        # drop reads that don't fully intersect exonic regions.
+        if drop_reads:
+            reads_df.drop(drop_reads
+                          , inplace=True)
+
+        if self.paired:
+            # if paired reads, don't actually need .1 and .2 constituent reads anymore.
+            # So to save time + memory, take every other read.
+            reads_df = reads_df.iloc[np.arange(1, reads_df.shape[0], step=2)]
+
+        # add parsed match region bounds to reads!
+        reads_df['bounds'] = read_bounds
+
+        # drop the long chromosome-length vector, dropped read ids, reads_df values array.
+        del tscript_vec, drop_reads, dat
+        gc.collect()
+
+        # ---------------------------------------------------------------------- #
+        # Step 3. Compute coverage, reads across groups of mutually overlapping genes.
+        # (This is costly from a time perspective. Should constitute
+        #  coverage, read count calculations for ~ 10-20% of genes.)
+        # ---------------------------------------------------------------------- #
+
+        # initialize read count dictionary.
+        read_count_dict = {gene: 0 for gene in chrom_gene_df.gene}
+
+        # get gene intersection structure to guide ambiguous read detection.
+        gene_overlap_dat = self.get_gene_overlap_structure(chrom_gene_df)
+        n_isolated_genes = len(gene_overlap_dat['isolated_genes'])
 
         # display summary statistics around rate of gene intersection.
         if self.verbose:
-            gene_intersection_counts = list(map(lambda x: len(x) - 1
-                                                , [gene_intersection_dat[gene] for gene in gene_intersection_dat]))
-            smry = DataFrame({'gene intersections': gene_intersection_counts}).describe(percentiles=np.arange(0.1
-                                                                                                              , stop=1
-                                                                                                              , step=0.1))
-            logging.info('SAMPLE {0}: CHROMOSOME {1} gene intersection rate summary \n{2}'
-                         .format(self.sample_id, chrom, smry))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} -- {2} / {3} genes have overlap with others.\n'
+                         'Begin computing coverage, read count for overlapping genes.'
+                         .format(self.sample_id, chrom, n_genes - n_isolated_genes, n_genes))
 
-        # start getting coverage: iterate over genes.
-        if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} begin computing coverage for {2} genes.'
-                         .format(self.sample_id, chrom, chrom_gene_df.shape[0]))
+        # initialize chromosome coverage array.
+        cov_vec = np.zeros([chrom_len]
+                           , dtype=int)
 
-        read_counts = np.zeros(chrom_gene_df.shape[0])
-        gene_cov_dat = dict()
-        total_reads = 0  # store total number of reads analyzed
-        miss_reads = 0  # store number of reads that are not fully captured by any exon
-        for i in range(chrom_gene_df.shape[0]):
-            # extract this gene's start, end positions.
-            gene, gene_start, gene_end = chrom_gene_df[['gene', 'gene_start', 'gene_end']].iloc[i].values
+        # for genes in a group of overlapping genes, compute read coverage + count.
+        if gene_overlap_dat['overlap_genes']:
 
-            # initialize gene coverage array (will be pared down to exon regions later).
-            cov_vec = np.zeros(gene_end - gene_start + 1)
+            # iterate over groups of overlapping genes.
+            for intersect_genes in gene_overlap_dat['overlap_genes']:
 
-            # create GenomicArrayOfSets for gene-read search.
-            gas = HTSeq.GenomicArrayOfSets(['chrom'], stranded=False)
-            for intersect_gene in gene_intersection_dat[gene]:
-                exon_bounds = gene_intersection_dat[gene][intersect_gene]
+                intersect_gene_df = chrom_gene_df[chrom_gene_df.gene.isin(intersect_genes)]
+                intersect_gene_start = intersect_gene_df.gene_start.min()
+                intersect_gene_end = intersect_gene_df.gene_end.max()
 
-                # append to gas the exonic regions comprising gene.
-                for ii in np.arange(1, stop=len(exon_bounds), step=2):
-                    iv = HTSeq.GenomicInterval('chrom', exon_bounds[ii - 1], exon_bounds[ii], '.')
-                    gas[iv] += intersect_gene
+                # obtain exon regions for each gene in intersection group.
+                transcript_idx = list()
+                for igene in intersect_genes:
+                    igene_exon_df = chrom_exon_df[chrom_exon_df.gene == igene]
+                    e_starts, e_ends = np.sort(igene_exon_df.start.values), np.sort(igene_exon_df.end.values)
+                    exon_bounds = np.concatenate([[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
+                    transcript_idx.append(fill_in_bounds(exon_bounds
+                                                         , endpoint=True))
 
-            # obtain full set of gene exon positions for coverage dicing later on.
-            transcript_idx = fill_in_bounds(gene_intersection_dat[gene][gene])
+                # storage for reads to drop.
+                drop_reads = list()
 
-            # storage for reads to drop.
-            drop_reads = list()
-            read_count = 0
+                # subset reads to those that start and end within scope of this bloc of intersecting genes.
+                intersect_reads_dat = reads_df[(reads_df.pos >= intersect_gene_start) &
+                                               (reads_df.end_pos <= intersect_gene_end)][['bounds', 'read_id']].values()
 
-            # subset reads to those that start and end within scope of gene.
-            dat = reads_df[((reads_df.pos >= gene_start) & (reads_df.end_pos <= gene_end))][['cigar', 'pos', 'read_id']].values
-
-            total_reads += dat.shape[0]
-
-            # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
-            if self.paired:
-                for ii in np.arange(1, dat.shape[0], 2):
-
-                    # obtain read region bounds.
-                    bounds_1 = cigar_segment_bounds(dat[ii - 1, 0]
-                                                    , start=dat[ii - 1, 1])
-                    bounds_2 = cigar_segment_bounds(dat[ii, 0]
-                                                    , start=dat[ii, 1])
-
-                    # leverage nature of alignments of paired reads to find disjoint coverage ranges.
-                    min_bounds_1, max_bounds_1 = min(bounds_1), max(bounds_1)
-                    min_bounds_2, max_bounds_2 = min(bounds_2), max(bounds_2)
-
-                    if max_bounds_2 >= max_bounds_1:
-                        bounds_2 = [max_bounds_1 + 1 if j <= max_bounds_1 else j for j in bounds_2]
-                    else:
-                        # bounds_2 = list(set([min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]))
-                        bounds_2 = [min_bounds_1 - 1 if j >= min_bounds_1 else j for j in bounds_2]
-                        bounds_2.sort()
-
-                    # aggregate read pair's bounds.
-                    bounds = bounds_1 + bounds_2
-
-                    # search for read's matching regions within gene exon gas:
-                    # For each read matching region, find names of genes whose exons fully capture the region.
-                    read_genes = list()  # storage for read-capturing genes
-                    for j in np.arange(1, stop=len(bounds), step=2):
-
-                        gas_steps = [(st[0], sorted(st[1])) for st in
-                                     gas[HTSeq.GenomicInterval('chrom', bounds[j - 1], bounds[j] + 1, '.')].steps()]
-                        n_steps = len(gas_steps)
-
-                        cross_genes = flatten_2d([gas_steps[jj][1] for jj in range(n_steps)])
-                        cross_counts = np.unique(cross_genes
-                                                 , return_counts=True)
-
-                        # append genes with full intersections to read_genes.
-                        read_genes.extend(cross_counts[0][np.where(cross_counts[1] == n_steps)[0]].tolist())
-
-                    # get unique set of fully capturing genes.
-                    read_genes = np.unique(read_genes
-                                           , return_counts=True)
-                    read_genes = read_genes[0][np.where(read_genes[1] == len(bounds) / 2)[0]]
-
-                    # Ambiguous read determination logic:
-                    use_read = False
-                    drop_read = False
-
-                    # want to know how often read is not fully captured by some gene.
-                    if len(read_genes) == 0:
-                        miss_reads += 1
-                        drop_read = True
-
-                    # if paired reads lie fully within only 1 gene, keep it.
-                    elif len(read_genes) == 1:
-                        # if that capturing gene is the gene in question, use the read.
-                        # Otherwise, do not use read but do not drop read.
-                        use_read = read_genes[0] == gene
-
-                    # if 0 or 2+ genes capture read, drop read and do not use.
-                    else:
-                        drop_read = True
-
-                    if use_read:
-                        cov_vec[fill_in_bounds(bounds, endpoint=True) - gene_start] += 1
-                        read_count += 1
-
-                    # append read pair to list of reads to drop if need be.
-                    if drop_read:
-                        drop_reads.extend([dat[ii - 1, 2], dat[ii, 2]])
-
-            # for single-read RNA-Seq experiments, we do not need such special consideration.
-            else:
-                for ii in np.arange(dat.shape[0]):
+                # for single-read RNA-Seq experiments, we do not need such special consideration.
+                for ii in np.arange(intersect_reads_dat.shape[0]):
 
                     # obtain read regions bounds.
-                    bounds = cigar_segment_bounds(dat[ii, 0]
-                                                  , start=dat[ii, 1])
+                    bounds, read_id = intersect_reads_dat[ii, :].values
 
-                    # search for read's matching regions within gene exon gas:
-                    # For each read matching region, find names of genes whose exons fully capture the region.
-                    read_genes = list()  # storage for read-capturing genes
-                    for j in np.arange(1, stop=len(bounds), step=2):
+                    # obtain read positions, shift by -1 so we zero-index reads.
+                    read_idx = fill_in_bounds(bounds
+                                              , endpoint=True) - 1
 
-                        gas_steps = [(st[0], sorted(st[1])) for st in
-                                     gas[HTSeq.GenomicInterval('chrom', bounds[j - 1], bounds[j] + 1, '.')].steps()]
-                        n_steps = len(gas_steps)
-
-                        cross_genes = flatten_2d([gas_steps[jj][1] for jj in range(n_steps)])
-                        cross_counts = np.unique(cross_genes
-                                                 , return_counts=True)
-
-                        # append genes with full intersections to read_genes.
-                        read_genes.extend(cross_counts[0][np.where(cross_counts[1] == n_steps)[0]].tolist())
-
-                    # get unique set of fully capturing genes.
-                    read_genes = np.unique(read_genes
-                                           , return_counts=True)
-                    read_genes = read_genes[0][np.where(read_genes[1] == len(bounds) / 2)[0]]
+                    # find genes that fully include this read.
+                    caught_genes = self.determine_full_inclusion(read_idx
+                                                                 , gene_idx_list=transcript_idx)
 
                     # Ambiguous read determination logic:
-                    use_read = False
+                    # - if paired reads lie fully within 0 or 2+ genes, do not use the reads pair and drop them.
+                    # - if read lies fully within a single gene:
+                    #   - do not drop it.
+                    #   - if the caught gene is the current gene being analyzed, use the read. Otherwise, do not.
                     drop_read = False
+                    read_gene = None
 
-                    # want to know how often read is not fully captured by some gene.
-                    if len(read_genes) == 0:
-                        miss_reads += 1
+                    # if more than one gene fully captures read, drop and do not use.
+                    if len(caught_genes) != 1:
+                        use_read = False
                         drop_read = True
 
-                    # if paired reads lie fully within only 1 gene, keep it.
-                    elif len(read_genes) == 1:
-                        # if that capturing gene is the gene in question, use the read.
-                        # Otherwise, do not use read but do not drop read.
-                        use_read = read_genes[0] == gene
-
-                    # if 0 or 2+ genes capture read, drop read and do not use.
+                    # if only one gene captures read, use the read + identify capturing gene for incrementing count.
                     else:
-                        drop_read = True
+                        use_read = caught_genes[0] == 0
+                        read_gene = intersect_genes[caught_genes[0]]
 
+                    # if only full intersection is with with a single gene, increment coverage and read count
+                    # for that gene.
                     if use_read:
-                        cov_vec[fill_in_bounds(bounds, endpoint=True) - gene_start] += 1
-                        read_count += 1
+                        cov_vec[read_idx] += 1
+                        read_count_dict[read_gene] += 1
 
-                    # add read to list of reads to drop if need be.
+                    # if need be, add read to list of reads to be dropped.
                     if drop_read:
-                        drop_reads.extend(dat[ii, 2])
+                        drop_reads.append(read_id)
 
-            # store exonic regions of gene coverage array as sample coverage matrix.
-            gene_cov_dat[gene] = cov_vec[transcript_idx - gene_start]
+                # drop ambiguous reads from larger set of chromosome reads,
+                # should speed up gene-read searches in the future.
+                if drop_reads:
+                    reads_df.drop(drop_reads
+                                  , inplace=True)
 
-            # store read count.
-            read_counts[i] = read_count
+            # free up some memory -- delete groups of intersecting genes.
+            del gene_overlap_dat['overlap_genes'], intersect_reads_dat
+            gc.collect()
 
-            # do not consider the current gene later on in the intersecting genes' reads parsing.
-            for other_gene in list(gene_intersection_dat[gene].keys())[1:]:
-                if gene in gene_intersection_dat[other_gene]:
-                    del gene_intersection_dat[other_gene][gene]
+        if self.verbose:
+            logging.info('SAMPLE {0}: CHROMOSOME {1} -- overlapping gene coverage, read counting successful.'
+                         .format(self.sample_id, chrom))
 
-            # drop ambiguous reads from larger set of chromosome reads,
-            # should speed up gene-read searches in the future.
+        # ---------------------------------------------------------------------- #
+        # Step 4. Compute coverage, reads for invidual isolated genes.
+        # ---------------------------------------------------------------------- #
+        if n_isolated_genes > 0:
+
+            if self.verbose:
+                logging.info('SAMPLE {0}: CHROMOSOME {1} -- Begin computing coverage, read count for isolated genes.'
+                             .format(self.sample_id, chrom))
+
+            # reduce chrom_gene_df to remaining genes
+            chrom_gene_df = chrom_gene_df[chrom_gene_df.gene.isin(gene_overlap_dat['isolated_genes'])]
+
+            # run same inclusion/exclusion transcript test but on the isolated genes.
+            tscript_vec = np.ones([chrom_len]
+                                  , dtype=int)
+
+            # identify regions of chromosome covered by isolated genes.
+            gene_starts = chrom_gene_df.gene_start.values - 1
+            gene_ends = chrom_gene_df.gene_end.values - 1
+            for i in range(len(gene_starts)):
+                tscript_vec[gene_starts[i]:gene_ends[i]] = 0
+
+            # identify reads that do not fall within an isolated gene's (start, end).
+            drop_reads = list()
+            dat = reads_df[['pos', 'end_pos', 'read_id']].values
+            for i in range(dat.shape[0]):
+                read_start, read_end, read_id = dat[i, :]
+
+                if np.sum(tscript_vec[(read_start - 1):(read_end - 1)]) > 0:
+                    drop_reads.append(read_id)
+
+            # drop large memory structures.
+            del dat, gene_starts, gene_ends, tscript_vec
+
             if drop_reads:
+                print('Dropping {0} reads that do not lie completely within isolated genes'.format(len(drop_reads)))
                 reads_df.drop(drop_reads
                               , inplace=True)
 
-        # free up some memory -- delete large memory objects.
-        del reads_df, dat, cov_vec, gene_intersection_dat, drop_reads
-        gc.collect()
+            del drop_reads
+            gc.collect()
+
+            # only continue if we have any reads intersecting isolated genes (a precaution).
+            if not reads_df.empty:
+
+                # add IntervalIndex index to chromosome gene data
+                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start
+                                                                , right=chrom_gene_df.gene_end
+                                                                , closed='both')
+
+                # "join" genes on reads data! (so that reads are tied to genes, for read counting.)
+                reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
+
+                # loop over reads for isolated genes, incrementing read count and coverage.
+                dat = reads_df[['bounds', 'gene']].values
+                for i in range(dat.shape[0]):
+                    bounds, gene = dat[i, :]
+
+                    # obtain read positions, shift by -1 so we zero-index reads.
+                    read_idx = fill_in_bounds(bounds
+                                              , endpoint=True) - 1
+
+                    # increment coverage and read count.
+                    cov_vec[read_idx] += 1
+                    read_count_dict[gene] += 1
+
+                del dat
+
+            # drop remaining large data structures.
+            del chrom_gene_df, chrom_exon_df, reads_df
+            gc.collect()
+
+            if self.verbose:
+                logging.info('SAMPLE {0}: CHROMOSOME {1} -- isolated gene coverage, read counting successful.'
+                             .format(self.sample_id, chrom))
+
+        # ---------------------------------------------------------------------- #
+        # Step 5. Save output.
+        # chromosome overage vector ->> compressed csr numpy array
+        # chromosome read counts ->> .csv file
+        # ---------------------------------------------------------------------- #
+        cov_file = os.path.join(self.save_dir, 'coverage_' + self.sample_id + '_' + chrom + '.npz')
+        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + chrom + '.csv')
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} Rate of 0-capture reads: {2} / {3}'
-                         .format(self.sample_id, chrom, miss_reads, total_reads))
+            logging.info('SAMPLE {0}: CHROMOSOME {1} saving csr-compressed coverage array to {2}'
+                         .format(self.sample_id, chrom, cov_file))
 
-        # save gene coverage dictionary to disk as pickle file.
-        pkl_file = os.path.join(self.save_dir, 'coverage_' + self.sample_id + '_' + chrom + '.pkl')
+        # save coverage vector as a compressed-sparse row matrix.
+        sparse.save_npz(cov_file
+                        , matrix=sparse.csr_matrix(cov_vec))
 
-        if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} saving {2} coverage arrays to {3}'
-                         .format(self.sample_id, chrom, len(gene_cov_dat), pkl_file))
+        del cov_vec
 
-        with open(pkl_file, 'wb') as f:
-            pkl.dump(gene_cov_dat, f)
+        # construct read count DataFrame from read count dictionary.
+        read_count_df = DataFrame({'gene': list(read_count_dict.keys())
+                                   , self.sample_id: list(read_count_dict.values())})
 
-        # free up memory, delete gene coverage data.
-        del gene_cov_dat
-        gc.collect()
-
-        # build read counts DataFrame.
-        read_count_df = DataFrame({'gene': chrom_gene_df.gene.values
-                                      , self.sample_id: read_counts})
+        del read_count_dict
 
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} mean per-gene read count: {2:.4}'
                          .format(self.sample_id, chrom, read_count_df[self.sample_id].mean()))
 
         # write sample chromosome read counts to .csv for joining later.
-        read_count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + chrom + '.csv')
         if self.verbose:
             logging.info('SAMPLE {0}: CHROMOSOME {1} saving read counts {2}'
-                         .format(self.sample_id, chrom, read_count_file))
-        read_count_df.to_csv(read_count_file
+                         .format(self.sample_id, chrom, count_file))
+        read_count_df.to_csv(count_file
                              , index=False)
 
+        gc.collect()
+
         # return per-chromosome coverage array filename and per-chromosome read counts.
-        return pkl_file, read_count_file
+        return cov_file, count_file
 
     def coverage_read_counts(self, gene_df, exon_df):
         """
@@ -644,29 +776,29 @@ class BamReadsProcessor():
         return cov_filepaths, read_count_filepaths
 
 
-if __name__ == '__main__':
-    from degnorm.gene_processing import GeneAnnotationProcessor
-
-    data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
-    bam_file = os.path.join(data_path, 'hg_small_1.bam')
-    bai_file = os.path.join(data_path, 'hg_small_1.bai')
-    gtf_file = os.path.join(data_path, 'chr1_small.gtf')
-
-    gtf_processor = GeneAnnotationProcessor(gtf_file)
-    exon_df = gtf_processor.run()
-    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
-
-    output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
-
-    reader = BamReadsProcessor(bam_file=bam_file
-                               , index_file=bai_file
-                               , chroms=['chr1']
-                               , n_jobs=1
-                               , output_dir=output_dir
-                               , verbose=True)
-
-    sample_id = reader.sample_id
-    print('found sample id {0}'.format(sample_id))
-
-    cov_files, read_count_files = reader.coverage_read_counts(gene_df
-                                                              , exon_df=exon_df)
+# if __name__ == '__main__':
+#     from degnorm.gene_processing import GeneAnnotationProcessor
+#
+#     data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
+#     bam_file = os.path.join(data_path, 'hg_small_1.bam')
+#     bai_file = os.path.join(data_path, 'hg_small_1.bai')
+#     gtf_file = os.path.join(data_path, 'chr1_small.gtf')
+#
+#     gtf_processor = GeneAnnotationProcessor(gtf_file)
+#     exon_df = gtf_processor.run()
+#     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+#
+#     output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
+#
+#     reader = BamReadsProcessor(bam_file=bam_file
+#                                , index_file=bai_file
+#                                , chroms=['chr1']
+#                                , n_jobs=1
+#                                , output_dir=output_dir
+#                                , verbose=True)
+#
+#     sample_id = reader.sample_id
+#     print('found sample id {0}'.format(sample_id))
+#
+#     cov_files, read_count_files = reader.coverage_read_counts(gene_df
+#                                                               , exon_df=exon_df)
