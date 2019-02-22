@@ -287,14 +287,14 @@ class BamReadsProcessor():
         """
         # First, load this chromosome's reads.
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} begin loading reads from {2}'
+            logging.info('SAMPLE {0}, CHR {1} -- begin loading reads from {2}'
                          .format(self.sample_id, chrom, self.filename))
 
         # assess how many genes we have.
         n_genes = chrom_gene_df.shape[0]
 
         # gene_overlap_dat data check: ensure that number isolated genes + number overlapping genes
-        # == number of genes in genes DataFrame.
+        # equals number of genes in genes DataFrame.
         n_isolated_genes = len(gene_overlap_dat['isolated_genes'])
 
         n_overlap_genes = 0
@@ -310,7 +310,7 @@ class BamReadsProcessor():
         reads_df = self.load_chromosome_reads(chrom)
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} reads successfully loaded -- shape: {2}'
+            logging.info('SAMPLE {0}, CHR {1} -- reads successfully loaded. shape = {2}'
                          .format(self.sample_id, chrom, reads_df.shape))
 
         # append end position to reads based on cigar score.
@@ -352,14 +352,14 @@ class BamReadsProcessor():
         del exon_starts, exon_ends
         gc.collect()
 
-        # use values array, faster access.
-        dat = reads_df[['cigar', 'pos', 'read_id']].values
-
         # store read_ids of reads to drop.
         drop_reads = list()
 
         # store read match region bounds, so that we only parse CIGAR strings once.
         read_bounds = list()
+
+        # use values array, faster access.
+        dat = reads_df[['cigar', 'pos', 'read_id']].values
 
         # for paired reads, perform special parsing of CIGAR strings to avoid double-counting of overlap regions.
         if self.paired:
@@ -383,15 +383,6 @@ class BamReadsProcessor():
 
                 # aggregate read pair's bounds.
                 bounds = bounds_1 + bounds_2
-
-                if len(bounds) % 2 != 0:
-                    print('problem with paired read cigar parsing:')
-                    print('cigar1 = {0}, cigar 2 = {1}'.format(dat[ii - 1, 0], dat[ii, 0]))
-                    print('start 1 = {0}, start 2 = {1}'.format(dat[ii - 1, 1], dat[ii, 1]))
-                    print('bounds_1 = {0}'.format(bounds_1))
-                    print('bounds_2 = {0}'.format(bounds_2))
-                    print('bounds = {0}'.format(bounds))
-                    raise ValueError('len(bounds) is not divisible by 2')
 
                 # iterate over match regions. If a single region is not fully contained
                 # within exon regions, drop the pair.
@@ -447,8 +438,13 @@ class BamReadsProcessor():
         # add parsed match region bounds to reads!
         reads_df['bounds'] = read_bounds
 
-        # drop the long chromosome-length vector, dropped read ids, reads_df values array.
-        del tscript_vec, drop_reads, dat
+        # save reads data to .csv for Jiping (TODO: delete)
+        reads_file = os.path.join(self.save_dir, 'reads_' + self.sample_id + '_' + chrom + '.csv')
+        reads_df.to_csv(reads_file
+                        , index=False)
+
+        # delete objs, attempt to save on memory.
+        del tscript_vec, drop_reads, dat, read_bounds
         gc.collect()
 
         # ---------------------------------------------------------------------- #
@@ -462,9 +458,10 @@ class BamReadsProcessor():
 
         # display summary statistics around rate of gene intersection.
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} -- {2} / {3} genes have overlap with others.\n'
-                         'Begin computing coverage, read count for overlapping genes.'
+            logging.info('SAMPLE {0}, CHR {1} -- overlap genes = {2} / {3}.'
                          .format(self.sample_id, chrom, n_genes - n_isolated_genes, n_genes))
+            logging.info('SAMPLE {0}, CHR {1} -- begin overlap gene group reads processing.'
+                         .format(self.sample_id, chrom))
 
         # initialize chromosome coverage array.
         cov_vec = np.zeros([chrom_len]
@@ -486,9 +483,9 @@ class BamReadsProcessor():
                 for igene in intersect_genes:
                     igene_exon_df = chrom_exon_df[chrom_exon_df.gene == igene]
                     e_starts, e_ends = np.sort(igene_exon_df.start.values - 1), np.sort(igene_exon_df.end.values - 1)
-                    exon_bounds = np.unique(np.concatenate([[e_starts[j], e_ends[j]] for j in range(len(e_starts))]))
-                    transcript_idx.append(fill_in_bounds(exon_bounds
-                                                         , endpoint=True))
+                    exon_bounds = np.concatenate([[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
+                    transcript_idx.append(np.unique(fill_in_bounds(exon_bounds
+                                                                   , endpoint=True)))
 
                 # storage for reads to drop.
                 drop_reads = list()
@@ -556,11 +553,11 @@ class BamReadsProcessor():
                                   , inplace=True)
 
             # free up some memory -- delete groups of intersecting genes.
-            del gene_overlap_dat['overlap_genes'], intersect_reads_dat
+            del intersect_reads_dat
             gc.collect()
 
             if self.verbose:
-                logging.info('SAMPLE {0}: CHROMOSOME {1} -- overlapping gene coverage, read counting successful.'
+                logging.info('SAMPLE {0}, CHR {1} -- overlap gene group reads processing successful.'
                              .format(self.sample_id, chrom))
 
         # ---------------------------------------------------------------------- #
@@ -569,7 +566,7 @@ class BamReadsProcessor():
         if n_isolated_genes > 0:
 
             if self.verbose:
-                logging.info('SAMPLE {0}: CHROMOSOME {1} -- Begin computing coverage, read count for isolated genes.'
+                logging.info('SAMPLE {0}, CHR {1} -- begin isolated gene reads processing.'
                              .format(self.sample_id, chrom))
 
             # reduce chrom_gene_df to remaining genes
@@ -596,10 +593,10 @@ class BamReadsProcessor():
                     drop_reads.append(read_id)
 
             # drop memory hogs.
-            del dat, gene_starts, gene_ends, tscript_vec, gene_overlap_dat
+            del dat, gene_starts, gene_ends, tscript_vec
 
+            # drop reads that do not lie completely within area covered by isolated genes.
             if drop_reads:
-                print('Dropping {0} reads that do not lie completely within isolated genes'.format(len(drop_reads)))
                 reads_df.drop(drop_reads
                               , inplace=True)
 
@@ -637,7 +634,7 @@ class BamReadsProcessor():
             gc.collect()
 
             if self.verbose:
-                logging.info('SAMPLE {0}: CHROMOSOME {1} -- isolated gene coverage, read counting successful.'
+                logging.info('SAMPLE {0}, CHR {1} -- isolated gene reads processing successful.'
                              .format(self.sample_id, chrom))
 
         # ---------------------------------------------------------------------- #
@@ -649,7 +646,7 @@ class BamReadsProcessor():
         count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + chrom + '.csv')
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} saving csr-compressed coverage array to {2}'
+            logging.info('SAMPLE {0}, CHR {1} -- saving csr-compressed chrom coverage to {2}'
                          .format(self.sample_id, chrom, cov_file))
 
         # save coverage vector as a compressed-sparse row matrix.
@@ -665,12 +662,12 @@ class BamReadsProcessor():
         del read_count_dict
 
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} mean per-gene read count: {2:.4}'
+            logging.info('SAMPLE {0}, CHR {1} -- mean per-gene read count: {2:.4}'
                          .format(self.sample_id, chrom, read_count_df[self.sample_id].mean()))
 
         # write sample chromosome read counts to .csv for joining later.
         if self.verbose:
-            logging.info('SAMPLE {0}: CHROMOSOME {1} saving read counts {2}'
+            logging.info('SAMPLE {0}, CHR {1} -- saving read counts {2}'
                          .format(self.sample_id, chrom, count_file))
         read_count_df.to_csv(count_file
                              , index=False)
@@ -696,9 +693,8 @@ class BamReadsProcessor():
             os.makedirs(self.save_dir)
 
         if self.verbose:
-            logging.info('SAMPLE {0}: determining read coverage and read counts for {1} chromosomes.\n'
-                         'Output will be saved to directory {2}.'
-                         .format(self.sample_id, len(self.chroms), self.save_dir))
+            logging.info('SAMPLE {0}: begin computing coverage, read counts for {1} chroms.\n'
+                         .format(self.sample_id, len(self.chroms)))
 
         # distribute work with joblib.Parallel:
         par_output = Parallel(n_jobs=min(self.n_jobs, len(self.chroms))
@@ -717,31 +713,31 @@ class BamReadsProcessor():
         return cov_filepaths, read_count_filepaths
 
 
-if __name__ == '__main__':
-    from degnorm.gene_processing import GeneAnnotationProcessor, get_gene_overlap_structure
-
-    data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
-    bam_file = os.path.join(data_path, 'hg_small_1.bam')
-    bai_file = os.path.join(data_path, 'hg_small_1.bai')
-    gtf_file = os.path.join(data_path, 'chr1_small.gtf')
-
-    gtf_processor = GeneAnnotationProcessor(gtf_file)
-    exon_df = gtf_processor.run()
-    gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
-    gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
-
-    output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
-
-    reader = BamReadsProcessor(bam_file=bam_file
-                               , index_file=bai_file
-                               , chroms=['chr1']
-                               , n_jobs=1
-                               , output_dir=output_dir
-                               , verbose=True)
-
-    sample_id = reader.sample_id
-    print('found sample id {0}'.format(sample_id))
-
-    cov_files, read_count_files = reader.coverage_read_counts(gene_overlap_dat
-                                                              , gene_df=gene_df
-                                                              , exon_df=exon_df)
+# if __name__ == '__main__':
+#     from degnorm.gene_processing import GeneAnnotationProcessor, get_gene_overlap_structure
+#
+#     data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
+#     bam_file = os.path.join(data_path, 'hg_small_1.bam')
+#     bai_file = os.path.join(data_path, 'hg_small_1.bai')
+#     gtf_file = os.path.join(data_path, 'chr1_small.gtf')
+#
+#     gtf_processor = GeneAnnotationProcessor(gtf_file)
+#     exon_df = gtf_processor.run()
+#     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
+#     gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
+#
+#     output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
+#
+#     reader = BamReadsProcessor(bam_file=bam_file
+#                                , index_file=bai_file
+#                                , chroms=['chr1']
+#                                , n_jobs=1
+#                                , output_dir=output_dir
+#                                , verbose=True)
+#
+#     sample_id = reader.sample_id
+#     print('found sample id {0}'.format(sample_id))
+#
+#     cov_files, read_count_files = reader.coverage_read_counts(gene_overlap_dat
+#                                                               , gene_df=gene_df
+#                                                               , exon_df=exon_df)

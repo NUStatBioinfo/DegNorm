@@ -160,9 +160,9 @@ def main():
         logging.info('Complete coverage merge successful. Number of loaded coverage arrays: {0}'
                      .format(len(gene_cov_dict)))
 
-        # remove raw sample coverage, read count files.
-        for s_id in sample_ids:
-            shutil.rmtree(os.path.join(output_dir, s_id))
+        # # remove raw sample coverage, read count files.
+        # for s_id in sample_ids:
+        #     shutil.rmtree(os.path.join(output_dir, s_id))
 
         # ---------------------------------------------------------------------------- #
         # Save gene annotation metadata and original read counts.

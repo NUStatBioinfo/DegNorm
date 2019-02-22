@@ -134,7 +134,7 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
 
     use_pbar = False
     if verbose:
-        logging.info('CHROMOSOME {0}: begin processing coverage matrices. \n'
+        logging.info('CHR {0}: begin coverage matrix processing. \n'
                      'Using {1} gene splits for memory efficiency.'.format(chrom, mem_splits))
 
         # Instantiate progress bar if parsing non-negligible number of genes. Update in intervals of 5%.
@@ -144,7 +144,7 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
             pbar_step_size = int(np.ceil(n_genes / 10))
             pbar = tqdm.tqdm(total=100
                              , leave=False
-                             , desc='CHROMOSOME {0}: gene coverage matrix progress'.format(chrom)
+                             , desc='CHR {0}: coverage matrix progress'.format(chrom)
                              , unit='%')
 
     # create the coverage matrix for each subset of genes.
@@ -219,7 +219,7 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
     gc.collect()
 
     if verbose:
-        logging.info('CHROMOSOME {0}: successfully parsed {1} gene coverage matrices.'
+        logging.info('CHR {0} -- obtained {1} coverage matrices.'
                      .format(chrom, len(gene_cov_dict)))
 
     # if a save location is specified, save {gene: coverage matrix} data per chromosome in a
@@ -233,7 +233,7 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
         # save per-gene coverage matrices to .pkl files
         gene_cov_file = os.path.join(output_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
         if verbose:
-            logging.info('CHROMOSOME {0}: Saving gene coverage matrices to {1}'
+            logging.info('CHR {0} -- saving coverage matrices to {1}'
                          .format(chrom, gene_cov_file))
 
         with open(gene_cov_file, 'wb') as f:
