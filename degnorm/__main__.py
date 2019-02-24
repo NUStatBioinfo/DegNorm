@@ -60,8 +60,6 @@ def main():
     else:
         sample_ids = list()
         chroms = list()
-        cov_files = OrderedDict()
-        read_count_files = OrderedDict()
         n_samples = len(args.bam_files)
 
         # load each .bam file's header, find joint intersection of read chromosomes.
@@ -129,9 +127,11 @@ def main():
 
             sample_id = reader.sample_id
             sample_ids.append(sample_id)
-            cov_files[sample_id], read_count_files[sample_id] = reader.coverage_read_counts(gene_overlap_dict
-                                                                                            , gene_df=genes_df
-                                                                                            , exon_df=exon_df)
+
+            # run simultaneous coverage, read counting procedure on alignment file.
+            reader.coverage_read_counts(gene_overlap_dict
+                                        , gene_df=genes_df
+                                        , exon_df=exon_df)
 
         logging.info('Successfully processed chromosome read coverage and gene read counts for all {0} experiments'
                      .format(len(sample_ids)))
@@ -146,23 +146,25 @@ def main():
         #    and save them back to disk in .pkl files on per-chromosome basis.
         # ---------------------------------------------------------------------------- #
         logging.info('Merging read counts across samples.')
-        read_count_df = merge_read_count_files(read_count_files
-                                               , chroms=chroms)
+        read_count_df = merge_read_counts(output_dir
+                                          , sample_ids=sample_ids
+                                          , chroms=chroms)
         logging.info('Read counts merge successful. Read count data shape: {0}'.format(read_count_df.shape))
 
         logging.info('Merging gene coverage arrays across samples and saving results to chromosome directories.')
-        gene_cov_dict = merge_gene_coverage_files(cov_files
-                                                  , exon_df=exon_df
-                                                  , n_jobs=n_jobs
-                                                  , output_dir=output_dir
-                                                  , verbose=True)
+        gene_cov_dict = merge_coverage(output_dir
+                                       , sample_ids=sample_ids
+                                       , exon_df=exon_df
+                                       , n_jobs=n_jobs
+                                       , output_dir=output_dir
+                                       , verbose=True)
 
         logging.info('Complete coverage merge successful. Number of loaded coverage arrays: {0}'
                      .format(len(gene_cov_dict)))
 
-        # # remove raw sample coverage, read count files.
-        # for s_id in sample_ids:
-        #     shutil.rmtree(os.path.join(output_dir, s_id))
+        # remove raw sample coverage, read count files.
+        for s_id in sample_ids:
+            shutil.rmtree(os.path.join(output_dir, s_id))
 
         # ---------------------------------------------------------------------------- #
         # Save gene annotation metadata and original read counts.

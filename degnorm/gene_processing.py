@@ -109,11 +109,10 @@ class GeneAnnotationProcessor():
         if self.verbose:
             logging.info('Begin genome annotation file processing.')
 
+        # gene / exon processing
         exon_df = self.remove_multichrom_genes(exon_df)
         exon_df.drop_duplicates(inplace=True)
-
         gene_df = self.gene_outline(exon_df)
-
         exon_df = exon_df.merge(gene_df
                                 , on=['chr', 'gene'])
         exon_df.drop_duplicates(inplace=True)

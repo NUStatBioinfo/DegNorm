@@ -11,16 +11,26 @@ import gc
 import tqdm
 
 
-def merge_read_count_files(file_dict, chroms):
+def merge_read_counts(data_dir, sample_ids, chroms):
     """
     Merge set of RNA-Seq samples' chromosome gene coverage count files into one pandas.DataFrame with
-    one row per gene, columns are `chr`, `gene`, <sample IDs>.
+    one row per gene, columns are `chr`, `gene`, <sample IDs> by scanning data_dir for sample ID subdirectories
+    and extracting chromosome read count .csv files.
 
     See reads.BamReadsProcessor.coverage_read_counts method.
 
     Example:
-    file_dict = {('sample123': ['data/read_counts_sample123_chr1.csv', 'data/read_counts_sample123_chr2.csv']),
-                 ('sample124': ['data/read_counts_sample124_chr1.csv', 'data/read_counts_sample124_chr2.csv'])} ->
+
+    Suppose data_dir is comprised of a file tree structure like this:
+    |-- data_dir
+    |   |-- sample123
+    |   |   |-- read_counts_sample123_chr1.csv
+    |   |   |-- read_counts_sample123_chr2.csv
+    |   |-- sample124
+    |   |   |-- read_counts_sample124_chr1.csv
+    |   |   |-- read_counts_sample124_chr2.csv
+
+    ->> merge_read_counts(data_dir, ['sample123', 'sample124'], ['chr1', 'chr2']) ->>
 
     +-----------+---------+-----------------+-----------------+
     |    chr    |  gene   |    sample123    |    sample124    |
@@ -32,22 +42,28 @@ def merge_read_count_files(file_dict, chroms):
     |   chr2    |  GET4   |      301        |       255       |
     +-----------+---------+-----------------+-----------------+
 
-    :param files: OrderedDict, keys are RNA-Seq sample IDs, values are lists of str filenames
-    of read count .csv files, each file containing one chromosome's gene read counts for sample ID.
+    :param data_dir: str path of directory containing RNA-Seq sample ID subdirectories, one per sample ID contained
+    in sample_ids, each subdirectory containing one read count .csv file per chromosome, named in the fashion
+    "read_counts_<sample ID>_<chromosome>.csv"
+    :param sample_ids: list of str names RNA Seq samples, i.e. basenames of various alignment files.
     :param chroms: list of str names of chromosomes for which to load read counts
     :return: pandas.DataFrame containing gene read counts across samples. Columns are `chr` (chromosome), `gene`,
     <sample IDs>
     """
-    sample_ids = list(file_dict.keys())
     chrom_df_list = list()
 
     for chrom in chroms:
         for i in range(len(sample_ids)):
 
-            # identify one (chromosome, sample ID) combination.
+            # identify one (chromosome, sample ID) combination, and therefore, path to
+            # of read counts .csv containing this chromosome's gene read counts for this sample.
             sample_id = sample_ids[i]
-            r = re.compile('read_counts_{0}_{1}.csv'.format(sample_id, chrom))
-            counts_file = list(filter(r.search, file_dict[sample_id]))[0]
+            counts_file = os.path.join(data_dir
+                                       , sample_id
+                                       , 'read_counts_{0}_{1}.csv'.format(sample_id, chrom))
+
+            if not os.path.isfile(counts_file):
+                raise IOError('read counts file {0} not available!'.format(counts_file))
 
             # load sample's chromosome's read counts.
             sample_chrom_counts_df = read_csv(counts_file)
@@ -75,19 +91,123 @@ def merge_read_count_files(file_dict, chroms):
     return chrom_counts_df
 
 
-def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True):
+def merge_overlap_gene_coverage(data_dir, sample_ids, chrom):
     """
-    Slice up a coverage matrix for a chromosome into a dictionary of per-gene
-    coverage matrices based on exon positioning for that chromosome.
+    For single chromosome, join multiple RNA Seq alignment files' gene coverage vectors for genes in genome
+    that overlap others on the chromosome of interest. Similar in spirit to merge_chrom_coverage,
+    but join is over individual genes' coverage vectors, not entire chromosomes' coverage vectors.
 
-    :param file_dict: OrderedDict, keys are RNA-Seq sample IDs, values are lists of str filenames
-    of coverage .npz files, each file containing one chromosomes' genes's 1-d coverage array for sample ID.
+    See reads.BamReadsProcessor.coverage_read_counts method.
+
+    Example:
+
+    Suppose data_dir is comprised of a file tree structure like this:
+    |-- data_dir
+    |   |-- sample123
+    |   |   |-- overlap_coverage_sample123_chr1.pkl
+    |   |   |-- overlap_coverage_sample123_chr2.pkl
+    |   |-- sample124
+    |   |   |-- overlap_coverage_sample124_chr1.pkl
+    |   |   |-- overlap_coverage_sample124_chr2.pkl
+
+    ->> merge_overlap_gene_coverage(data_dir, ['sample123', 'sample124'], 'chrj') ->>
+
+    {('gene Aj'): <L1 x 2 coverage array>,
+     ('gene Bj'): <L2 x 2 coverage array>,
+     ...
+     ('gene Nj'): <LN x 2 coverage array>}
+
+    :param data_dir: str path of directory containing RNA-Seq sample ID subdirectories, one per sample ID contained
+    in sample_ids, each subdirectory containing one read count .csv file per chromosome, named in the fashion
+    "overlap_coverage_<sample ID>_<chromosome>.csv"
+    :param sample_ids: list of str names RNA Seq samples, i.e. basenames of various alignment files.
+    :param chrom: str name of chromosome
+    :return: dictionary of the form {gene_name: coverage numpy array} for genes in genome that overlap others
+    on the chromosome of interest.
+    """
+    # output storage: (gene name, coverage matrix) key-value pairs.
+    sample_cov_dict = dict()
+    gene_cov_dict = dict()
+    n_samples = len(sample_ids)
+
+    # sample by sample, build gene coverage matrices.
+    for i in range(n_samples):
+
+        # identify one (chromosome, sample ID) combination, and therefore, path to
+        # of read counts .csv containing this chromosome's gene read counts for this sample.
+        sample_id = sample_ids[i]
+        cov_file = os.path.join(data_dir
+                                , sample_id
+                                , 'overlap_coverage_{0}_{1}.pkl'.format(sample_id, chrom))
+
+        # if there are no overlapping genes for this chromosome, return empty iterable.
+        if not os.path.isfile(cov_file):
+            return dict()
+
+        # load (sample, chromosome) gene coverage vector dictionary.
+        with open(cov_file, 'rb') as f:
+            sample_cov_dict = pkl.load(f)
+
+        for gene in sample_cov_dict:
+            cov_vec = sample_cov_dict[gene]
+
+            # if loading the first sample's coverage vectors, initialize gene coverage matrices.
+            if i == 0:
+                gene_cov_dict[gene] = np.zeros(shape=[n_samples, len(cov_vec)]
+                                               , dtype=int)
+
+            # update sample's coverage within coverage matrix.
+            gene_cov_dict[gene][i, :] = cov_vec
+
+    del sample_cov_dict
+    gc.collect()
+
+    return gene_cov_dict
+
+
+def merge_chrom_coverage(data_dir, sample_ids,
+                         chrom_exon_df, verbose=True):
+    """
+    Join multiple RNA Seq alignment files' chromosome coverage vectors into a dictionary of per-gene
+    overage matrices based on exon positioning for that chromosome.
+
+    Example:
+
+    Suppose data_dir is comprised of a file tree structure like this:
+
+    |-- data_dir
+    |   |-- sample123
+    |   |   |-- chrom_coverage_sample123_chr1.pkl
+    |   |-- sample124
+    |   |   |-- chrom_coverage_sample124_chr1.pkl
+
+    and suppose chrom_exon_df is a pandas.DataFrame looking like this:
+
+    +-----------+----------+-----------------+-----------------+
+    |    chr    |   gene   |   gene_start    |     gene_end    |
+    +===========+==========+=================+=================+
+    |   chr1    |  ZNF326  |      12275      |      14533      |
+    +-----------+----------+-----------------+-----------------+
+    |    ...    |    ...   |      ...        |       ...       |
+    +-----------+----------+-----------------+-----------------+
+    |   chr1    |   GORAB  |     3098838     |     3121055     |
+    +-----------+----------+-----------------+-----------------+
+
+    ->> merge_overlap_gene_coverage(data_dir, ['sample123', 'sample124'], chrom_exon_df) ->>
+
+    {('gene Aj'): <L1 x 2 coverage array>,
+     ('gene Bj'): <L2 x 2 coverage array>,
+     ...
+     ('gene Nj'): <LN x 2 coverage array>}
+
+    :param data_dir: str path of directory containing RNA-Seq sample ID subdirectories,
+     each subdirectory containing the chromosome of interest's coverage array in an .npz file, named in the fashion
+    "chrom_coverage_<sample ID>_<chromosome>.csv"
+    :param sample_ids: list of str names RNA Seq samples, i.e. basenames of various alignment files.
     :param chrom_exon_df: pandas.DataFrame outlining exon positions within a single chromosome; has columns 'chr',
     'start' (exon start), 'end' (exon end), 'gene' (gene name), 'gene_end', and 'gene_start'
-    :param output_dir: str (optional) if specified, save gene-level coverage matrices to a .pkl file
-    under a chromosome sub-directory of output_dir.
     :param verbose: bool indicator should progress be written with logger?
-    :return: dictionary of the form {gene_name: coverage numpy array} for specified chromosome
+    :return: dictionary of the form {gene_name: coverage numpy array} for isolated genes within specified chromosome
     """
     # output storage: (gene name, coverage matrix) key-value pairs.
     gene_cov_dict = dict()
@@ -99,16 +219,29 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
 
     chrom = unique_chrom[0]
 
+    # identify all sample coverage arrays for this chromosome.
+    npz_files = [os.path.join(data_dir, x, 'chrom_coverage_{0}_{1}.npz'.format(x, chrom)) for x in sample_ids]
+
+    # determine if this chromosome even has chromosome coverage from isolated genes to parse.
+    # This should never not be the case, but check for testing purposes.
+    random_cov_file = np.random.choice(npz_files
+                                       , size=1)[0]
+
+    # if chromosome coverage file is missing for one sample, it will be missing for all samples,
+    # so skip this chromosome because there will be no chromosome coverage vectors to dice.
+    if not os.path.exists(random_cov_file):
+        if verbose:
+            logging.info('CHR {0}: no chromosome coverage files available.'.format(chrom))
+
+        # return an *empty* gene coverage matrix dictionary.
+        return dict()
+
     # Keep memory manageable:
-    # attempt to break genes into groups so that each group's total coverage matrix
+    # break genes into groups so that each group's total coverage matrix
     # is ~ 500Mb. mem_splits dictates size of gene groups for load procedure.
     # use a randomly sampled chromosome coverage file to determine size of gene groups.
-    random_sample_id = np.random.choice(list(file_dict.keys())
-                                        , size=1)[0]
-    r = re.compile('coverage_{0}_{1}.npz'.format(random_sample_id, chrom))
-    npz_file = list(filter(r.search, file_dict[random_sample_id]))[0]
-    cov_vec_sp = sparse.load_npz(npz_file)
-    mem_splits = int(np.ceil(len(file_dict) * cov_vec_sp.asfptype().todense().nbytes / 500e6))
+    cov_vec_sp = sparse.load_npz(random_cov_file)
+    mem_splits = int(np.ceil(len(sample_ids) * cov_vec_sp.asfptype().todense().nbytes / 500e6))
     del cov_vec_sp
 
     # sort genes by end position so we won't need to have entire chromosome coverage vectors loaded at once,
@@ -160,9 +293,7 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
 
         # load up gene span's coverage matrix.
         idx = 0
-        for sample_id in file_dict:
-            r = re.compile('coverage_{0}_{1}.npz'.format(sample_id, chrom))
-            npz_file = list(filter(r.search, file_dict[sample_id]))[0]
+        for npz_file in npz_files:
 
             # load the gene span of a sample's compressed sparse row chromosome coverage array
             cov_vec_sp = sparse.load_npz(npz_file).transpose()[start_pos:end_pos, :]
@@ -173,7 +304,8 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
 
             # column-append sparse coverage vector to existing coverage matrix.
             else:
-                cov_mat = sparse.hstack([cov_mat, cov_vec_sp], dtype=int)
+                cov_mat = sparse.hstack([cov_mat, cov_vec_sp]
+                                        , dtype=int)
 
             idx += 1
 
@@ -183,7 +315,8 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
 
         # convert coverage matrix to dense matrix for speed in splicing,
         # should blow up coverage matrix size to about 500Mb, on average.
-        cov_mat = cov_mat.asfptype().todense()
+        # cov_mat = cov_mat.asfptype().todense()
+        cov_mat = cov_mat.todense()
 
         # tear out each gene's coverage matrix from loaded chromosome coverage sub-matrix.
         for ii in range(len(sub_genes)):
@@ -196,11 +329,13 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
 
             # Slice up cov_mat based on relative exon positions within a gene while remembering to
             # shift starts and ends based on the start position of the current gene span.
-            e_starts, e_ends = single_gene_df.start.values - start_pos - 1, single_gene_df.end.values - start_pos - 1
-            slices = [np.arange(e_starts[j], e_ends[j]) for j in range(len(e_starts))]
+            # Coverage vectors are 0-indexed so take off 1 from 1-indexed gene positions,
+            # but remembering to include exon end positions.
+            e_starts, e_ends = single_gene_df.start.values - start_pos - 1, single_gene_df.end.values - start_pos
+            slicing = [np.arange(e_starts[j], e_ends[j]) for j in range(len(e_starts))]
 
             # in case exons are overlapping, take union of their covered regions.
-            slicing = np.unique(flatten_2d(slices))
+            slicing = np.unique(flatten_2d(slicing))
 
             # Save transposed coverage matrix so that shape is p x Li.
             gene_cov_dict[gene] = np.array(cov_mat[slicing, :].T).astype(np.float_)
@@ -222,44 +357,27 @@ def dice_chrom_coverage(file_dict, chrom_exon_df, output_dir=None, verbose=True)
         logging.info('CHR {0} -- obtained {1} coverage matrices.'
                      .format(chrom, len(gene_cov_dict)))
 
-    # if a save location is specified, save {gene: coverage matrix} data per chromosome in a
-    # new directory named after the chromosome.
-    if output_dir:
-        output_dir = os.path.join(output_dir, chrom)
-
-        if not os.path.isdir(output_dir):
-            os.makedirs(output_dir)
-
-        # save per-gene coverage matrices to .pkl files
-        gene_cov_file = os.path.join(output_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
-        if verbose:
-            logging.info('CHR {0} -- saving coverage matrices to {1}'
-                         .format(chrom, gene_cov_file))
-
-        with open(gene_cov_file, 'wb') as f:
-            pkl.dump(gene_cov_dict, f)
-
     return gene_cov_dict
 
 
-def merge_gene_coverage_files(file_dict, exon_df, n_jobs=max_cpu(),
-                              output_dir=None, verbose=True):
+def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=max_cpu(),
+                   output_dir=None, verbose=True):
     """
     For each chromosome, load the coverage arrays resulting from each alignment file, join them,
     and then slice the joined coverage array into per-gene coverage matrices. Run process in parallel over
     chromosomes with the n_jobs argument.
 
-    Example:
-    file_dict = {('sample123': ['data/coverage_sample123_chr1.npz', 'data/coverage_sample123_chr2.npz']),
-                 ('sample124': ['data/coverage_sample124_chr1.npz', 'data/coverage_sample124_chr2.npz'])} ->
+    Example output:
 
     {('gene A'): <L1 x 2 coverage array>,
      ('gene B'): <L2 x 2 coverage array>,
      ...
      ('gene N'): <LN x 2 coverage array>}
 
-    :param file_dict: OrderedDict, keys are RNA-Seq sample IDs, values are lists of str filenames
-    of read count .csv files, each file containing one chromosome's gene read counts for sample ID.
+    :param data_dir: str directory containing subdirectories named after the alignment sample IDs in sample_ids
+    list, each containing files named `overlap_coverage_<sample ID>_<chromosome>.pkl` and
+    `chrom_coverage_<sample ID>_<chromosome>.npz`.
+    :param sample_ids: list of str names RNA Seq samples, i.e. basenames of various alignment files.
     :param exon_df: pandas.DataFrame outlining exon positions for an entire genome; has columns 'chr',
     'start' (exon start), 'end' (exon end), 'gene' (gene name), 'gene_end', and 'gene_start'
     :param n_jobs: int number of cores used for distributing gene coverage merge process over different chromosomes.
@@ -271,47 +389,77 @@ def merge_gene_coverage_files(file_dict, exon_df, n_jobs=max_cpu(),
     chroms = exon_df.chr.unique()
     gene_cov_dict = OrderedDict()
 
-    # get list of chromosome gene coverage dictionaries.
+    # get list of gene coverage matrix dictionaries from joining chromosome-wide coverage arrays.
     chrom_gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(chroms))
                               , verbose=0
-                              , backend='threading')(delayed(dice_chrom_coverage)(
-        file_dict=file_dict,
+                              , backend='threading')(delayed(merge_chrom_coverage)(
+        data_dir=data_dir,
+        sample_ids=sample_ids,
         chrom_exon_df=subset_to_chrom(exon_df, chrom=chrom),
-        output_dir=output_dir,
         verbose=verbose) for chrom in chroms)
 
-    # concatenate chromosome coverage dictionaries into one ordered dictionary.
-    for chrom_gene_cov_dict in chrom_gene_cov_dicts:
-        for gene in chrom_gene_cov_dict:
-            gene_cov_dict[gene] = chrom_gene_cov_dict[gene]
+    # get list of gene coverage matrix dictionaries upon joining gene coverage arrays for genes in overlapping groups.
+    if verbose:
+        logging.info('Joining overlapping genes\' coverage vectors into coverage matrices.')
 
-    del chrom_gene_cov_dicts, chrom_gene_cov_dict
+    overlap_gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(chroms))
+                              , verbose=0
+                              , backend='threading')(delayed(merge_overlap_gene_coverage)(
+        data_dir=data_dir,
+        sample_ids=sample_ids,
+        chrom=chrom) for chrom in chroms)
+
+    # (1) concatenate chromosome coverage dictionaries into one ordered dictionary.
+    # (2) for each chromosome, save gene coverage matrices to .pkl file in per-chromosome subdirectories.
+    for i in range(len(chroms)):
+
+        chrom = chroms[i]
+
+        # concatenate coverage matrices from different sources (isolated or gene overlap genes).
+        chrom_cov_dict = {**chrom_gene_cov_dicts[i], **overlap_gene_cov_dicts[i]}
+
+        for gene in chrom_cov_dict:
+
+            # save {gene: coverage matrix} data per chromosome in a new directory named after the chromosome.
+            if output_dir:
+                save_dir = os.path.join(output_dir, chrom)
+
+                if not os.path.isdir(save_dir):
+                    os.makedirs(save_dir)
+
+                # save per-gene coverage matrices to .pkl file, one .pkl file per chromosome.
+                chrom_cov_file = os.path.join(save_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
+                if verbose:
+                    logging.info('CHR {0} -- saving coverage matrices to {1}'
+                                 .format(chrom, chrom_cov_file))
+
+                with open(chrom_cov_file, 'wb') as f:
+                    pkl.dump(chrom_cov_dict, f)
+
+            gene_cov_dict[gene] = chrom_cov_dict[gene]
+
+    del chrom_gene_cov_dicts, overlap_gene_cov_dicts, chrom_cov_dict
     gc.collect()
 
     return gene_cov_dict
 
 
 # if __name__ == '__main__':
-    # from degnorm.gene_processing import GeneAnnotationProcessor
-    #
-    # data_path = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
-    #
-    # cov_files = [os.path.join(data_path, 'hg_small_1', 'coverage_hg_small_1_chr1.npz')
-    #              , os.path.join(data_path, 'hg_small_2', 'coverage_hg_small_2_chr1.npz')]
-    #
-    # file_dict = {'hg_small_1': [cov_files[0]]
-    #              , 'hg_small_2': [cov_files[1]]}
-    #
-    # gtf_file = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/chr1_small.gtf'
-    #
-    # gtf_processor = GeneAnnotationProcessor(gtf_file)
-    # exon_df = gtf_processor.run()
-    #
-    # # dice_chrom_coverage(file_dict, chrom_exon_df=subset_to_chrom(exon_df, 'chr1')
-    # #                     , output_dir=data_path, verbose=True)
-    #
-    # merge_gene_coverage_files(file_dict
-    #                           , exon_df=exon_df
-    #                           , n_jobs=1
-    #                           , output_dir=data_path,
-    #                           verbose=True)
+#     from degnorm.gene_processing import GeneAnnotationProcessor
+#
+#     data_path = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
+#     sample_ids = ['hg_small_1', 'hg_small_2']
+#     gtf_file = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/chr1_small.gtf'
+#
+#     gtf_processor = GeneAnnotationProcessor(gtf_file)
+#     exon_df = gtf_processor.run()
+#
+#     reads_df = merge_read_counts(data_path
+#                                  , sample_ids=['hg_small_1', 'hg_small_2']
+#                                  , chroms=exon_df.chr.unique())
+#
+#     gene_cov_dict = merge_coverage(data_path
+#                                    , sample_ids=['hg_small_1', 'hg_small_2']
+#                                    , exon_df=exon_df
+#                                    , n_jobs=1
+#                                    , output_dir=data_path)

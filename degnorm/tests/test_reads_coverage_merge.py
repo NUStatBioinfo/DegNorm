@@ -51,37 +51,33 @@ def gtf_setup():
 # reads_merge module tests
 # BamReadsCoverageProcessor tests should have already run.
 # ----------------------------------------------------- #
-
 def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     exon_df = gtf_setup
     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
     gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
-
-    cov_files = OrderedDict()
-    read_count_files = OrderedDict()
     sample_ids = list()
 
     for i in [1, 2]:
         sample_id = bam_setup[i].sample_id
         sample_ids.append(sample_id)
-        cov_files[sample_id], read_count_files[sample_id] = bam_setup[i].coverage_read_counts(gene_overlap_dat
-                                                                                              , gene_df=gene_df
-                                                                                              , exon_df=exon_df)
+        bam_setup[i].coverage_read_counts(gene_overlap_dat
+                                          , gene_df=gene_df
+                                          , exon_df=exon_df)
 
-    read_counts_df = merge_read_count_files(read_count_files
-                                            , chroms=['chr1'])
+    read_counts_df = merge_read_counts(bam_setup[0]
+                                       , sample_ids=sample_ids
+                                       , chroms=['chr1'])
 
-    gene_cov_dict = merge_gene_coverage_files(cov_files
-                                              , exon_df=exon_df
-                                              , n_jobs=2
-                                              , output_dir=bam_setup[0])
+    gene_cov_dict = merge_coverage(bam_setup[0]
+                                   , sample_ids=sample_ids
+                                   , exon_df=exon_df
+                                   , n_jobs=2
+                                   , output_dir=bam_setup[0])
 
     assert isinstance(read_counts_df, DataFrame)
     assert isinstance(gene_cov_dict, OrderedDict)
-    assert gene_cov_dict.get(list(gene_cov_dict.keys())[0]).ndim == 2
     assert all(read_counts_df.columns == ['chr', 'gene'] + sample_ids)
     assert not read_counts_df.empty
+    assert gene_cov_dict.get(list(gene_cov_dict.keys())[0]).ndim == 2
     assert all([gene_cov_dict[x].ndim == 2 for x in gene_cov_dict])
-
-
-
+    assert os.path.exists(os.path.join(bam_setup[0], 'chr1', 'coverage_matrices_chr1.pkl'))

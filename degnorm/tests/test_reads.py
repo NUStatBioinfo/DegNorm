@@ -1,7 +1,7 @@
 import pytest
 import os
 import shutil
-from pandas import DataFrame
+from pandas import DataFrame, read_csv
 from random import choice
 from pysam.libcalignmentfile import AlignmentFile
 from degnorm.reads import *
@@ -51,10 +51,11 @@ def gtf_setup():
 # ----------------------------------------------------- #
 # BamReadsCoverageProcessor tests
 # ----------------------------------------------------- #
+
+# test that .bam file header gets read correctly
 def test_bam_header_paired(bam_setup):
     bam_setup = bam_setup[0]
     bamfile = bam_setup.loader.get_data()
-    print('TESTING BamReadsProcessor.__init__ for paired reads')
     assert isinstance(bam_setup.header, DataFrame)
     assert isinstance(bamfile, AlignmentFile)
     assert not bam_setup.header.empty
@@ -65,7 +66,6 @@ def test_bam_header_paired(bam_setup):
 def test_bam_header_unpaired(bam_setup):
     bam_setup = bam_setup[1]
     bamfile = bam_setup.loader.get_data()
-    print('TESTING BamReadsProcessor.__init__ for single-end reads')
     assert isinstance(bam_setup.header, DataFrame)
     assert isinstance(bamfile, AlignmentFile)
     assert not bam_setup.header.empty
@@ -73,7 +73,7 @@ def test_bam_header_unpaired(bam_setup):
     bamfile.close()
 
 
-# check that paired read .bam files are loaded correctly.
+# test that paired read .bam files are loaded correctly.
 def test_bam_load_paired(bam_setup):
     reqd_cols = ['qname', 'pos', 'cigar', 'qname_unpaired']
     bam_setup = bam_setup[0]
@@ -84,7 +84,7 @@ def test_bam_load_paired(bam_setup):
     assert all([col in reads_df.columns.tolist() for col in reqd_cols])
 
 
-# check that single-end .bam files are loaded correctly.
+# test that single-end .bam files are loaded correctly.
 def test_bam_load_single(bam_setup):
     reqd_cols = ['qname', 'pos', 'cigar']
     bam_setup = bam_setup[1]
@@ -95,40 +95,52 @@ def test_bam_load_single(bam_setup):
     assert all([col in read_count_df.columns.tolist() for col in reqd_cols])
 
 
+# test coverage / read count calculations on paired alignment file.
 def test_bam_coverage_counts_paired(bam_setup, gtf_setup):
     bam_setup = bam_setup[0]
     exon_df = gtf_setup
     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
     gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
 
-    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_overlap_dat
-                                                                  , gene_df=gene_df
-                                                                  , exon_df=exon_df)
+    out = bam_setup.coverage_read_counts(gene_overlap_dat
+                                         , gene_df=gene_df
+                                         , exon_df=exon_df)
 
-    assert isinstance(coverage_fps, list)
-    assert isinstance(read_count_fps, list)
-    assert len(coverage_fps) == 1
-    assert len(read_count_fps) == 1
-    assert all([os.path.isfile(x) for x in coverage_fps])
-    assert all([os.path.isfile(x) for x in read_count_fps])
+    output_files = os.listdir(bam_setup.save_dir)
+
+    # check that chromosome coverage file and read counts file exist.
+    assert 'chrom_coverage_hg_small_1_chr1.npz' in output_files
+    assert 'read_counts_hg_small_1_chr1.csv' in output_files
+
+    # check read counts file.
+    reads_df = read_csv(os.path.join(bam_setup.save_dir, 'read_counts_hg_small_1_chr1.csv'))
+    assert not reads_df.empty
+    assert len(list(set(reads_df.columns.tolist()) - {'gene', 'hg_small_1'})) == 0
 
 
+# test coverage / read count calculations on single-end reads alignment file.
 def test_bam_coverage_counts_single(bam_setup, gtf_setup):
     bam_setup = bam_setup[1]
     exon_df = gtf_setup
     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
     gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
 
-    coverage_fps, read_count_fps = bam_setup.coverage_read_counts(gene_overlap_dat
-                                                                  , gene_df=gene_df
-                                                                  , exon_df=exon_df)
+    out = bam_setup.coverage_read_counts(gene_overlap_dat
+                                         , gene_df=gene_df
+                                         , exon_df=exon_df)
 
-    assert isinstance(coverage_fps, list)
-    assert isinstance(read_count_fps, list)
-    assert len(coverage_fps) == 1
-    assert len(read_count_fps) == 1
-    assert all([os.path.isfile(x) for x in coverage_fps])
-    assert all([os.path.isfile(x) for x in read_count_fps])
+    output_files = os.listdir(bam_setup.save_dir)
+    print('OUTPUT FILES:')
+    print(output_files)
+
+    # check that chromosome coverage file and read counts file exist.
+    assert 'chrom_coverage_ff_small_chr1.npz' in output_files
+    assert 'read_counts_ff_small_chr1.csv' in output_files
+
+    # check read counts file.
+    reads_df = read_csv(os.path.join(bam_setup.save_dir, 'read_counts_ff_small_chr1.csv'))
+    assert not reads_df.empty
+    assert len(list(set(reads_df.columns.tolist()) - {'gene', 'ff_small'})) == 0
 
 
 # ----------------------------------------------------- #
