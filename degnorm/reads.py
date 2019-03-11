@@ -354,6 +354,7 @@ class BamReadsProcessor():
         # Step 1. Load chromosome's reads and index them.
         # ---------------------------------------------------------------------- #
         reads_df = self.load_chromosome_reads(chrom)
+        n_orig_reads = reads_df.shape[0]
 
         if self.verbose:
             logging.info('SAMPLE {0}, CHR {1} -- reads successfully loaded. shape = {2}'
@@ -404,8 +405,9 @@ class BamReadsProcessor():
         del exon_starts, exon_ends
         gc.collect()
 
-        # store read_ids of reads to drop.
+        # store read_ids of reads to drop, and initialize dropped read count.
         drop_reads = list()
+        n_dropped_reads = 0
 
         # store read match region bounds, so that we only parse CIGAR strings once.
         read_bounds = list()
@@ -479,6 +481,7 @@ class BamReadsProcessor():
 
         # drop reads that don't fully intersect exonic regions.
         if drop_reads:
+            n_dropped_reads += len(drop_reads)
             reads_df.drop(drop_reads
                           , inplace=True)
 
@@ -541,7 +544,7 @@ class BamReadsProcessor():
                     # save gene exon positioning, for determining which reads captured by which genes.
                     # 0-index exon positions, and include gene end positioning.
                     e_starts, e_ends = np.sort(ol_gene_exon_df.start.values) - 1, np.sort(ol_gene_exon_df.end.values)
-                    gene_exon_bounds += [[[e_starts[j], e_ends[j]] for j in range(len(e_starts))]]  # list of list of lists
+                    gene_exon_bounds += [[[e_starts[j], e_ends[j]] for j in range(len(e_starts))]]  # list of list of lists, includes exon end pos.
                     transcript_idx.append(np.unique(fill_in_bounds(flatten_2d(gene_exon_bounds[-1]))))  # transcript vector is 0-indexed, includes exon end pos.
 
                 # drop things we don't need any more.
@@ -581,7 +584,7 @@ class BamReadsProcessor():
                         read_gene = ol_genes[caught_genes[0]]
                         read_gene_start = ol_gene_starts[caught_genes[0]]
                         read_idx = fill_in_bounds(read_bounds
-                                                  , endpoint=True) - read_gene_start
+                                                  , endpoint=True) - read_gene_start - 1
                         ol_cov_dict[read_gene][read_idx] += 1
                         read_count_dict[read_gene] += 1
 
@@ -602,6 +605,7 @@ class BamReadsProcessor():
                 # drop ambiguous reads from larger set of chromosome reads,
                 # should speed up gene-read searches in the future.
                 if drop_reads:
+                    n_dropped_reads += len(drop_reads)
                     reads_df.drop(drop_reads
                                   , inplace=True)
 
@@ -673,8 +677,13 @@ class BamReadsProcessor():
 
             # drop reads that do not lie completely within area covered by isolated genes.
             if drop_reads:
+                n_dropped_reads += len(drop_reads)
                 reads_df.drop(drop_reads
                               , inplace=True)
+
+                # tell us how many reads we've dropped until now.
+                logging.info('SAMPLE {0}, CHR {1} -- {2:.2%} reads have been dropped for overlapping with non-exon regions.'
+                             .format(self.sample_id, chrom, 100 * n_dropped_reads / n_orig_reads))
 
             del drop_reads
             gc.collect()
@@ -686,9 +695,10 @@ class BamReadsProcessor():
                 cov_vec = np.zeros([chrom_len]
                                    , dtype=int)
 
-                # add IntervalIndex index to chromosome gene data
-                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start
-                                                                , right=chrom_gene_df.gene_end
+                # add IntervalIndex index to chromosome gene data. 0-index gene starts, gene ends because
+                # reads are 0-indexed.
+                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start - 1
+                                                                , right=chrom_gene_df.gene_end - 1
                                                                 , closed='both')
 
                 # "join" genes on reads data! (so that reads are tied to genes, for read counting.)
