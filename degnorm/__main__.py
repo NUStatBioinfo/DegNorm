@@ -103,8 +103,12 @@ def main():
         for chrom in chroms:
             gene_overlap_dict[chrom] = get_gene_overlap_structure(subset_to_chrom(genes_df
                                                                                   , chrom=chrom))
-            n_overlap += len(gene_overlap_dict[chrom]['overlap_genes'])
-            n_isolated += len(gene_overlap_dict[chrom]['isolated_genes'])
+            # compute fraction of overlap genes to total genes.
+            if gene_overlap_dict[chrom].get('overlap_genes') is not None:
+                n_overlap += np.sum([len(x) for x in gene_overlap_dict[chrom]['overlap_genes']])
+
+            if gene_overlap_dict[chrom].get('isolated_genes') is not None:
+                n_isolated += len(gene_overlap_dict[chrom]['isolated_genes'])
 
         logging.info('Rate of gene overlap: {0} / {1}'.format(n_overlap, n_isolated + n_overlap))
 
@@ -163,8 +167,8 @@ def main():
                      .format(len(gene_cov_dict)))
 
         # remove raw sample coverage, read count files.
-        for s_id in sample_ids:
-            shutil.rmtree(os.path.join(output_dir, s_id))
+        # for s_id in sample_ids:
+        #     shutil.rmtree(os.path.join(output_dir, s_id))
 
         # ---------------------------------------------------------------------------- #
         # Save gene annotation metadata and original read counts.

@@ -115,7 +115,7 @@ def merge_overlap_gene_coverage(data_dir, sample_ids, chrom):
     {('gene Aj'): <L1 x 2 coverage array>,
      ('gene Bj'): <L2 x 2 coverage array>,
      ...
-     ('gene Nj'): <LN x 2 coverage array>}
+     ('gene Nj'): <LNj x 2 coverage array>}
 
     :param data_dir: str path of directory containing RNA-Seq sample ID subdirectories, one per sample ID contained
     in sample_ids, each subdirectory containing one read count .csv file per chromosome, named in the fashion
@@ -154,7 +154,7 @@ def merge_overlap_gene_coverage(data_dir, sample_ids, chrom):
             # if loading the first sample's coverage vectors, initialize gene coverage matrices.
             if i == 0:
                 gene_cov_dict[gene] = np.zeros(shape=[n_samples, len(cov_vec)]
-                                               , dtype=int)
+                                               , dtype=np.float_)
 
             # update sample's coverage within coverage matrix.
             gene_cov_dict[gene][i, :] = cov_vec
@@ -315,8 +315,7 @@ def merge_chrom_coverage(data_dir, sample_ids,
 
         # convert coverage matrix to dense matrix for speed in splicing,
         # should blow up coverage matrix size to about 500Mb, on average.
-        # cov_mat = cov_mat.asfptype().todense()
-        cov_mat = cov_mat.todense()
+        cov_mat = cov_mat.asfptype().todense()
 
         # tear out each gene's coverage matrix from loaded chromosome coverage sub-matrix.
         for ii in range(len(sub_genes)):
@@ -418,25 +417,26 @@ def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=max_cpu(),
         # concatenate coverage matrices from different sources (isolated or gene overlap genes).
         chrom_cov_dict = {**chrom_gene_cov_dicts[i], **overlap_gene_cov_dicts[i]}
 
+        # move chromosome's gene coverage matrices into overall gene coverage matrix storage.
         for gene in chrom_cov_dict:
-
-            # save {gene: coverage matrix} data per chromosome in a new directory named after the chromosome.
-            if output_dir:
-                save_dir = os.path.join(output_dir, chrom)
-
-                if not os.path.isdir(save_dir):
-                    os.makedirs(save_dir)
-
-                # save per-gene coverage matrices to .pkl file, one .pkl file per chromosome.
-                chrom_cov_file = os.path.join(save_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
-                if verbose:
-                    logging.info('CHR {0} -- saving coverage matrices to {1}'
-                                 .format(chrom, chrom_cov_file))
-
-                with open(chrom_cov_file, 'wb') as f:
-                    pkl.dump(chrom_cov_dict, f)
-
             gene_cov_dict[gene] = chrom_cov_dict[gene]
+
+        # save {gene: coverage matrix} dictionary data per chromosome,
+        # in a new directory named after the chromosome.
+        if output_dir:
+            save_dir = os.path.join(output_dir, chrom)
+
+            if not os.path.isdir(save_dir):
+                os.makedirs(save_dir)
+
+            # save per-gene coverage matrices to .pkl file, one .pkl file per chromosome.
+            chrom_cov_file = os.path.join(save_dir, 'coverage_matrices_{0}.pkl'.format(chrom))
+            if verbose:
+                logging.info('CHR {0} -- saving coverage matrices to {1}'
+                             .format(chrom, chrom_cov_file))
+
+            with open(chrom_cov_file, 'wb') as f:
+                pkl.dump(chrom_cov_dict, f)
 
     del chrom_gene_cov_dicts, overlap_gene_cov_dicts, chrom_cov_dict
     gc.collect()

@@ -64,6 +64,7 @@ class BamLoader(Loader):
         self.index_file = index_file
 
     def get_data(self):
+        # POSITIONING is 0-INDEXED: https://pysam.readthedocs.io/en/latest/api.html
         bamfile = pysam.AlignmentFile(self.filename
                                       , mode='rb'
                                       , index_filename=self.index_file)

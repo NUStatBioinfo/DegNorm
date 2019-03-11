@@ -5,6 +5,7 @@ from joblib import Parallel, delayed
 from scipy import sparse
 import pickle as pkl
 
+
 def cigar_segment_bounds(cigar, start):
     """
     Determine the start and end positions on a chromosome of a non-no-matching part of an
@@ -243,23 +244,65 @@ class BamReadsProcessor():
 
         return df
 
+    # @staticmethod
+    # def determine_full_inclusion(read_idx, gene_idx_list):
+    #     """
+    #     Determine which genes' exon regions fully include a read's base positions.
+    #     For example:
+    #     read_idx: [3, 4, 5]
+    #     gene_idx_list: [[1, 2, 3, 4], [2, 3, 4, 5, 6], [11, 14, 15, 16]]
+    #     -> array([1])
+    #
+    #     :param read_idx: list of int or 1-d numpy array of int, read's base positions
+    #     :param gene_idx_list: list of list of int or 1-d numpy array of int, details on a group of genes'
+    #     exon positions, one sublist element of positions per gene. len(gene_idx_list) = number of genes in group.
+    #     :return: 1-d numpy array with integer indices of genes in gene_idx_list that fully include read's bases
+    #     """
+    #     gene_capture = np.where(list(map(lambda y: len(np.setdiff1d(read_idx, y)) == 0, gene_idx_list)))[0]
+    #
+    #     return gene_capture
+
     @staticmethod
-    def determine_full_inclusion(read_idx, gene_idx_list):
+    def determine_full_inclusion(read_bounds, gene_exon_bounds):
         """
-        Determine which genes' exon regions fully include a read's base positions.
-        For example:
-        read_idx: [3, 4, 5]
-        gene_idx_list: [[1, 2, 3, 4], [2, 3, 4, 5, 6], [11, 14, 15, 16]]
-        -> array([1])
+        read_bounds = [10, 32, 45, 90]
 
-        :param read_idx: list of int or 1-d numpy array of int, read's base positions
-        :param gene_idx_list: list of list of int or 1-d numpy array of int, details on a group of genes'
-        exon positions, one sublist element of positions per gene. len(gene_idx_list) = number of genes in group.
-        :return: 1-d numpy array with integer indices of genes in gene_idx_list that fully include read's bases
+        :param read_bounds: list or 1-d array of even length alternating between positions of read
+        matching region starts, matching region ends
+        :param gene_exon_bounds: list of list of lists, each sublist is a list of [exon start, exon end] subsublists,
+        one sublist per gene.
+        :return: list with integer indices of gene_exon_bounds corresponding to genes that fully capture read bounds.
         """
-        gene_capture = np.where(list(map(lambda y: len(np.setdiff1d(read_idx, y)) == 0, gene_idx_list)))[0]
+        full_capture_idx = list()
 
-        return gene_capture
+        # iterate over genes.
+        for gene_idx in range(len(gene_exon_bounds)):
+            exon_bounds = gene_exon_bounds[gene_idx]
+            full_capture = True
+
+            # iterate over read matching regions.
+            for j in np.arange(1, len(read_bounds), step=2):
+                seg_capture = False
+                start = read_bounds[j - 1]
+                end = read_bounds[j]
+
+                # check gene's exon regions to see if they capture read match region.
+                # Stop checking exon regions the moment there's one full match.
+                for exon_bound in exon_bounds:
+                    if start >= exon_bound[0] and end <= exon_bound[1]:
+                        seg_capture = True
+                        break
+
+                # if any segment not captured, stop checking match segments
+                # and exclude gene from set of fully capturing genes.
+                if not seg_capture:
+                    full_capture = False
+                    break
+
+            if full_capture:
+                full_capture_idx.append(gene_idx)
+
+        return full_capture_idx
 
     def chromosome_coverage_read_counts(self, gene_overlap_dat, chrom_gene_df, chrom_exon_df, chrom):
         """
@@ -326,10 +369,15 @@ class BamReadsProcessor():
                            , drop=False
                            , inplace=True)
 
+        # write reads to disk (for inspection)
+        reads_file = os.path.join(self.save_dir, 'reads_' + self.sample_id + '_' + chrom + '.csv')
+        reads_df.to_csv(reads_file
+                        , index = False)
+
         # easy win: drop reads whose start position is < minimum start position of a gene,
         # and drop reads whose end position is > maximum start position of a gene
-        min_gene_start, max_gene_end = chrom_gene_df.gene_start.min(), chrom_gene_df.gene_end.max()
-        reads_df = reads_df[(reads_df.pos >= min_gene_start) & (reads_df.end_pos <= max_gene_end)]
+        min_gene_start, max_gene_end = chrom_gene_df.gene_start.min() - 1, chrom_gene_df.gene_end.max() - 1
+        reads_df = reads_df[(reads_df.pos >= (min_gene_start)) & (reads_df.end_pos <= (max_gene_end))]
 
         # If working with paired reads,
         # ensure that we've sequestered paired reads (eliminate any query names only occurring once).
@@ -394,8 +442,8 @@ class BamReadsProcessor():
                 for j in np.arange(1, len(bounds), step=2):
 
                     # check whether matching regions on tscript_vec are fully contained within exonic regions.
-                    # note that bounds are 1-indexed, tscript_vec is 0-indexed.
-                    if np.sum(tscript_vec[(bounds[j - 1] - 1):bounds[j]]) > 0:
+                    # note that even-index bounds are inclusive.
+                    if np.sum(tscript_vec[(bounds[j - 1]):(bounds[j] + 1)]) > 0:
                         drop_read = True
 
                 # append read id to set of read indices to drop (if appropriate).
@@ -418,7 +466,7 @@ class BamReadsProcessor():
                 drop_read = False
                 for j in np.arange(1, len(bounds), step=2):
 
-                    if np.sum(tscript_vec[(bounds[j - 1] - 1):bounds[j]]) > 0:
+                    if np.sum(tscript_vec[(bounds[j - 1]):(bounds[j] + 1)]) > 0:
                         drop_read = True
 
                 # append read id to set of read indices to drop (if appropriate).
@@ -455,7 +503,7 @@ class BamReadsProcessor():
         # display summary statistics around rate of gene intersection.
         if self.verbose:
             logging.info('SAMPLE {0}, CHR {1} -- overlap genes = {2} / {3}.'
-                         .format(self.sample_id, chrom, n_genes - n_isolated_genes, n_genes))
+                         .format(self.sample_id, chrom, n_overlap_genes, n_genes))
             logging.info('SAMPLE {0}, CHR {1} -- begin overlap gene group reads processing.'
                          .format(self.sample_id, chrom))
 
@@ -468,10 +516,11 @@ class BamReadsProcessor():
             for ol_genes in gene_overlap_dat['overlap_genes']:
 
                 ol_gene_df = chrom_gene_df[chrom_gene_df.gene.isin(ol_genes)]
-                ol_gene_group_start = ol_gene_df.gene_start.min()
-                ol_gene_group_end = ol_gene_df.gene_end.max()
+                ol_gene_group_start = ol_gene_df.gene_start.min() - 1
+                ol_gene_group_end = ol_gene_df.gene_end.max() - 1
 
                 ol_gene_starts = list()
+                gene_exon_bounds = list()
                 transcript_idx = list()
 
                 # obtain exon regions for each gene in overlap group.
@@ -480,8 +529,9 @@ class BamReadsProcessor():
                     ol_gene_exon_df = chrom_exon_df[chrom_exon_df.gene == ol_gene]
 
                     # store gene starts for constructing per-gene coverage vectors.
-                    ol_gene_start = ol_gene_exon_df.gene_start.iloc[0]
-                    ol_gene_end = ol_gene_exon_df.gene_end.iloc[0]
+                    # 0-index gene starts/ends.
+                    ol_gene_start = ol_gene_exon_df.gene_start.iloc[0] - 1
+                    ol_gene_end = ol_gene_exon_df.gene_end.iloc[0] - 1
                     ol_gene_starts.append(ol_gene_start)
 
                     # initialize gene coverage vector for each gene in overlap group.
@@ -489,71 +539,61 @@ class BamReadsProcessor():
                                                     , dtype=int)
 
                     # save gene exon positioning, for determining which reads captured by which genes.
-                    e_starts, e_ends = np.sort(ol_gene_exon_df.start.values - 1), np.sort(ol_gene_exon_df.end.values - 1)
-                    exon_bounds = np.concatenate([[e_starts[j], e_ends[j]] for j in range(len(e_starts))])
-                    transcript_idx.append(np.unique(fill_in_bounds(exon_bounds
-                                                                   , endpoint=True)))
+                    # 0-index exon positions, and include gene end positioning.
+                    e_starts, e_ends = np.sort(ol_gene_exon_df.start.values) - 1, np.sort(ol_gene_exon_df.end.values)
+                    gene_exon_bounds += [[[e_starts[j], e_ends[j]] for j in range(len(e_starts))]]  # list of list of lists
+                    transcript_idx.append(np.unique(fill_in_bounds(flatten_2d(gene_exon_bounds[-1]))))  # transcript vector is 0-indexed, includes exon end pos.
 
                 # drop things we don't need any more.
-                del ol_gene_df, ol_gene_exon_df, exon_bounds, e_starts, e_ends
+                del ol_gene_df, ol_gene_exon_df, e_starts, e_ends
 
                 # storage for reads to drop.
                 drop_reads = list()
 
                 # subset reads to those that start and end within scope of this bloc of overlapping genes.
-                # Since read positions are still 1-indexed, use 1-indexed gene start/ends for reads subsetting.
-                ol_reads_dat = reads_df[(reads_df.pos >= ol_gene_group_start) &
-                                        (reads_df.end_pos <= ol_gene_group_end)][['bounds', 'read_id']].values
+                ol_reads_dat = reads_df[(reads_df.pos >= (ol_gene_group_start)) &
+                                        (reads_df.end_pos <= (ol_gene_group_end))][['bounds', 'read_id']].values
 
                 # for single-read RNA-Seq experiments, we do not need such special consideration.
-                for i in np.arange(ol_reads_dat.shape[0]):
+                for i in range(ol_reads_dat.shape[0]):
 
                     # obtain read regions bounds.
-                    bounds, read_id = ol_reads_dat[i, :]
+                    read_bounds, read_id = ol_reads_dat[i, :]
 
-                    # obtain read positions, shift by -1 so we 0-index read positions.
-                    read_idx = fill_in_bounds(bounds
-                                              , endpoint=True) - 1
-
-                    # find genes that fully include this read.
-                    caught_genes = self.determine_full_inclusion(read_idx
-                                                                 , gene_idx_list=transcript_idx)
+                    # find genes that fully include this read. Everything is 0-indexed.
+                    caught_genes = self.determine_full_inclusion(read_bounds
+                                                                 , gene_exon_bounds=gene_exon_bounds)
 
                     # Ambiguous read determination logic:
                     # - if paired reads lie fully within 0 or 2+ genes, do not use the reads pair and drop them.
                     # - if read lies fully within a single gene:
                     #    - do not drop it.
                     #    - if the caught gene is the current gene being analyzed, use the read. O/w do not.
-                    read_gene = None
-                    read_gene_start = 0
                     n_caught_genes = len(caught_genes)
 
                     # if only one gene captures read, use the read and identify capturing gene for
                     # incrementing count, but drop it from consideration later (it's been accounted for).
+                    # if only full intersection is with with a single gene, increment coverage and read count
+                    # for that gene, and drop read.
+                    # Note: need to restart coverage calculations relative to gene's start position.
                     if n_caught_genes == 1:
-                        use_read = True
                         drop_read = True
                         read_gene = ol_genes[caught_genes[0]]
                         read_gene_start = ol_gene_starts[caught_genes[0]]
+                        read_idx = fill_in_bounds(read_bounds
+                                                  , endpoint=True) - read_gene_start
+                        ol_cov_dict[read_gene][read_idx] += 1
+                        read_count_dict[read_gene] += 1
 
                     # if no gene fully captures the read, do not use read *but do not drop it*,
                     # for the possibility that some isolated gene captures the read later on.
                     elif n_caught_genes == 0:
-                        use_read = False
                         drop_read = False
 
                     # if > 1 gene fully captures the read,
                     # do not use read and drop it from consideration.
                     else:
-                        use_read = False
                         drop_read = True
-
-                    # if only full intersection is with with a single gene, increment coverage and read count
-                    # for that gene. Note: gene coverage vectors are 0-indexed, so use 0-indexed read positions by
-                    # subtracting 1 from read positions and subtracting the gene's start position.
-                    if use_read:
-                        ol_cov_dict[read_gene][read_idx - read_gene_start] += 1
-                        read_count_dict[read_gene] += 1
 
                     # if need be, add read to list of reads to be dropped.
                     if drop_read:
@@ -578,15 +618,16 @@ class BamReadsProcessor():
             # ---------------------------------------------------------------------- #
             ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + chrom + '.pkl')
             if self.verbose:
-                logging.info('SAMPLE {0}, CHR {1} -- saving overlapping gene coverage vectors to {1}'
-                             .format(self.sample_id, chrom, ol_cov_file))
+                logging.info('SAMPLE {0}, CHR {1} -- saving overlapping gene coverage vectors.'
+                             .format(self.sample_id, chrom))
 
             # dump overlapping genes' coverage matrices.
             with open(ol_cov_file, 'wb') as f:
                 pkl.dump(ol_cov_dict, f)
 
             # free up some memory -- delete groups of intersecting genes, etc.
-            del ol_reads_dat, ol_cov_dict, transcript_idx
+            del ol_reads_dat, ol_cov_dict, transcript_idx, gene_exon_bounds  # NEW
+            # del ol_reads_dat, ol_cov_dict, transcript_idx
             gc.collect()
 
             if self.verbose:
@@ -610,9 +651,10 @@ class BamReadsProcessor():
                                   , dtype=int)
 
             # identify regions of chromosome covered by isolated genes.
-            # change gene starts/ends to 0-indexed to match 0-indexed tscript_vec array.
+            # change gene starts/ends to 0-indexed to match 0-indexed tscript_vec array, but
+            # gene ends are inclusive.
             gene_starts = chrom_gene_df.gene_start.values - 1
-            gene_ends = chrom_gene_df.gene_end.values - 1
+            gene_ends = chrom_gene_df.gene_end.values
             for i in range(len(gene_starts)):
                 tscript_vec[gene_starts[i]:gene_ends[i]] = 0
 
@@ -622,7 +664,8 @@ class BamReadsProcessor():
             for i in range(dat.shape[0]):
                 read_start, read_end, read_id = dat[i, :]
 
-                if np.sum(tscript_vec[(read_start - 1):(read_end)]) > 0:
+                # remember to include read end position. reads are 0-indexed.
+                if np.sum(tscript_vec[read_start:(read_end + 1)]) > 0:
                     drop_reads.append(read_id)
 
             # drop memory hogs.
@@ -656,9 +699,9 @@ class BamReadsProcessor():
                 for i in range(dat.shape[0]):
                     bounds, gene = dat[i, :]
 
-                    # obtain read positions, shift by -1 so we zero-index reads.
+                    # reads are already 0-indexed.
                     read_idx = fill_in_bounds(bounds
-                                              , endpoint=True) - 1
+                                              , endpoint=True)
 
                     # increment coverage and read count.
                     cov_vec[read_idx] += 1
@@ -671,8 +714,8 @@ class BamReadsProcessor():
                 chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + chrom + '.npz')
 
                 if self.verbose:
-                    logging.info('SAMPLE {0}, CHR {1} -- saving csr-compressed chrom coverage to {2}'
-                                 .format(self.sample_id, chrom, chrom_cov_file))
+                    logging.info('SAMPLE {0}, CHR {1} -- saving csr-compressed chrom coverage array.'
+                                 .format(self.sample_id, chrom))
 
                 # save coverage vector as a compressed-sparse row matrix.
                 sparse.save_npz(chrom_cov_file
@@ -705,8 +748,8 @@ class BamReadsProcessor():
         if self.verbose:
             logging.info('SAMPLE {0}, CHR {1} -- mean per-gene read count: {2:.4}'
                          .format(self.sample_id, chrom, read_count_df[self.sample_id].mean()))
-            logging.info('SAMPLE {0}, CHR {1} -- saving read counts {2}'
-                         .format(self.sample_id, chrom, count_file))
+            logging.info('SAMPLE {0}, CHR {1} -- saving read counts.'
+                         .format(self.sample_id, chrom))
 
         # save sample's chromosome read counts to .csv for joining later.
         read_count_df.to_csv(count_file
@@ -728,7 +771,7 @@ class BamReadsProcessor():
             os.makedirs(self.save_dir)
 
         if self.verbose:
-            logging.info('SAMPLE {0}: begin computing coverage, read counts for {1} chroms.\n'
+            logging.info('SAMPLE {0}: begin computing coverage, read counts for {1} chromosomes...'
                          .format(self.sample_id, len(self.chroms)))
 
         # distribute work across chromosomes with joblib.Parallel.
