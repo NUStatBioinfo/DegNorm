@@ -114,6 +114,12 @@
                         
                             
 <li >
+    <a href="../../about/contact/">Contact</a>
+</li>
+
+                        
+                            
+<li >
     <a href="../../about/release/">Release notes</a>
 </li>
 
@@ -166,6 +172,8 @@
                 <li class="third-level"><a href="#launching-a-full-degnorm-run-the-easy-way">Launching a full degnorm run "the easy way"</a></li>
                 <li class="third-level"><a href="#using-a-warm-start-directory_1">Using a warm start directory</a></li>
                 <li class="third-level"><a href="#launching-distributed-runs-with-mpi">Launching distributed runs with MPI</a></li>
+            <li class="second-level"><a href="#example-job-submission-script">Example job submission script</a></li>
+                
             <li class="second-level"><a href="#output">Output</a></li>
                 
     </ul>
@@ -379,8 +387,13 @@ mpiexec -n 4 degnorm_mpi \
     --minimax-coverage 20
     --nmf-iter 100
 </code></pre>
-<p>The functionality of <code>degnorm_mpi</code> is the same as the single-node <code>degnorm</code>, so you can continue using warm start directories just like you could with <code>degnorm</code>.
- If you are unfamiliar with MPI, a great </p>
+<p>The functionality of <code>degnorm_mpi</code> is the same as the single-node <code>degnorm</code> command, so you can continue using warm start directories just like you could with <code>degnorm</code>.
+ If you are unfamiliar with MPI, you may find <a href="http://mpitutorial.com/tutorials/">Wes Kendall's tutorials</a> very enlightening.</p>
+<h2 id="example-job-submission-script">Example job submission script</h2>
+<p>Below is an example of a shell script containing the contents of a job you might submit to a job manager (e.g. MOAB).
+Note that additional steps would be required to convert this script into a SLURM job submission script.</p>
+<script src="https://gist.github.com/ffineis/0a93d87519c64c1d0163a8eb1403bb2c.js"></script>
+
 <h2 id="output">Output</h2>
 <p>Raw and estimated coverage data are stored in separate <code>.pkl</code> files, one file per chromosome. See the <a href="../posthoc_analysis/">posthoc analysis</a>
  documentation for helper functions to access coverage data.</p>
