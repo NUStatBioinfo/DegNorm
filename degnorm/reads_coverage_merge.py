@@ -443,23 +443,3 @@ def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=max_cpu(),
 
     return gene_cov_dict
 
-
-# if __name__ == '__main__':
-#     from degnorm.gene_processing import GeneAnnotationProcessor
-#
-#     data_path = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
-#     sample_ids = ['hg_small_1', 'hg_small_2']
-#     gtf_file = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/chr1_small.gtf'
-#
-#     gtf_processor = GeneAnnotationProcessor(gtf_file)
-#     exon_df = gtf_processor.run()
-#
-#     reads_df = merge_read_counts(data_path
-#                                  , sample_ids=['hg_small_1', 'hg_small_2']
-#                                  , chroms=exon_df.chr.unique())
-#
-#     gene_cov_dict = merge_coverage(data_path
-#                                    , sample_ids=['hg_small_1', 'hg_small_2']
-#                                    , exon_df=exon_df
-#                                    , n_jobs=1
-#                                    , output_dir=data_path)

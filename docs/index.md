@@ -30,16 +30,14 @@ The DegNorm pipeline is comprised of the following steps
 
 2. **Parse a genome annotation file** (.gtf or .gff). We determine the start and end positions of all exons comprising each gene in each chromosome. Each gene's total transcript is constructed by concatenating all annotated exons sequentially. Exons shared by multiple genes are removed from the total transcript. The total number of genes is referred to as `n`.
 
-3. **Compute gene coverage matrices**. DegNorm does not use standard coverage tools (e.g. `geneomecov`), as they do not take into account the overlap of paired-end reads when computing coverage. DegNorm reads the CIGAR score and determines whether two paired reads overlap. The overlapped region is only counted once in the coverage score calculation. There are `p` experiments.
+3. **Compute gene coverage matrices and read counts**. DegNorm does not use standard coverage tools (e.g. `geneomecov`), as they do not take into account the overlap of paired-end reads when computing coverage. DegNorm reads the CIGAR score and determines whether two paired reads overlap, and the overlapping region is only counted once in the coverage score calculation. For read counting, a read is is only attributed to a particular gene if it is determined that the read lies fully within just one single gene's transcript. There are `n` genes and `p` experiments, so the read count matrix has dimensions `(n, p)`.
 
-4. **Assess per-gene read counts** by counting the number of pairs of reads (in the paired data) or number of reads (single-end) falling entirely within the start and end position of every gene. The read count matrix has dimensions `(n, p)`.
+4. **Fit a non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
 
-5. **Fit a non-negative matrix factorization with over-approximation** model, as outlined in the central DegNorm paper.
-
-6. **Save output data to an output directory that includes**
+5. **Save results and data** to an output directory that includes the following:
     - original read counts
     - degradation-adjusted read counts
     - gene-/sample-specific *degradation index scores* 
     - raw coverage matrices stored in .pkl files, one file per chromosome
-    - normalized coverage matrices, also stored in .pkl files, one file per chromosome
+    - DegNorm-normalized coverage matrices, also stored in .pkl files, one file per chromosome
     - DegNorm summary report
