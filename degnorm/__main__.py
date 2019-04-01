@@ -21,6 +21,7 @@ def main():
     # ---------------------------------------------------------------------------- #
     args = parse_args()
     n_jobs = args.proc_per_node
+    unique_alignments = not args.non_unique_alignments
     output_dir = create_output_dir(args.output_dir)
     configure_logger(output_dir)
     welcome()
@@ -113,8 +114,7 @@ def main():
         logging.info('Rate of gene overlap: {0} / {1}'.format(n_overlap, n_isolated + n_overlap))
 
         # ---------------------------------------------------------------------------- #
-        # Load .bam files while simultaneously parsing into coverage arrays. Store chromosome
-        # coverage arrays and and compute gene read counts.
+        # Load .bam files and parse them into coverage arrays, read counts.
         # ---------------------------------------------------------------------------- #
 
         # iterate over .bam files; compute each sample's chromosomes' coverage arrays
@@ -127,6 +127,7 @@ def main():
                                        , chroms=chroms
                                        , n_jobs=n_jobs
                                        , output_dir=output_dir
+                                       , unique_alignment=unique_alignments
                                        , verbose=True)
 
             sample_id = reader.sample_id
@@ -219,8 +220,8 @@ def main():
     logging.info('Determining genes to include in DegNorm coverage curve approximation.')
     delete_idx = list()
 
-    for i in range(len(genes)):
-        gene = genes[i]
+    for i in range(genes_df.shape[0]):
+        gene = genes_df.genes.iloc[i]
 
         # extract gene's p x Li coverage matrix.
         cov_mat = gene_cov_dict[gene]
@@ -228,9 +229,9 @@ def main():
         # do not run gene if there are any 100%-zero coverage samples.
         # do not run gene if maximum coverage is < minimum maximum coverage threshold.
         # do not run gene if downsample rate low enough s.t. take-every > length of gene.
-        if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
-                or (cov_mat.shape[1] <= args.downsample_rate):
-
+        # if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
+        #         or (cov_mat.shape[1] <= args.downsample_rate):
+        if (cov_mat.max() < args.minimax_coverage) or (cov_mat.shape[1] <= args.downsample_rate):
             delete_idx.append(i)
             del gene_cov_dict[gene]
 

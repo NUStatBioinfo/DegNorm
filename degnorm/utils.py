@@ -277,7 +277,7 @@ def argparser():
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
     parser.add_argument('--minimax-coverage'
                         , type=int
-                        , default=1
+                        , default=0
                         , required=False
                         , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. ')
     parser.add_argument('-s'
@@ -286,11 +286,10 @@ def argparser():
                         , help='Skip baseline selection while computing coverage matrix estimates. '
                                'This will speed up degradation index score computation but may make '
                                'scores less accurate.')
-    parser.add_argument('-u'
-                        , '--unique-alignments'
+    parser.add_argument('--non-unique-alignments'
                         , action='store_true'
-                        , help='Only retain reads that were uniquely aligned. All reads with '
-                               'the flag "NH:i:<x>" with x > 1 will be dropped.')
+                        , help='Allow retention of reads that were not uniquely aligned. If not specified, '
+                               'all reads with the flag "NH:i:<x>" with x > 1 will be dropped.')
     parser.add_argument('-p'
                         , '--proc-per-node'
                         , type=int

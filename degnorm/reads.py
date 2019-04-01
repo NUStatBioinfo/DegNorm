@@ -84,7 +84,7 @@ def fill_in_bounds(bounds_vec, endpoint=False):
 
 class BamReadsProcessor():
     def __init__(self, bam_file, index_file, chroms=None, n_jobs=max_cpu(),
-                 output_dir=None, unique_alignment=False, verbose=True):
+                 output_dir=None, unique_alignment=True, verbose=True):
         """
         Transcript coverage and read counts processor, for a single alignment file (.bam).
         The main method for this class is coverage_read_counts, which computes coverage arrays and read counts
@@ -119,6 +119,12 @@ class BamReadsProcessor():
         self.loader = BamLoader(self.filename, self.index_filename)
         self.get_header()
         self.determine_if_paired()
+
+        # tell user whether or not sample has been detected as either paired or single-end reads.
+        if self.verbose:
+            logging.info('SAMPLE {0} -- sample contains {1} reads'
+                         .format(self.sample_id, 'paired' if self.paired else 'single-end'))
+
 
     def get_header(self):
         """
@@ -244,28 +250,19 @@ class BamReadsProcessor():
 
         return df
 
-    # @staticmethod
-    # def determine_full_inclusion(read_idx, gene_idx_list):
-    #     """
-    #     Determine which genes' exon regions fully include a read's base positions.
-    #     For example:
-    #     read_idx: [3, 4, 5]
-    #     gene_idx_list: [[1, 2, 3, 4], [2, 3, 4, 5, 6], [11, 14, 15, 16]]
-    #     -> array([1])
-    #
-    #     :param read_idx: list of int or 1-d numpy array of int, read's base positions
-    #     :param gene_idx_list: list of list of int or 1-d numpy array of int, details on a group of genes'
-    #     exon positions, one sublist element of positions per gene. len(gene_idx_list) = number of genes in group.
-    #     :return: 1-d numpy array with integer indices of genes in gene_idx_list that fully include read's bases
-    #     """
-    #     gene_capture = np.where(list(map(lambda y: len(np.setdiff1d(read_idx, y)) == 0, gene_idx_list)))[0]
-    #
-    #     return gene_capture
-
     @staticmethod
     def determine_full_inclusion(read_bounds, gene_exon_bounds):
         """
+        Determine which genes fully encapsulate a set of read matching regions.
+
+        For example: a given read has 2 matching region, and the first gene's exons capture them, not the second.
+
         read_bounds = [10, 32, 45, 90]
+        gene_exon_bounds = [[[8, 40], [44, 100]], [[2, 20], [60, 400]]]
+
+        ->>
+
+        [0] # gene 0
 
         :param read_bounds: list or 1-d array of even length alternating between positions of read
         matching region starts, matching region ends
@@ -354,7 +351,6 @@ class BamReadsProcessor():
         # Step 1. Load chromosome's reads and index them.
         # ---------------------------------------------------------------------- #
         reads_df = self.load_chromosome_reads(chrom)
-        n_orig_reads = reads_df.shape[0]
 
         if self.verbose:
             logging.info('SAMPLE {0}, CHR {1} -- reads successfully loaded. shape = {2}'
@@ -371,9 +367,9 @@ class BamReadsProcessor():
                            , inplace=True)
 
         # write reads to disk (for inspection)
-        reads_file = os.path.join(self.save_dir, 'reads_' + self.sample_id + '_' + chrom + '.csv')
-        reads_df.to_csv(reads_file
-                        , index = False)
+        # reads_file = os.path.join(self.save_dir, 'reads_' + self.sample_id + '_' + chrom + '.csv')
+        # reads_df.to_csv(reads_file
+        #                 , index=False)
 
         # easy win: drop reads whose start position is < minimum start position of a gene,
         # and drop reads whose end position is > maximum start position of a gene
@@ -407,7 +403,6 @@ class BamReadsProcessor():
 
         # store read_ids of reads to drop, and initialize dropped read count.
         drop_reads = list()
-        n_dropped_reads = 0
 
         # store read match region bounds, so that we only parse CIGAR strings once.
         read_bounds = list()
@@ -444,7 +439,7 @@ class BamReadsProcessor():
                 for j in np.arange(1, len(bounds), step=2):
 
                     # check whether matching regions on tscript_vec are fully contained within exonic regions.
-                    # note that even-index bounds are inclusive.
+                    # note that right-bounds are inclusive.
                     if np.sum(tscript_vec[(bounds[j - 1]):(bounds[j] + 1)]) > 0:
                         drop_read = True
 
@@ -481,7 +476,6 @@ class BamReadsProcessor():
 
         # drop reads that don't fully intersect exonic regions.
         if drop_reads:
-            n_dropped_reads += len(drop_reads)
             reads_df.drop(drop_reads
                           , inplace=True)
 
@@ -605,7 +599,6 @@ class BamReadsProcessor():
                 # drop ambiguous reads from larger set of chromosome reads,
                 # should speed up gene-read searches in the future.
                 if drop_reads:
-                    n_dropped_reads += len(drop_reads)
                     reads_df.drop(drop_reads
                                   , inplace=True)
 
@@ -630,8 +623,7 @@ class BamReadsProcessor():
                 pkl.dump(ol_cov_dict, f)
 
             # free up some memory -- delete groups of intersecting genes, etc.
-            del ol_reads_dat, ol_cov_dict, transcript_idx, gene_exon_bounds  # NEW
-            # del ol_reads_dat, ol_cov_dict, transcript_idx
+            del ol_reads_dat, ol_cov_dict, transcript_idx, gene_exon_bounds
             gc.collect()
 
             if self.verbose:
@@ -677,13 +669,8 @@ class BamReadsProcessor():
 
             # drop reads that do not lie completely within area covered by isolated genes.
             if drop_reads:
-                n_dropped_reads += len(drop_reads)
                 reads_df.drop(drop_reads
                               , inplace=True)
-
-                # tell us how many reads we've dropped until now.
-                logging.info('SAMPLE {0}, CHR {1} -- {2:.2%} reads have been dropped for overlapping with non-exon regions.'
-                             .format(self.sample_id, chrom, 100 * n_dropped_reads / n_orig_reads))
 
             del drop_reads
             gc.collect()
