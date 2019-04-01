@@ -147,8 +147,15 @@ Let's speed this up by distributing DegNorm's workload over multiple servers wit
         --minimax-coverage 20
         --nmf-iter 100
         
- The functionality of `degnorm_mpi` is the same as the single-node `degnorm`, so you can continue using warm start directories just like you could with `degnorm`.
- If you are unfamiliar with MPI, a great 
+ The functionality of `degnorm_mpi` is the same as the single-node `degnorm` command, so you can continue using warm start directories just like you could with `degnorm`.
+ If you are unfamiliar with MPI, you may find [Wes Kendall's tutorials](http://mpitutorial.com/tutorials/) very enlightening.
+
+
+## Example job submission script
+Below is an example of a shell script containing the contents of a job you might submit to a job manager (e.g. MOAB).
+Note that additional steps would be required to convert this script into a SLURM job submission script.
+
+<script src="https://gist.github.com/ffineis/0a93d87519c64c1d0163a8eb1403bb2c.js"></script>
         
 ## Output
 

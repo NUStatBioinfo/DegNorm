@@ -8,6 +8,7 @@ nav:
     - 'Posthoc analysis': 'howtos/posthoc_analysis.md'
 - About:
     - 'License': 'about/license.md'
+    - 'Contact': 'about/contact.md'
     - 'Release notes': 'about/release.md'
 theme:
   name: null
