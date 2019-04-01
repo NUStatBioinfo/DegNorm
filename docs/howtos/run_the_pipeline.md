@@ -42,7 +42,6 @@ Argument    | Required? |    Meaning
 `--bam-files` | If neither `--warm-start-dir` nor `--bam-dir` are specified | Set of individual .bam files
 `--bai-files` | If `samtools` is not in the `$PATH` and neither `--warm-start-dir` nor `--bam-dir` are specified | Set of individual .bai files. If specified, they must be in the order corresponding to `--bam-files`.
 `--bam-dir`   | If neither `--warm-start-dir` nor `--bam-files` are specified | Directory containing .bam and .bai files for a pipeline run. It is assumed the .bai files have the same name as the .bam files, just with a different extension.
-`-u`, `--unique-alignments` | optional flag | If specified, tells `degnorm` to remove reads aligned to more than one location on the genome. Suggested for use with single end reads data.
 
 #### 3. Genome annotation file
 DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-index and that the file abides by the standard [.gtf conventions](https://useast.ensembl.org/info/website/upload/gff.html).
