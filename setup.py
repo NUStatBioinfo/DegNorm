@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='DegNorm',
-    version='0.1.3',
+    version='0.1.4',
     packages=['degnorm', 'degnorm.tests'],
     entry_points={
         'console_scripts': ['degnorm=degnorm.__main__:main',
@@ -13,7 +13,7 @@ setup(
         'degnorm': ['resources/*', 'tests/data/*']
     },
     license='MIT',
-    url='https://github.com/ffineis/DegNorm',
+    url='https://github.com/NUStatBioinfo/DegNorm',
     author='Frank Fineis',
     author_email='frankfineis2022@u.northwestern.edu',
     description='DegNorm: the RNA-Seq read count normalization pipeline.',

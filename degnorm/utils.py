@@ -46,20 +46,37 @@ def welcome():
     logging.info('\n' + ''.join(welcome) + '\n'*4)
 
 
-def create_output_dir(output_dir):
+def create_output_dir(user_input=None):
     """
-    Create a DegNorm output directory.
+    Handle supplied output directory name for degnorm pipeline run.
+    If no directory is supplied, use directory ./degnorm_<mmddYY>_<HHMMSS>
+    If directory supplied is already a directory, use directory <supplied directory>/degnorm_<mmddYY>_<HHMMSS>
+    If directory supplied is the name of a desired directory that does not exist already, use that.
 
-    :param output_dir: str desired path to DegNorm output directory
-    :return: str path to newly created output directory
+    :param user_input: str user-supplied output directory
+    :return: str decided upon and existent output directory
     """
-    dir_to_make = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
-    while os.path.isdir(dir_to_make):
-        time.sleep(2)
-        dir_to_make = os.path.join(output_dir, 'DegNorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+    # if output directory is not specified, use default covcurv output directory naming convention.
+    if not user_input:
+        output_dir = os.path.join(os.getcwd(), 'degnorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
 
-    os.makedirs(dir_to_make)
-    return dir_to_make
+    # if output directory is name of an existent directory, use default naming convention
+    # and place output dir in the specified location.
+    elif os.path.exists(user_input):
+        output_dir = os.path.join(user_input, 'degnorm_' + datetime.now().strftime('%m%d%Y_%H%M%S'))
+
+    # case when user has supplied a desired name for an output directory, needs to be created.
+    else:
+        output_dir = user_input
+
+        # if just name of an output directory is given, place output dir in cwd.
+        if os.path.dirname(user_input) == '':
+            output_dir = os.path.join(os.getcwd(), user_input)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    return output_dir
 
 
 def subset_to_chrom(df, chrom, reindex=False):
@@ -223,11 +240,11 @@ def argparser():
     parser.add_argument('-o'
                         , '--output-dir'
                         , type=str
-                        , default=os.getcwd()
+                        , default=None
                         , required=False
-                        , help='Output directory.'
-                               'A directory for storing DegNorm analyses, visualizations, '
-                               'and data will be created. Default to the current working directory.')
+                        , help='Name for a DegNorm output directory.'
+                               'Name a directory for storing coverage data output by degnorm. '
+                               'If not specified, directory ./degnorm_[mmddyy]_[HHMMSS] will be created.')
     parser.add_argument('--plot-genes'
                         , nargs='+'
                         , type=str
@@ -260,7 +277,7 @@ def argparser():
                                'Different than number of NMF-OA iterations (--nmf-iter flag).')
     parser.add_argument('--minimax-coverage'
                         , type=int
-                        , default=1
+                        , default=0
                         , required=False
                         , help='Minimum maximum read coverage for a gene to be included in DegNorm Pipeline. ')
     parser.add_argument('-s'
@@ -269,11 +286,10 @@ def argparser():
                         , help='Skip baseline selection while computing coverage matrix estimates. '
                                'This will speed up degradation index score computation but may make '
                                'scores less accurate.')
-    parser.add_argument('-u'
-                        , '--unique-alignments'
+    parser.add_argument('--non-unique-alignments'
                         , action='store_true'
-                        , help='Only retain reads that were uniquely aligned. All reads with '
-                               'the flag "NH:i:<x>" with x > 1 will be dropped.')
+                        , help='Allow retention of reads that were not uniquely aligned. If not specified, '
+                               'all reads with the flag "NH:i:<x>" with x > 1 will be dropped.')
     parser.add_argument('-p'
                         , '--proc-per-node'
                         , type=int

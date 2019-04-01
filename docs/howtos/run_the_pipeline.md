@@ -7,22 +7,24 @@ distributed version is `degnorm_mpi`.
 
  
 ## Inputs
-You only need two types of files to supply `degnorm` - .bam files and a .gtf file
-if you have `samtools` in your `$PATH`. If you do not have `samtools`, you will also need [bam index files]([bam index files](https://www.biostars.org/p/15847/)) to accompany your .bam files.
+You only need two types of files to supply `degnorm` - .bam files (0-indexed) and a .gtf file (1-indexed) if you have `samtools` in your `$PATH`. If you do not have `samtools`, you will also need [bam index files]([bam index files](https://www.biostars.org/p/15847/)) to accompany your .bam files.
 
-#### 1. Align and sort reads data
+#### 1. Align and sort aligned reads
 Before running DegNorm, you will need to sort (and optionally, index) them with `samtools sort`. This command just re-orders reads
 by chromosome and starting index, so that they can be more useful to DegNorm later on.
 
 To [sort](https://davetang.org/wiki/tiki-index.php?page=SAMTools#Sorting_a_BAM_file) an alignment file, suppose it's called `S1.bam`, you can sort it with the following command:
 
+    # sort alignment files (necessary for indexing them)
     samtools sort S1.bam -o S1_sorted.bam
         
 DegNorm requires sorted .bam files because it really needs [bam index files](https://www.biostars.org/p/15847/). If you don't create them
 first, DegNorm will run `samtools index` to create an index file for each input alignment file:
 
+    # create alignment index files
     samtools index S1_sorted.bam S1_sorted.bai
 
+Within the .bam files **reads are assumed 0-indexed**.
 
 #### 2. (Paired or single end) aligned and sorted reads data
 At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
@@ -43,7 +45,7 @@ Argument    | Required? |    Meaning
 `-u`, `--unique-alignments` | optional flag | If specified, tells `degnorm` to remove reads aligned to more than one location on the genome. Suggested for use with single end reads data.
 
 #### 3. Genome annotation file
-DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed your .gtf file abides by the standard [conventions](https://useast.ensembl.org/info/website/upload/gff.html).
+DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-index and that the file abides by the standard [.gtf conventions](https://useast.ensembl.org/info/website/upload/gff.html).
 
 Argument    | Required? |    Meaning
 ----------- | --------- | ------------
@@ -71,7 +73,7 @@ Argument    | Required? |    Meaning
 `--iter` | No | Number of whole DegNorm iterations. Default is 5.
 `--minimax-coverage` | No | Minimum cross-sample maximum coverage for a gene before it is included in the DegNorm pipeline. Can be used to exclude relatively low-coverage genes.
  `-s`, `--skip-baseline-selection` | No | Flag to skip baseline selection, will greatly speed up DegNorm iterations.
- `-u`, `--unique-alignments` | No | Flag, only keep uniquely mapped reads (reads with `NH` (number of hits) == 1)
+ `--non-unique-alignments` | No | Flag, allow non-uniquely mapped reads. Otherwise, DegNorm only keeps reads with `NH` (number of hits) == 1 (default behavior).
  `-p`, `--proc-per-node` | No | Integer number of processes to spawn per compute node. The more the better.
 
 
@@ -90,7 +92,7 @@ commands will sort the .bam files and create .bai files, all with `samtools`:
         echo 'sorting '$FILE
         samtools sort $FILE -o ${FILE/.bam/}'_sorted.bam'
         echo 'indexing '${FILE/.bam/}'_sorted.bam'
-        samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/.bai}
+        samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/}'_sorted.bai'
     done
 
 ### Launching a full `degnorm` run "the verbose way"

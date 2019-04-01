@@ -1,5 +1,13 @@
 # Release Notes
 
+## ``v0.1.4`` (April 2019)
+- DegNorm accepted to Genome Biology!
+- Accounting bug fixes: correctly use pysam-loaded .bam files as 0-indexed.
+- Separate read counting for genes with mutual overlap vs. isolated genes.
+- In `coverage_read_counts` save parsed counts, coverage to disk instead of returning complex file tree dict.
+- Don't drop genes just because they may have a sample with 0 coverage.
+- Add notes about 0-indexing (for .bam files) and 1-indexing (for .gtf files) to docs.
+
 ## ``v0.1.3`` (January 2019)
 - Improve upon memory efficiency in `coverage.gene_coverage` - now sparse
 chromosome-wide coverage matrices are diced into approximately equally-sized chunks so that
