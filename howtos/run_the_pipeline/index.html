@@ -152,7 +152,7 @@
         <li class="first-level active"><a href="#running-degnorm">Running DegNorm</a></li>
             <li class="second-level"><a href="#inputs">Inputs</a></li>
                 
-                <li class="third-level"><a href="#1-align-and-sort-reads-data">1. Align and sort reads data</a></li>
+                <li class="third-level"><a href="#1-align-and-sort-aligned-reads">1. Align and sort aligned reads</a></li>
                 <li class="third-level"><a href="#2-paired-or-single-end-aligned-and-sorted-reads-data">2. (Paired or single end) aligned and sorted reads data</a></li>
                 <li class="third-level"><a href="#3-genome-annotation-file">3. Genome annotation file</a></li>
             <li class="second-level"><a href="#using-a-warm-start-directory">Using a warm start directory</a></li>
@@ -177,18 +177,20 @@
 distributed version is <code>degnorm_mpi</code>.</p>
 <hr />
 <h2 id="inputs">Inputs</h2>
-<p>You only need two types of files to supply <code>degnorm</code> - .bam files and a .gtf file
-if you have <code>samtools</code> in your <code>$PATH</code>. If you do not have <code>samtools</code>, you will also need <a href="[bam index files](https://www.biostars.org/p/15847/)">bam index files</a> to accompany your .bam files.</p>
-<h4 id="1-align-and-sort-reads-data">1. Align and sort reads data</h4>
+<p>You only need two types of files to supply <code>degnorm</code> - .bam files (0-indexed) and a .gtf file (1-indexed) if you have <code>samtools</code> in your <code>$PATH</code>. If you do not have <code>samtools</code>, you will also need <a href="[bam index files](https://www.biostars.org/p/15847/)">bam index files</a> to accompany your .bam files.</p>
+<h4 id="1-align-and-sort-aligned-reads">1. Align and sort aligned reads</h4>
 <p>Before running DegNorm, you will need to sort (and optionally, index) them with <code>samtools sort</code>. This command just re-orders reads
 by chromosome and starting index, so that they can be more useful to DegNorm later on.</p>
 <p>To <a href="https://davetang.org/wiki/tiki-index.php?page=SAMTools#Sorting_a_BAM_file">sort</a> an alignment file, suppose it's called <code>S1.bam</code>, you can sort it with the following command:</p>
-<pre><code>samtools sort S1.bam -o S1_sorted.bam
+<pre><code># sort alignment files (necessary for indexing them)
+samtools sort S1.bam -o S1_sorted.bam
 </code></pre>
 <p>DegNorm requires sorted .bam files because it really needs <a href="https://www.biostars.org/p/15847/">bam index files</a>. If you don't create them
 first, DegNorm will run <code>samtools index</code> to create an index file for each input alignment file:</p>
-<pre><code>samtools index S1_sorted.bam S1_sorted.bai
+<pre><code># create alignment index files
+samtools index S1_sorted.bam S1_sorted.bai
 </code></pre>
+<p>Within the .bam files <strong>reads are assumed 0-indexed</strong>.</p>
 <h4 id="2-paired-or-single-end-aligned-and-sorted-reads-data">2. (Paired or single end) aligned and sorted reads data</h4>
 <p>At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
 RNA-Seq sample. Use <code>p</code> to refer to the total number of samples.</p>
@@ -229,7 +231,7 @@ Instead of specifying individual .bam and .bai files, you can just specify <code
 </tbody>
 </table>
 <h4 id="3-genome-annotation-file">3. Genome annotation file</h4>
-<p>DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed your .gtf file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">conventions</a>.</p>
+<p>DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-index and that the file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">.gtf conventions</a>.</p>
 <table>
 <thead>
 <tr>
@@ -313,9 +315,9 @@ preprocessing is completed ahead of time. When using <code>--warm-start-dir</cod
 <td>Flag to skip baseline selection, will greatly speed up DegNorm iterations.</td>
 </tr>
 <tr>
-<td><code>-u</code>, <code>--unique-alignments</code></td>
+<td><code>--non-unique-alignments</code></td>
 <td>No</td>
-<td>Flag, only keep uniquely mapped reads (reads with <code>NH</code> (number of hits) == 1)</td>
+<td>Flag, allow non-uniquely mapped reads. Otherwise, DegNorm only keeps reads with <code>NH</code> (number of hits) == 1 (default behavior).</td>
 </tr>
 <tr>
 <td><code>-p</code>, <code>--proc-per-node</code></td>
@@ -335,7 +337,7 @@ do
     echo 'sorting '$FILE
     samtools sort $FILE -o ${FILE/.bam/}'_sorted.bam'
     echo 'indexing '${FILE/.bam/}'_sorted.bam'
-    samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/.bai}
+    samtools index ${FILE/.bam/}'_sorted.bam' ${FILE/.bam/}'_sorted.bai'
 done
 </code></pre>
 <h3 id="launching-a-full-degnorm-run-the-verbose-way">Launching a full <code>degnorm</code> run "the verbose way"</h3>

@@ -182,22 +182,19 @@ The DI score can be used to account for read count loss due to degradation.</p>
 <p><strong>Parse a genome annotation file</strong> (.gtf or .gff). We determine the start and end positions of all exons comprising each gene in each chromosome. Each gene's total transcript is constructed by concatenating all annotated exons sequentially. Exons shared by multiple genes are removed from the total transcript. The total number of genes is referred to as <code>n</code>.</p>
 </li>
 <li>
-<p><strong>Compute gene coverage matrices</strong>. DegNorm does not use standard coverage tools (e.g. <code>geneomecov</code>), as they do not take into account the overlap of paired-end reads when computing coverage. DegNorm reads the CIGAR score and determines whether two paired reads overlap. The overlapped region is only counted once in the coverage score calculation. There are <code>p</code> experiments.</p>
-</li>
-<li>
-<p><strong>Assess per-gene read counts</strong> by counting the number of pairs of reads (in the paired data) or number of reads (single-end) falling entirely within the start and end position of every gene. The read count matrix has dimensions <code>(n, p)</code>.</p>
+<p><strong>Compute gene coverage matrices and read counts</strong>. DegNorm does not use standard coverage tools (e.g. <code>geneomecov</code>), as they do not take into account the overlap of paired-end reads when computing coverage. DegNorm reads the CIGAR score and determines whether two paired reads overlap, and the overlapping region is only counted once in the coverage score calculation. For read counting, a read is is only attributed to a particular gene if it is determined that the read lies fully within just one single gene's transcript. There are <code>n</code> genes and <code>p</code> experiments, so the read count matrix has dimensions <code>(n, p)</code>.</p>
 </li>
 <li>
 <p><strong>Fit a non-negative matrix factorization with over-approximation</strong> model, as outlined in the central DegNorm paper.</p>
 </li>
 <li>
-<p><strong>Save output data to an output directory that includes</strong></p>
+<p><strong>Save results and data</strong> to an output directory that includes the following:</p>
 <ul>
 <li>original read counts</li>
 <li>degradation-adjusted read counts</li>
 <li>gene-/sample-specific <em>degradation index scores</em> </li>
 <li>raw coverage matrices stored in .pkl files, one file per chromosome</li>
-<li>normalized coverage matrices, also stored in .pkl files, one file per chromosome</li>
+<li>DegNorm-normalized coverage matrices, also stored in .pkl files, one file per chromosome</li>
 <li>DegNorm summary report</li>
 </ul>
 </li>
@@ -255,5 +252,5 @@ The DI score can be used to account for read count loss due to degradation.</p>
 
 <!--
 MkDocs version : 1.0.4
-Build Date UTC : 2019-01-06 17:44:58
+Build Date UTC : 2019-04-01 05:07:25
 -->
