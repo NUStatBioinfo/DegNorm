@@ -11,7 +11,6 @@ from degnorm.data_access import *
 from degnorm.nmf import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
-from collections import OrderedDict
 
 
 def main():
@@ -167,9 +166,9 @@ def main():
         logging.info('Complete coverage merge successful. Number of loaded coverage arrays: {0}'
                      .format(len(gene_cov_dict)))
 
-        # remove raw sample coverage, read count files.
-        # for s_id in sample_ids:
-        #     shutil.rmtree(os.path.join(output_dir, s_id))
+        # remove per-sample raw sample coverage, read count files.
+        for s_id in sample_ids:
+            shutil.rmtree(os.path.join(output_dir, s_id))
 
         # ---------------------------------------------------------------------------- #
         # Save gene annotation metadata and original read counts.
@@ -221,16 +220,13 @@ def main():
     delete_idx = list()
 
     for i in range(genes_df.shape[0]):
-        gene = genes_df.genes.iloc[i]
+        gene = genes_df.gene.iloc[i]
 
         # extract gene's p x Li coverage matrix.
         cov_mat = gene_cov_dict[gene]
 
-        # do not run gene if there are any 100%-zero coverage samples.
         # do not run gene if maximum coverage is < minimum maximum coverage threshold.
         # do not run gene if downsample rate low enough s.t. take-every > length of gene.
-        # if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
-        #         or (cov_mat.shape[1] <= args.downsample_rate):
         if (cov_mat.max() < args.minimax_coverage) or (cov_mat.shape[1] <= args.downsample_rate):
             delete_idx.append(i)
             del gene_cov_dict[gene]
@@ -324,5 +320,5 @@ def main():
     sys.exit(0)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

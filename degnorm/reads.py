@@ -366,11 +366,6 @@ class BamReadsProcessor():
                            , drop=False
                            , inplace=True)
 
-        # write reads to disk (for inspection)
-        # reads_file = os.path.join(self.save_dir, 'reads_' + self.sample_id + '_' + chrom + '.csv')
-        # reads_df.to_csv(reads_file
-        #                 , index=False)
-
         # easy win: drop reads whose start position is < minimum start position of a gene,
         # and drop reads whose end position is > maximum start position of a gene
         min_gene_start, max_gene_end = chrom_gene_df.gene_start.min() - 1, chrom_gene_df.gene_end.max() - 1
@@ -538,7 +533,7 @@ class BamReadsProcessor():
                     # save gene exon positioning, for determining which reads captured by which genes.
                     # 0-index exon positions, and include gene end positioning.
                     e_starts, e_ends = np.sort(ol_gene_exon_df.start.values) - 1, np.sort(ol_gene_exon_df.end.values)
-                    gene_exon_bounds += [[[e_starts[j], e_ends[j]] for j in range(len(e_starts))]]  # list of list of lists, includes exon end pos.
+                    gene_exon_bounds += [[[e_starts[j], e_ends[j]] for j in range(len(e_starts))]]      # list of list of lists, includes exon end pos.
                     transcript_idx.append(np.unique(fill_in_bounds(flatten_2d(gene_exon_bounds[-1]))))  # transcript vector is 0-indexed, includes exon end pos.
 
                 # drop things we don't need any more.
@@ -780,33 +775,3 @@ class BamReadsProcessor():
             chrom_exon_df=subset_to_chrom(exon_df, chrom=chrom),
             chrom=chrom)
             for chrom in self.chroms)
-
-
-# if __name__ == '__main__':
-#     from degnorm.gene_processing import GeneAnnotationProcessor, get_gene_overlap_structure
-#
-#     data_path = '/Users/fineiskid/nu/jiping_research/DegNorm/degnorm/tests/data/'
-#     bam_file = os.path.join(data_path, 'ff_small.bam')
-#     bai_file = os.path.join(data_path, 'ff_small.bai')
-#     gtf_file = os.path.join(data_path, 'chr1_small.gtf')
-#
-#     gtf_processor = GeneAnnotationProcessor(gtf_file)
-#     exon_df = gtf_processor.run()
-#     gene_df = exon_df[['chr', 'gene', 'gene_start', 'gene_end']].drop_duplicates().reset_index(drop=True)
-#     gene_overlap_dat = {'chr1': get_gene_overlap_structure(gene_df)}
-#
-#     output_dir = '/Users/fineiskid/nu/jiping_research/degnorm_test_files'
-#
-#     reader = BamReadsProcessor(bam_file=bam_file
-#                                , index_file=bai_file
-#                                , chroms=['chr1']
-#                                , n_jobs=1
-#                                , output_dir=output_dir
-#                                , verbose=True)
-#
-#     sample_id = reader.sample_id
-#     print('found sample id {0}'.format(sample_id))
-#
-#     out = reader.coverage_read_counts(gene_overlap_dat
-#                                       , gene_df=gene_df
-#                                       , exon_df=exon_df)

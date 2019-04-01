@@ -16,7 +16,6 @@ from degnorm.data_access import *
 from degnorm.nmf_mpi import *
 from degnorm.warm_start import *
 from degnorm.report import render_report
-from collections import OrderedDict
 import sys
 
 
@@ -368,12 +367,10 @@ def main():
             # extract gene's p x Li coverage matrix. We got chrom_gene_cov_dict from prior gather.
             cov_mat = gene_cov_dict[gene]
 
-            # do not add gene if there are any 100%-zero coverage samples.
             # do not add gene if maximum coverage is < minimum maximum coverage threshold.
             # do not add gene if it's unreasonably long, i.e. > 9 megabases.
             # do not add gene if downsample rate low enough s.t. take-every > length of gene.
             # do not add gene if max coverage is unreasonable, i.e. > 2^31.
-            # if any(cov_mat.sum(axis=1) == 0) or (cov_mat.max() < args.minimax_coverage) \
             if (cov_mat.max() < args.minimax_coverage) or (cov_mat.shape[1] > 9e6) \
                     or (cov_mat.shape[1] <= args.downsample_rate) \
                     or (cov_mat.max() > 2147483647):
