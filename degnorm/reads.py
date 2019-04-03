@@ -33,6 +33,11 @@ def cigar_segment_bounds(cigar, start):
     # break up cigar string into list of 2-tuples (letter indicative of match/no match, run length integer).
     cigar_split = [(v, int(k)) for k, v in re.findall(r'(\d+)([A-Z]?)', cigar)]
 
+    # initialize parse params.
+    # Allow for "hard clipping" where aligned read can start with non-matching region (https://bit.ly/2K6TJ5Y)
+    augment = False
+    any_match = False
+
     # output storage.
     match_idx_list = list()
 
@@ -40,6 +45,7 @@ def cigar_segment_bounds(cigar, start):
         segment = cigar_split[idx]
 
         if segment[0] == 'M':
+            any_match = True
             extension = segment[1] - 1  # end of a match run is inclusive.
             augment = True
             match_idx_list += [start, start + extension]  # append a match run to output.
@@ -52,6 +58,10 @@ def cigar_segment_bounds(cigar, start):
                 extension = segment[1]
 
         start += extension
+
+    # if no matching regions found, throw error.
+    if not any_match:
+        raise ValueError('CIGAR string {0} has no matching region.'.format(cigar))
 
     return match_idx_list
 
