@@ -146,6 +146,8 @@ def test_bam_coverage_counts_single(bam_setup, gtf_setup):
 # ----------------------------------------------------- #
 # Other degnorm.reads module tests
 # ----------------------------------------------------- #
+
+# test typical uses of cigar_segment_bounds.
 def test_cigar_parser():
 
     # one match, all 100 base pairs covering positions 0 through 99 (inclusive)
@@ -154,11 +156,24 @@ def test_cigar_parser():
     # two matches, 0 -> 12 (inclusive), skip 20, 33 -> 132 (inclusive)
     cigar_2 = '13M10X10D100M'
 
+    # leading no match region.
+    cigar_3 = '11H50M10D5M'
+
     cigar_1_parse = cigar_segment_bounds(cigar_1, 0)
     assert cigar_1_parse == [0, 99]
 
     cigar_2_parse = cigar_segment_bounds(cigar_2, 0)
     assert cigar_2_parse == [0, 12, 33, 132]
+
+    cigar_3_parse = cigar_segment_bounds(cigar_3, 100)
+    assert cigar_3_parse == [111, 160, 171, 175]
+
+
+# check that cigar_segment_bounds fails as anticipated.
+def test_cigar_fail():
+    cigar_no_match = '50H13X10I'
+    with pytest.raises(ValueError, message='CIGAR string {0} has no matching region.'.format(cigar_no_match)):
+        out = cigar_segment_bounds(cigar_no_match, 100)
 
 
 def test_fill_in_bounds():
