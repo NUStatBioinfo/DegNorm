@@ -92,8 +92,9 @@ def fill_in_bounds(bounds_vec, endpoint=False):
     return filled_in
 
 
-class BamReadsProcessor():
-    def __init__(self, bam_file, index_file, chroms=None, n_jobs=max_cpu(),
+class BamReadsProcessor:
+
+    def __init__(self, bam_file, index_file, chroms=None, n_jobs=1,
                  output_dir=None, unique_alignment=True, verbose=True):
         """
         Transcript coverage and read counts processor, for a single alignment file (.bam).
@@ -105,8 +106,7 @@ class BamReadsProcessor():
         :param output_dir: str path to DegNorm output directory where coverage array files will be saved.
         If not specified, will use directory where RNA Seq experiment file is located.
         :param chroms: list of str names of chromosomes to load.
-        :param n_jobs: int number of CPUs to use for determining genome coverage. Default
-        is number of CPUs on machine - 1.
+        :param n_jobs: int number of CPUs to use for determining genome coverage.
         :param unique_alignment: bool indicator - drop reads with NH:i:<x> flag where x > 1.
         :param verbose: bool indicator should progress be written to logger?
         """
@@ -265,7 +265,7 @@ class BamReadsProcessor():
         """
         Determine which genes fully encapsulate a set of read matching regions.
 
-        For example: a given read has 2 matching region, and the first gene's exons capture them, not the second.
+        For example: a given read has 2 matching regions that are captured by only the first gene's exons.
 
         read_bounds = [10, 32, 45, 90]
         gene_exon_bounds = [[[8, 40], [44, 100]], [[2, 20], [60, 400]]]

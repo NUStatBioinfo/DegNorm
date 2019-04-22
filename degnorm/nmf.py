@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 class GeneNMFOA():
 
     def __init__(self, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
-                 nmf_iter=100, bins=20, n_jobs=max_cpu(), skip_baseline_selection=False, random_state=123):
+                 nmf_iter=100, bins=20, n_jobs=1, skip_baseline_selection=False, random_state=123):
         """
         Initialize an NMF-over-approximator object.
 
@@ -23,7 +23,7 @@ class GeneNMFOA():
         of high-enough coverage.
         :param nmf_iter: int number of iterations to run per NMF-OA approximation per gene's coverage matrix.
         :param bins: int number of bins to use during baseline selection step of NMF-OA loop.
-        :param n_jobs: int number of cores used for distributing NMF computations over gene coverage matrices.
+        :param n_jobs: int number of cores used for parallelizing NMF computations over gene coverage matrices.
         :param skip_baseline_selection: Boolean should DegNorm skip baseline selection process?
         :param random_state: int seed for random number generator, useful if downsampling coverage matrices.
         """
@@ -133,7 +133,7 @@ class GeneNMFOA():
         """
         # split up list of coverage matrices to feed to workers.
         dat = split_into_chunks(dat, self.mem_splits)
-        par_output = Parallel(n_jobs=self.n_jobs
+        par_output = Parallel(n_jobs=min(self.n_jobs, len(dat))
                               , verbose=0
                               , backend='threading')(map(delayed(fun), dat))
 
@@ -386,7 +386,7 @@ class GeneNMFOA():
         """
         # split up coverage matrices so that no worker gets much more than 50Mb.
         dat = split_into_chunks(dat, self.mem_splits)
-        baseline_dat = Parallel(n_jobs=self.n_jobs
+        baseline_dat = Parallel(n_jobs=min(self.n_jobs, len(dat))
                                 , verbose=0
                                 , backend='threading')(map(delayed(self.run_baseline_selection_serial), dat))
 
@@ -507,7 +507,7 @@ class GeneNMFOA():
 
         # determine (integer) number of data splits for parallel workers (50Mb per worker).
         mem_splits = int(np.ceil(np.sum(list(map(lambda x: x.nbytes, cov_mats))) / 5e7))
-        self.mem_splits = mem_splits if mem_splits > self.n_jobs else self.n_jobs
+        self.mem_splits = max(mem_splits, self.n_jobs)
 
         # ---------------------------------------------------------------------------- #
         # DegNorm initialization:

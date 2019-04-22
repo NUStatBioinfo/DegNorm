@@ -359,7 +359,7 @@ def merge_chrom_coverage(data_dir, sample_ids,
     return gene_cov_dict
 
 
-def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=max_cpu(),
+def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=1,
                    output_dir=None, verbose=True):
     """
     For each chromosome, load the coverage arrays resulting from each alignment file, join them,

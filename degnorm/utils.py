@@ -178,7 +178,7 @@ def split_into_chunks(x, n):
     Split a list into a set of n approximately evenly-sized sublists.
 
     :param x: iterable - a list, numpy array, tuple, etc. Not a generator.
-    :param n: int number of chunks. If n >= len(x), split x into sublists of size 1.
+    :param n: int number of chunks. If n >= len(x), split x into len(x) sublists of size 1.
     :return: list of lists
     """
     csize = int(np.ceil(len(x) / n))
@@ -294,10 +294,11 @@ def argparser():
                         , '--proc-per-node'
                         , type=int
                         , required=False
-                        , default=max_cpu()
-                        , help='Number of processes to spawn per node, for within-node parallelization.'
-                               'Defaults to the number of available cores (on the worker node) - 1. '
-                               'If too high for a given node, reduce to the node\'s default.')
+                        , default=1
+                        , help='Number of processes to spawn per node, for within-node parallelization. Defaults to 1.'
+                               'DegNorm is very computationally intensive - set this as large as you can! '
+                               'If greater than max number of cores on a node, automatically reduces to '
+                               'max number of cores - 1.')
     parser.add_argument('-v'
                         , '--version'
                         , action='version'
@@ -326,9 +327,9 @@ def parse_args():
     # check validity of cores selection.
     max_ppn = max_cpu() + 1
     if args.proc_per_node > max_ppn:
-        warnings.warn('{0} is greater than the number of available cores ({1}). Reducing to {2}'
-                      .format(args.proc_per_node, max_ppn, max_ppn - 1))
-        args.proc_per_node = max_ppn - 1
+        warnings.warn('{0} is greater than the number of available cores ({1}). Reducing to {2} (to be safe).'
+                      .format(args.proc_per_node, max_ppn, max_cpu()))
+        args.proc_per_node = max_cpu()
 
     # check validity of output directory.
     if not os.path.isdir(args.output_dir):
@@ -393,7 +394,7 @@ def parse_args():
         bai_files = list()
         create_bai_files = list()
 
-        # INPUT OPTION 1: a --bam-dir was specified.
+        # INPUT OPTION 1: --bam-dir was specified.
         if args.bam_dir:
 
             # if user used both --bam-dir and --bam-files and/or --bai-files, yell at them. (only use one method).

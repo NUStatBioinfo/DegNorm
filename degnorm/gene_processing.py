@@ -5,7 +5,7 @@ from degnorm.utils import *
 from degnorm.loaders import GeneAnnotationLoader
 
 
-class GeneAnnotationProcessor():
+class GeneAnnotationProcessor:
 
     def __init__(self, annotation_file, chroms=None, verbose=True):
         """

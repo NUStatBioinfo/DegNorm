@@ -48,8 +48,8 @@ def main():
     # ---------------------------------------------------------------------------- #
     args = parse_args()
 
-    # assess number of processes to spawn within a compute node.
-    n_jobs = min(args.proc_per_node, max_cpu() + 1) if args.proc_per_node else max_cpu()
+    # number of processes to spawn within a compute node.
+    n_jobs = args.proc_per_node
 
     # determine if we're only keeping uniquely-mapped reads
     unique_alignments = not args.non_unique_alignments
@@ -295,8 +295,8 @@ def main():
                              .format(len(gene_cov_dict)))
 
             # # remove raw sample coverage, read count files.
-            # for s_id in sample_ids:
-            #     shutil.rmtree(os.path.join(output_dir, s_id))
+            for s_id in sample_ids:
+                shutil.rmtree(os.path.join(output_dir, s_id))
 
             # ---------------------------------------------------------------------------- #
             # Reorder read counts, genes, exons according to the ordering of the genes
@@ -433,8 +433,7 @@ def main():
                                       , nmf_iter=args.nmf_iter
                                       , downsample_rate=args.downsample_rate
                                       , n_jobs=n_jobs
-                                      , skip_baseline_selection=args.skip_baseline_selection
-                                      , tmpdir=output_dir)
+                                      , skip_baseline_selection=args.skip_baseline_selection)
 
     # drop large data objects we don't need anymore.
     del gene_cov_dict, read_count_df
