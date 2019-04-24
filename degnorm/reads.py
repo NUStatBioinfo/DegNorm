@@ -106,7 +106,7 @@ class BamReadsProcessor:
         :param output_dir: str path to DegNorm output directory where coverage array files will be saved.
         If not specified, will use directory where RNA Seq experiment file is located.
         :param chroms: list of str names of chromosomes to load.
-        :param n_jobs: int number of CPUs to use for determining genome coverage.
+        :param n_jobs: int number of threads to use while determining genome coverage.
         :param unique_alignment: bool indicator - drop reads with NH:i:<x> flag where x > 1.
         :param verbose: bool indicator should progress be written to logger?
         """
