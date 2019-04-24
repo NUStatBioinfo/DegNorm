@@ -9,7 +9,7 @@ distributed version is `degnorm_mpi`.
 ## Inputs
 You only need two types of files to supply `degnorm` - .bam files (0-indexed) and a .gtf file (1-indexed) if you have `samtools` in your `$PATH`. If you do not have `samtools`, you will also need [bam index files]([bam index files](https://www.biostars.org/p/15847/)) to accompany your .bam files.
 
-#### 1. Align and sort aligned reads
+#### 1. (Optional) index files (.bai)
 Before running DegNorm, you will need to sort (and optionally, index) them with `samtools sort`. This command just re-orders reads
 by chromosome and starting index, so that they can be more useful to DegNorm later on.
 
@@ -26,9 +26,9 @@ first, DegNorm will run `samtools index` to create an index file for each input 
 
 Within the .bam files **reads are assumed 0-indexed**.
 
-#### 2. (Paired or single end) aligned and sorted reads data
+#### 3. Paired or single-end aligned and sorted reads (.bam)
 At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
-RNA-Seq sample. Use `p` to refer to the total number of samples.
+RNA-Seq sample. We refer to the total number of samples as `p`.
 
 If .bai files are not submitted, `degnorm` will look for .bai files named after the .bam files only with the ".bai" extension.
 If no such file is found, `degnorm` will attempt to build one with the `samtools index` command. This will only work if the .bam files are sorted.
@@ -43,7 +43,7 @@ Argument    | Required? |    Meaning
 `--bai-files` | If `samtools` is not in the `$PATH` and neither `--warm-start-dir` nor `--bam-dir` are specified | Set of individual .bai files. If specified, they must be in the order corresponding to `--bam-files`.
 `--bam-dir`   | If neither `--warm-start-dir` nor `--bam-files` are specified | Directory containing .bam and .bai files for a pipeline run. It is assumed the .bai files have the same name as the .bam files, just with a different extension.
 
-#### 3. Genome annotation file
+#### 2. Genome annotation file (.gtf)
 DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-index and that the file abides by the standard [.gtf conventions](https://useast.ensembl.org/info/website/upload/gff.html).
 
 Argument    | Required? |    Meaning
@@ -65,7 +65,7 @@ Argument    | Required? |    Meaning
 
 Argument    | Required? |    Meaning
 ----------- | --------- | ------------
-`-o`, `--output-dir` | No | Defaults to the current working directory. Use to specify location where pipeline output directory will be written.
+`-o`, `--output-dir` | No | Output directory. Default is current working directory. Directory will be created if it doesn't currently. If not supplied or if directory already exists, DegNorm creates a new output directory `degnorm_mmddYYYY_HHMMSS`.
 `--plot-genes` | No | Names of genes for which to render coverage plots. Sequence of explictly stated gene names or a .txt file containing one gene name per line.
 `-d`, `--downsample-rate` | No | Integer downsampling rate. Systematic samples of a coverage matrix are used to speed up NMF iterations.
 `--nmf-iter` | No | Number of iterations per NMF-OA approximation. The higher the more accurate the approximation, but the more costly in terms of time.
@@ -73,7 +73,7 @@ Argument    | Required? |    Meaning
 `--minimax-coverage` | No | Minimum cross-sample maximum coverage for a gene before it is included in the DegNorm pipeline. Can be used to exclude relatively low-coverage genes.
  `-s`, `--skip-baseline-selection` | No | Flag to skip baseline selection, will greatly speed up DegNorm iterations.
  `--non-unique-alignments` | No | Flag, allow non-uniquely mapped reads. Otherwise, DegNorm only keeps reads with `NH` (number of hits) == 1 (default behavior).
- `-p`, `--proc-per-node` | No | Integer number of processes to spawn per compute node. The more the better.
+ `-p`, `--proc-per-node` | No | Integer number of processes to spawn per compute node. The more the better. Defaults to a lonely 1.
 
 
 ## Example usage
@@ -97,7 +97,8 @@ commands will sort the .bam files and create .bai files, all with `samtools`:
 ### Launching a full `degnorm` run "the verbose way"
 
 Next, after the alignment files have been sorted (and optionally indexed), let's run `degnorm` "the verbose way" by enumerating 
-each .bam and .bai file individually. Suppose we have two sorted alignment files, `S1_sorted.bam` and `S2_sorted.bam`.
+each .bam and .bai file individually. Suppose we have two sorted alignment files, `S1_sorted.bam` and `S2_sorted.bam`, and that we want
+to save the results of the pipeline to a new directory called `degnorm_output`.
     
     # run degnorm on two samples on 20 cores, using 100 NMF iterations per gene
     degnorm --bam-files S1_sorted.bam S2_sorted.bam \
@@ -112,7 +113,7 @@ the alignment files, "S1_sorted.bam" and "S2_sorted.bam." If those index files c
 
 ### Launching a full `degnorm` run "the easy way"
 
-It's probably just easier to supply `degnorm` with an input directory containing all of our .bam files, instead of each .bam file individually.
+It's probably just easier to supply `degnorm` with an input data directory containing all of our .bam files, instead of each .bam file individually.
 Suppose that data directory is located at `degnorm_data/GBM`.
  Let's also use 5 DegNorm iterations, 50 NMF iterations per gene per NMF iteration, and route output to a directory besides the current working directory.
 
@@ -125,7 +126,7 @@ Suppose that data directory is located at `degnorm_data/GBM`.
 ### Using a warm start directory
 
 After one pipeline run, we could start `degnorm` from the output directory resulting from the first run - this directory is known as the "warm start" directory. This time, let's exclude genes with a maximum coverage
-(across all samples) less than 20, and run DegNorm with only 3 iterations. In this example, `DegNorm_102118_081045` was generated automatically from one of the prior DegNorm runs.
+(across all samples) less than 20, and run DegNorm with only 3 iterations. In this example, the `DegNorm_102118_081045` warm start directory would have been generated from a prior DegNorm run.
 
     degnorm --warm-start-dir degnorm_output/DegNorm_102118_081045 \
         -p 20 \

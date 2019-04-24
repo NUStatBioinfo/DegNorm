@@ -3,14 +3,13 @@ from degnorm.utils import *
 from pandas import read_table
 
 
-class Loader():
+class Loader:
     def __init__(self, filetypes):
         """
         Generic file loader class.
 
         :param filetypes: str or list of file extensions, only load files that .endswith(filetype). Using a list
-        would be appropriate if there are multiple allowable file formats, e.g. .gtf and .gff files, because
-        they share mostly the same file format.
+        would be appropriate if there are multiple allowable file formats, e.g. ['.txt', '.tsv'] files.
         """
         self.filetypes = filetypes if isinstance(filetypes, list) else [filetypes]
         self.filename = None
@@ -76,19 +75,19 @@ class GeneAnnotationLoader(Loader):
 
     def __init__(self, to_load):
         """
-        .gtf or .gff file loader
+        .gtf file loader
 
-        More about .gtf or .gff fields: https://useast.ensembl.org/info/website/upload/gff.html
+        More about .gtf fields: https://useast.ensembl.org/info/website/upload/gff.html
 
         :param to_load: str the realpath to a .gtf file.
         """
-        Loader.__init__(self, ['.gtf', '.gff'])
+        Loader.__init__(self, '.gtf')
         self.get_file(to_load)
 
     @staticmethod
     def _attribute_to_gene(attribute, exprs):
         """
-        Parse a .gtf/.gff attribute string for a gene_id or gene_name.
+        Parse a .gtf attribute string for a gene_id or gene_name.
 
         For example:
 
@@ -96,7 +95,7 @@ class GeneAnnotationLoader(Loader):
                                 , exprs = [re.compile('gene_id')])
         'DDX11L1'
 
-        :param attribute: str attribute string from .gtf/.gff file -- "A semicolon-separated list of tag-value pairs,
+        :param attribute: str attribute string from .gtf file -- "A semicolon-separated list of tag-value pairs,
         providing additional information about each feature."
         :param exprs: list of compiled regex expressions to use to find a gene_id or gene_name
         :return: str a gene_id or gene_name parsed out of attribute string
@@ -115,7 +114,7 @@ class GeneAnnotationLoader(Loader):
 
     def get_data(self):
         """
-        Load a .gtf or .gff file, extract exon regions, and subset to a pandas.DataFrame that looks like this:
+        Load a .gtf file, extract exon regions, and subset to a pandas.DataFrame that looks like this:
 
         +----------------+-----------------+-----------------+--------------------+
         |     chr        |       start     |       end       |         gene       |
@@ -134,7 +133,7 @@ class GeneAnnotationLoader(Loader):
                             , header=None
                             , usecols=list(range(9)))
         except ValueError as e:
-            raise ValueError('file {0} must have the 9 mandatory .gtf/.gff columns.'
+            raise ValueError('file {0} must have the 9 mandatory .gtf columns.'
                              'Read more at https://useast.ensembl.org/info/website/upload/gff.html')
 
         cols = ['chr', 'source', 'feature', 'start',

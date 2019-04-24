@@ -90,7 +90,7 @@ def par_apply(fun, dat, n_jobs, mem_splits):
     """
     # split up list of coverage matrices to feed to workers.
     dat = split_into_chunks(dat, n=mem_splits)
-    par_output = Parallel(n_jobs=n_jobs
+    par_output = Parallel(n_jobs=min(n_jobs, len(dat))
                           , verbose=0
                           , backend='threading')(map(delayed(fun), dat))
 
@@ -397,7 +397,7 @@ def par_apply_baseline_selection(dat, n_jobs, mem_splits, **kwargs):
     # split up coverage matrices so that no worker gets much more than 50Mb.
     dat = split_into_chunks(dat
                             , n=mem_splits)
-    baseline_dat = Parallel(n_jobs=min(n_jobs, mem_splits)
+    baseline_dat = Parallel(n_jobs=min(n_jobs, len(dat))
                             , verbose=0
                             , backend='threading')(delayed(run_baseline_selection_serial)(
         x=x
@@ -553,7 +553,7 @@ def save_results(gene_manifest_df,
 
 
 def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate=1, min_high_coverage=50,
-                       nmf_iter=100, bins=20, n_jobs=max_cpu(), skip_baseline_selection=False, random_state=123,tmpdir='.'):
+                       nmf_iter=100, bins=20, n_jobs=1, skip_baseline_selection=False, random_state=123):
     """
     Run DegNorm degradation normalization pipeline: adjust read counts, compute degradation index scores,
     and compute normalized coverage curve estimates.
@@ -665,7 +665,7 @@ def run_gene_nmfoa_mpi(comm, cov_dat, reads_dat, degnorm_iter=5, downsample_rate
 
     # determine (integer) number of data splits for threaded workers (50Mb per worker).
     mem_splits = int(np.ceil(np.sum(list(map(lambda z: z.nbytes, list(my_cov_dat.values())))) / 5e7))
-    mem_splits = mem_splits if mem_splits > n_jobs else n_jobs
+    mem_splits = max(mem_splits, n_jobs)
 
     # ---------------------------------------------------------------------------- #
     # DegNorm initialization:
