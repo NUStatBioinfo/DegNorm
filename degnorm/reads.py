@@ -1,8 +1,9 @@
-from pandas import DataFrame, IntervalIndex
+from pandas import DataFrame, IntervalIndex, read_sql_query
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
 from joblib import Parallel, delayed
 from scipy import sparse
+from sqlite3 import connect
 import pickle as pkl
 
 
@@ -687,14 +688,55 @@ class BamReadsProcessor:
                 cov_vec = np.zeros([chrom_len]
                                    , dtype=int)
 
-                # add IntervalIndex index to chromosome gene data. 0-index gene starts, gene ends because
+                # ---------------------------------------------------------------------- #
+                # Step 4.5.1: join genes on reads data
+                # so that each read is tied to a gene, for read counting purposes.
+                # ---------------------------------------------------------------------- #
+
+                # add IntervalIndex index to chromosome gene data. 0-index gene_starts, gene_ends because
                 # reads are 0-indexed.
-                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start - 1
-                                                                , right=chrom_gene_df.gene_end - 1
+                chrom_gene_df[['gene_start', 'gene_end']] = chrom_gene_df[['gene_start', 'gene_end']].values - 1
+                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start
+                                                                , right=chrom_gene_df.gene_end
                                                                 , closed='both')
 
-                # "join" genes on reads data! (so that reads are tied to genes, for read counting.)
-                reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
+                try:
+                    reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
+
+                # if there remains at least one read that doesn't land within a gene span,
+                # need to run the interval join in SQL (TODO: diagnose why this happens)
+                # as pandas doesn't offer a solution. See https://bit.ly/2Wg7Kjl.
+                except KeyError:
+                    # Make a sqlite db in memory.
+                    conn = connect(':memory:')
+
+                    # write the required data to SQL.
+                    reads_df[['read_id', 'pos']].to_sql('reads'
+                                                        , con=conn
+                                                        , index=False)
+                    chrom_gene_df[['gene_start', 'gene_end']].to_sql('genes'
+                                                                     , con=conn
+                                                                     , index=False)
+
+                    # query read IDs for reads with position within [gene_start, gene_end].
+                    qry = '''
+                    select  
+                        read_id
+                    from
+                        reads join genes on
+                        pos between gene_start and gene_end
+                    '''
+
+                    # execute valid read ID query.
+                    valid_read_ids = read_sql_query(qry
+                                                    , con=conn).read_id
+                    conn.close()
+
+                    # subset reads to reads w/ valid read ID, then join with interval index again.
+                    reads_df = reads_df[reads_df.read_id.isin(valid_read_ids)]
+                    reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
+
+                    del valid_read_ids
 
                 # loop over reads for isolated genes, incrementing read count and coverage.
                 dat = reads_df[['bounds', 'gene']].values
@@ -710,7 +752,7 @@ class BamReadsProcessor:
                     read_count_dict[gene] += 1
 
                 # ---------------------------------------------------------------------- #
-                # Step 4.5: save chromosome coverage vector.
+                # Step 4.5.2: save chromosome coverage vector.
                 # chromosome overage vector ->> compressed csr numpy array
                 # ---------------------------------------------------------------------- #
                 chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + chrom + '.npz')
