@@ -195,10 +195,10 @@ def merge_chrom_coverage(data_dir, sample_ids,
 
     ->> merge_overlap_gene_coverage(data_dir, ['sample123', 'sample124'], chrom_exon_df) ->>
 
-    {('gene Aj'): <L1 x 2 coverage array>,
-     ('gene Bj'): <L2 x 2 coverage array>,
+    {('gene Aj'): <2 x L1 coverage array>,
+     ('gene Bj'): <2 x L2 coverage array>,
      ...
-     ('gene Nj'): <LN x 2 coverage array>}
+     ('gene Nj'): <2 x LN coverage array>}
 
     :param data_dir: str path of directory containing RNA-Seq sample ID subdirectories,
      each subdirectory containing the chromosome of interest's coverage array in an .npz file, named in the fashion
@@ -223,17 +223,19 @@ def merge_chrom_coverage(data_dir, sample_ids,
     npz_files = [os.path.join(data_dir, x, 'chrom_coverage_{0}_{1}.npz'.format(x, chrom)) for x in sample_ids]
 
     # determine if this chromosome even has chromosome coverage from isolated genes to parse.
-    # This should never not be the case, but check for testing purposes.
-    random_cov_file = np.random.choice(npz_files
-                                       , size=1)[0]
+    # If so, select a random chromosome coverage file.
+    has_chrom_coverage = False
+    for random_cov_file in np.random.choice(npz_files, size=len(npz_files), replace=False):
+        if os.path.isfile(random_cov_file):
+            has_chrom_coverage = True
+            break
 
-    # if chromosome coverage file is missing for one sample, it will be missing for all samples,
-    # so skip this chromosome because there will be no chromosome coverage vectors to dice.
-    if not os.path.exists(random_cov_file):
+    # if there simply are no chromosome coverage arrays for this chromosome
+    # (e.g. if chromosome was not read in any RNA-seq experiment), return empty dictionary.
+    if not has_chrom_coverage:
         if verbose:
-            logging.info('CHR {0}: no chromosome coverage files available.'.format(chrom))
+            logging.info('CHR {0} -- no chromosome coverage files available.'.format(chrom))
 
-        # return an *empty* gene coverage matrix dictionary.
         return dict()
 
     # Keep memory manageable:
@@ -267,7 +269,7 @@ def merge_chrom_coverage(data_dir, sample_ids,
 
     use_pbar = False
     if verbose:
-        logging.info('CHR {0}: begin coverage matrix processing. \n'
+        logging.info('CHR {0} -- begin coverage matrix processing. \n'
                      'Using {1} gene splits for memory efficiency.'.format(chrom, mem_splits))
 
         # Instantiate progress bar if parsing non-negligible number of genes. Update in intervals of 5%.
@@ -295,10 +297,21 @@ def merge_chrom_coverage(data_dir, sample_ids,
         idx = 0
         for npz_file in npz_files:
 
-            # load the gene span of a sample's compressed sparse row chromosome coverage array
-            cov_vec_sp = sparse.load_npz(npz_file).transpose()[start_pos:end_pos, :]
+            # try loading the gene span of a sample's compressed sparse row chromosome coverage array.
+            if os.path.isfile(npz_file):
+                cov_vec_sp = sparse.load_npz(npz_file).transpose()[start_pos:end_pos, :]
 
-            # initialize coverage matrix (len(chrom) x p) with copy of first experiment's coverage array.
+            # in case there is no stored chromosome coverage array (e.g. if whole chrom was not read),
+            # create (len(chrom) x 1) csr matrix of zeros.
+            else:
+                if verbose and i == 0:
+                    logging.info('CHR {0} -- nonexistent chromosome coverage file {1} (imputing zeroes).'
+                                 .format(chrom, npz_file))
+
+                cov_vec_sp = sparse.csr_matrix(((end_pos - start_pos), 1)
+                                               , dtype=int)
+
+            # initialize tall coverage matrix (len(chrom) x p) with copy of first experiment's coverage array.
             if idx == 0:
                 cov_mat = cov_vec_sp.copy()
 
@@ -402,8 +415,8 @@ def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=1,
         logging.info('Joining overlapping genes\' coverage vectors into coverage matrices.')
 
     overlap_gene_cov_dicts = Parallel(n_jobs=min(n_jobs, len(chroms))
-                              , verbose=0
-                              , backend='threading')(delayed(merge_overlap_gene_coverage)(
+                                      , verbose=0
+                                      , backend='threading')(delayed(merge_overlap_gene_coverage)(
         data_dir=data_dir,
         sample_ids=sample_ids,
         chrom=chrom) for chrom in chroms)

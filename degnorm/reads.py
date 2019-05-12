@@ -1,9 +1,8 @@
-from pandas import DataFrame, IntervalIndex, read_sql_query
+from pandas import DataFrame, IntervalIndex
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
 from joblib import Parallel, delayed
 from scipy import sparse
-from sqlite3 import connect
 import pickle as pkl
 
 
@@ -371,11 +370,8 @@ class BamReadsProcessor:
         reads_df['end_pos'] = reads_df['pos'] + reads_df['cigar'].apply(
             lambda x: sum([int(k) for k, v in re.findall(r'(\d+)([A-Z]?)', x)]))
 
-        # assign row number to read ID column, then use as index.
+        # assign row number to read ID column.
         reads_df['read_id'] = range(reads_df.shape[0])
-        reads_df.set_index('read_id'
-                           , drop=False
-                           , inplace=True)
 
         # easy win: drop reads whose start position is < minimum start position of a gene,
         # and drop reads whose end position is > maximum start position of a gene
@@ -482,8 +478,7 @@ class BamReadsProcessor:
 
         # drop reads that don't fully intersect exonic regions.
         if drop_reads:
-            reads_df.drop(drop_reads
-                          , inplace=True)
+            reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
 
         if self.paired:
             # if paired reads, don't actually need .1 and .2 constituent reads anymore.
@@ -605,12 +600,11 @@ class BamReadsProcessor:
                 # drop ambiguous reads from larger set of chromosome reads,
                 # should speed up gene-read searches in the future.
                 if drop_reads:
-                    reads_df.drop(drop_reads
-                                  , inplace=True)
+                    reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
 
                     del drop_reads
 
-                # pare down coverage vectors for genes in overlap grou to their concatenated exon regions.
+                # pare down coverage vectors for genes in overlap group to their concatenated exon regions.
                 for i in range(len(ol_genes)):
                     ol_gene = ol_genes[i]
                     ol_cov_dict[ol_gene] = ol_cov_dict[ol_gene][transcript_idx[i] - ol_gene_starts[i]]
@@ -675,8 +669,7 @@ class BamReadsProcessor:
 
             # drop reads that do not lie completely within area covered by isolated genes.
             if drop_reads:
-                reads_df.drop(drop_reads
-                              , inplace=True)
+                reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
 
             del drop_reads
             gc.collect()
@@ -693,9 +686,10 @@ class BamReadsProcessor:
                 # so that each read is tied to a gene, for read counting purposes.
                 # ---------------------------------------------------------------------- #
 
-                # add IntervalIndex index to chromosome gene data. 0-index gene_starts, gene_ends because
-                # reads are 0-indexed.
-                chrom_gene_df[['gene_start', 'gene_end']] = chrom_gene_df[['gene_start', 'gene_end']].values - 1
+                # 0-index gene_starts, gene_ends because reads are 0-indexed.
+                chrom_gene_df.loc[:, ['gene_start', 'gene_end']] -= 1
+
+                # add IntervalIndex index to chromosome gene data.
                 chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start
                                                                 , right=chrom_gene_df.gene_end
                                                                 , closed='both')
@@ -704,39 +698,34 @@ class BamReadsProcessor:
                     reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
 
                 # if there remains at least one read that doesn't land within a gene span,
-                # need to run the interval join in SQL (TODO: diagnose why this happens)
-                # as pandas doesn't offer a solution. See https://bit.ly/2Wg7Kjl.
+                # try another sweep to remove reads not within gene regions. (TODO: diagnose why this happens)
                 except KeyError:
-                    # Make a sqlite db in memory.
-                    conn = connect(':memory:')
 
-                    # write the required data to SQL.
-                    reads_df[['read_id', 'pos']].to_sql('reads'
-                                                        , con=conn
-                                                        , index=False)
-                    chrom_gene_df[['gene_start', 'gene_end']].to_sql('genes'
-                                                                     , con=conn
-                                                                     , index=False)
+                    # outline valid read start positions along transcript.
+                    tscript_vec = np.ones([chrom_len]
+                                          , dtype=int)
 
-                    # query read IDs for reads with position within [gene_start, gene_end].
-                    qry = '''
-                    select  
-                        read_id
-                    from
-                        reads join genes on
-                        pos between gene_start and gene_end
-                    '''
+                    for i in range(chrom_gene_df.shape[0]):
+                        left = chrom_gene_df.index[i].left
+                        right = chrom_gene_df.index[i].right + 1
+                        tscript_vec[left:right] = 0
 
-                    # execute valid read ID query.
-                    valid_read_ids = read_sql_query(qry
-                                                    , con=conn).read_id
-                    conn.close()
+                    # iterate over reads, checking whether read start position falls within
+                    # a [gene_start, gene_end] region.
+                    drop_reads = list()
+                    for i in range(reads_df.shape[0]):
+                        if tscript_vec[reads_df.pos.iloc[i]] != 0:
+                            drop_reads.append(reads_df.read_id.iloc[i])
+
+                    # drop reads that do not start within valid [gene_start, gene_end] regions.
+                    if drop_reads:
+                        reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
+
+                    del tscript_vec, drop_reads
+                    gc.collect()
 
                     # subset reads to reads w/ valid read ID, then join with interval index again.
-                    reads_df = reads_df[reads_df.read_id.isin(valid_read_ids)]
                     reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
-
-                    del valid_read_ids
 
                 # loop over reads for isolated genes, incrementing read count and coverage.
                 dat = reads_df[['bounds', 'gene']].values
