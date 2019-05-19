@@ -181,10 +181,10 @@ def plot_gene_coverage(ke, f, x_exon, gene
         return fig
 
     else:
-        if not os.path.isdir(os.path.join(save_dir, chrom)):
-            os.makedirs(os.path.join(save_dir, chrom))
+        if not os.path.isdir(os.path.join(save_dir, str(chrom))):
+            os.makedirs(os.path.join(save_dir, str(chrom)))
 
-        fig_path = os.path.abspath(os.path.join(save_dir, chrom, '{0}_coverage.png'.format(gene)))
+        fig_path = os.path.abspath(os.path.join(save_dir, str(chrom), '{0}_coverage.png'.format(gene)))
         fig.savefig(fig_path
                     , dpi=150
                     , bbox_inches='tight')

@@ -6,7 +6,6 @@ from joblib import Parallel, delayed
 import pickle as pkl
 import numpy as np
 import os
-import re
 import gc
 import tqdm
 
@@ -63,7 +62,7 @@ def merge_read_counts(data_dir, sample_ids, chroms):
                                        , 'read_counts_{0}_{1}.csv'.format(sample_id, chrom))
 
             if not os.path.isfile(counts_file):
-                raise IOError('read counts file {0} not available!'.format(counts_file))
+                raise FileNotFoundError('read counts file {0} not available!'.format(counts_file))
 
             # load sample's chromosome's read counts.
             sample_chrom_counts_df = read_csv(counts_file)
@@ -437,7 +436,7 @@ def merge_coverage(data_dir, sample_ids, exon_df, n_jobs=1,
         # save {gene: coverage matrix} dictionary data per chromosome,
         # in a new directory named after the chromosome.
         if output_dir:
-            save_dir = os.path.join(output_dir, chrom)
+            save_dir = os.path.join(output_dir, str(chrom))
 
             if not os.path.isdir(save_dir):
                 os.makedirs(save_dir)

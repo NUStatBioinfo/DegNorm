@@ -503,7 +503,7 @@ def save_results(gene_manifest_df,
     # save estimated coverage matrices to genes nested within chromosomes.
     chrom_gene_dfs = list()
     for chrom in manifest_chroms:
-        chrom_dir = os.path.join(output_dir, chrom)
+        chrom_dir = os.path.join(output_dir, str(chrom))
 
         if not os.path.isdir(chrom_dir):
             os.makedirs(chrom_dir)

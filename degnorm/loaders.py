@@ -131,10 +131,8 @@ class GeneAnnotationLoader(Loader):
                           , sep='\t'
                           , header=None
                           , usecols=list(range(9)))
-        except ValueError as e:
-            raise ValueError('File {0} must have the 9 mandatory .gtf columns.\n'
-                             'Read more at https://useast.ensembl.org/info/website/upload/gff.html'
-                             .format(self.filename))
+        except ValueError:
+            raise ValueError('File {0} must have the 9 mandatory .gtf columns.\nRead more at https://useast.ensembl.org/info/website/upload/gff.html'.format(self.filename))
 
         cols = ['chr', 'source', 'feature', 'start',
                 'end', 'score', 'strand', 'frame', 'attribute']

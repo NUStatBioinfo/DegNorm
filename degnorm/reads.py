@@ -613,7 +613,7 @@ class BamReadsProcessor:
             # Step 3.5: save overlapping genes' coverage vectors.
             # overlapping gene coverage vector dict ->> pkl file.
             # ---------------------------------------------------------------------- #
-            ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + chrom + '.pkl')
+            ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + str(chrom) + '.pkl')
             if self.verbose:
                 logging.info('SAMPLE {0}, CHR {1} -- saving overlapping gene coverage vectors.'
                              .format(self.sample_id, chrom))
@@ -744,7 +744,7 @@ class BamReadsProcessor:
                 # Step 4.5.2: save chromosome coverage vector.
                 # chromosome overage vector ->> compressed csr numpy array
                 # ---------------------------------------------------------------------- #
-                chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + chrom + '.npz')
+                chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + str(chrom) + '.npz')
 
                 if self.verbose:
                     logging.info('SAMPLE {0}, CHR {1} -- saving csr-compressed chrom coverage array.'
@@ -769,7 +769,7 @@ class BamReadsProcessor:
         # Step 5. Save read counts.
         # chromosome read counts ->> .csv file
         # ---------------------------------------------------------------------- #
-        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + chrom + '.csv')
+        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + str(chrom) + '.csv')
 
         # construct read count DataFrame from read count dictionary.
         read_count_df = DataFrame({'gene': list(read_count_dict.keys())
