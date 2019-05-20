@@ -130,7 +130,8 @@ class GeneAnnotationLoader(Loader):
             df = read_csv(self.filename
                           , sep='\t'
                           , header=None
-                          , usecols=list(range(9)))
+                          , usecols=list(range(9))
+                          , low_memory=False)
         except ValueError:
             raise ValueError('File {0} must have the 9 mandatory .gtf columns.\nRead more at https://useast.ensembl.org/info/website/upload/gff.html'.format(self.filename))
 
