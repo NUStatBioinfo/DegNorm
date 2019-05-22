@@ -228,7 +228,8 @@ def load_di_scores(data_dir, drop_chroms=True, order=False):
     out = check_for_files(data_dir
                           , file_names=di_file)
     rho_df = read_csv(os.path.join(data_dir, di_file)
-                      , index_col='gene')
+                      , index_col='gene'
+                      , low_memory=False)
 
     # organize genes in alphabetical order.
     genes = rho_df.index.values
