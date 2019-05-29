@@ -163,6 +163,9 @@ Note that additional steps would be required to convert this script into a SLURM
 Raw and estimated coverage data are stored in separate `.pkl` files, one file per chromosome. See the [posthoc analysis](../howtos/posthoc_analysis.md)
  documentation for helper functions to access coverage data.
 
+A gene that has 100% missing coverage (no coverage found in any RNA-seq sample) will not be run through DegNorm for numerical stability purposes and will therefore not have a
+coverage matrix stored in any of the `.pkl` files.
+
 In addition to per-gene coverage matrices, `degnorm` will produce raw and degradation-adjusted read counts, a matrix of degradation index scores,
 a matrix describing which genes were sent through the baseline selection procedure and when, along with various summary graphics and a pipeline summary report. 
 The report will render as an .html file, but if you have `pandoc` installed

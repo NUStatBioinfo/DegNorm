@@ -1,4 +1,4 @@
-from pandas import DataFrame, IntervalIndex
+from pandas import DataFrame, IntervalIndex, set_option
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
 from joblib import Parallel, delayed
@@ -356,6 +356,9 @@ class BamReadsProcessor:
 
         # initialize read counts.
         read_count_dict = {gene: 0 for gene in chrom_gene_df.gene}
+
+        # set pandas.options.mode.chained_assignment = None to avoid SettingWithCopyWarnings
+        set_option('mode.chained_assignment', None)
 
         # ---------------------------------------------------------------------- #
         # Step 1. Load chromosome's reads and index them.
