@@ -1,4 +1,4 @@
-from pandas import DataFrame, IntervalIndex
+from pandas import DataFrame, IntervalIndex, set_option
 from degnorm.utils import *
 from degnorm.loaders import BamLoader
 from joblib import Parallel, delayed
@@ -357,6 +357,9 @@ class BamReadsProcessor:
         # initialize read counts.
         read_count_dict = {gene: 0 for gene in chrom_gene_df.gene}
 
+        # set pandas.options.mode.chained_assignment = None to avoid SettingWithCopyWarnings
+        set_option('mode.chained_assignment', None)
+
         # ---------------------------------------------------------------------- #
         # Step 1. Load chromosome's reads and index them.
         # ---------------------------------------------------------------------- #
@@ -370,11 +373,8 @@ class BamReadsProcessor:
         reads_df['end_pos'] = reads_df['pos'] + reads_df['cigar'].apply(
             lambda x: sum([int(k) for k, v in re.findall(r'(\d+)([A-Z]?)', x)]))
 
-        # assign row number to read ID column, then use as index.
+        # assign row number to read ID column.
         reads_df['read_id'] = range(reads_df.shape[0])
-        reads_df.set_index('read_id'
-                           , drop=False
-                           , inplace=True)
 
         # easy win: drop reads whose start position is < minimum start position of a gene,
         # and drop reads whose end position is > maximum start position of a gene
@@ -481,8 +481,7 @@ class BamReadsProcessor:
 
         # drop reads that don't fully intersect exonic regions.
         if drop_reads:
-            reads_df.drop(drop_reads
-                          , inplace=True)
+            reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
 
         if self.paired:
             # if paired reads, don't actually need .1 and .2 constituent reads anymore.
@@ -604,12 +603,11 @@ class BamReadsProcessor:
                 # drop ambiguous reads from larger set of chromosome reads,
                 # should speed up gene-read searches in the future.
                 if drop_reads:
-                    reads_df.drop(drop_reads
-                                  , inplace=True)
+                    reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
 
                     del drop_reads
 
-                # pare down coverage vectors for genes in overlap grou to their concatenated exon regions.
+                # pare down coverage vectors for genes in overlap group to their concatenated exon regions.
                 for i in range(len(ol_genes)):
                     ol_gene = ol_genes[i]
                     ol_cov_dict[ol_gene] = ol_cov_dict[ol_gene][transcript_idx[i] - ol_gene_starts[i]]
@@ -618,7 +616,7 @@ class BamReadsProcessor:
             # Step 3.5: save overlapping genes' coverage vectors.
             # overlapping gene coverage vector dict ->> pkl file.
             # ---------------------------------------------------------------------- #
-            ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + chrom + '.pkl')
+            ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + str(chrom) + '.pkl')
             if self.verbose:
                 logging.info('SAMPLE {0}, CHR {1} -- saving overlapping gene coverage vectors.'
                              .format(self.sample_id, chrom))
@@ -674,8 +672,7 @@ class BamReadsProcessor:
 
             # drop reads that do not lie completely within area covered by isolated genes.
             if drop_reads:
-                reads_df.drop(drop_reads
-                              , inplace=True)
+                reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
 
             del drop_reads
             gc.collect()
@@ -687,14 +684,51 @@ class BamReadsProcessor:
                 cov_vec = np.zeros([chrom_len]
                                    , dtype=int)
 
-                # add IntervalIndex index to chromosome gene data. 0-index gene starts, gene ends because
-                # reads are 0-indexed.
-                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start - 1
-                                                                , right=chrom_gene_df.gene_end - 1
+                # ---------------------------------------------------------------------- #
+                # Step 4.5.1: join genes on reads data
+                # so that each read is tied to a gene, for read counting purposes.
+                # ---------------------------------------------------------------------- #
+
+                # 0-index gene_starts, gene_ends because reads are 0-indexed.
+                chrom_gene_df.loc[:, ['gene_start', 'gene_end']] -= 1
+
+                # add IntervalIndex index to chromosome gene data.
+                chrom_gene_df.index = IntervalIndex.from_arrays(chrom_gene_df.gene_start
+                                                                , right=chrom_gene_df.gene_end
                                                                 , closed='both')
 
-                # "join" genes on reads data! (so that reads are tied to genes, for read counting.)
-                reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
+                try:
+                    reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
+
+                # if there remains at least one read that doesn't land within a gene span,
+                # try another sweep to remove reads not within gene regions. (TODO: diagnose why this happens)
+                except KeyError:
+
+                    # outline valid read start positions along transcript.
+                    tscript_vec = np.ones([chrom_len]
+                                          , dtype=int)
+
+                    for i in range(chrom_gene_df.shape[0]):
+                        left = chrom_gene_df.index[i].left
+                        right = chrom_gene_df.index[i].right + 1
+                        tscript_vec[left:right] = 0
+
+                    # iterate over reads, checking whether read start position falls within
+                    # a [gene_start, gene_end] region.
+                    drop_reads = list()
+                    for i in range(reads_df.shape[0]):
+                        if tscript_vec[reads_df.pos.iloc[i]] != 0:
+                            drop_reads.append(reads_df.read_id.iloc[i])
+
+                    # drop reads that do not start within valid [gene_start, gene_end] regions.
+                    if drop_reads:
+                        reads_df = reads_df[~reads_df.read_id.isin(drop_reads)]
+
+                    del tscript_vec, drop_reads
+                    gc.collect()
+
+                    # subset reads to reads w/ valid read ID, then join with interval index again.
+                    reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
 
                 # loop over reads for isolated genes, incrementing read count and coverage.
                 dat = reads_df[['bounds', 'gene']].values
@@ -710,10 +744,10 @@ class BamReadsProcessor:
                     read_count_dict[gene] += 1
 
                 # ---------------------------------------------------------------------- #
-                # Step 4.5: save chromosome coverage vector.
+                # Step 4.5.2: save chromosome coverage vector.
                 # chromosome overage vector ->> compressed csr numpy array
                 # ---------------------------------------------------------------------- #
-                chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + chrom + '.npz')
+                chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + str(chrom) + '.npz')
 
                 if self.verbose:
                     logging.info('SAMPLE {0}, CHR {1} -- saving csr-compressed chrom coverage array.'
@@ -738,7 +772,7 @@ class BamReadsProcessor:
         # Step 5. Save read counts.
         # chromosome read counts ->> .csv file
         # ---------------------------------------------------------------------- #
-        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + chrom + '.csv')
+        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + str(chrom) + '.csv')
 
         # construct read count DataFrame from read count dictionary.
         read_count_df = DataFrame({'gene': list(read_count_dict.keys())

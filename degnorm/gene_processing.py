@@ -229,19 +229,3 @@ def get_gene_overlap_structure(gene_df):
 
     return {'overlap_genes': overlap_genes
             , 'isolated_genes': isolated_genes}
-
-
-# if __name__ == '__main__':
-#     import os
-#     import time
-#
-#     gtf_file = os.path.join(os.getenv('HOME'), 'nu', 'jiping_research', 'data', 'rna_seq', 'genes.gtf')
-#     processor = GeneAnnotationProcessor(gtf_file)
-#
-#     start = time.time()
-#     exon_df = processor.run()
-#     end = time.time()
-#
-#     print('human genome .gtf file parsing time: {0}'.format(end - start))
-#     print('exon_df.shape: {0}'.format(exon_df.shape))
-#     print(exon_df.head())

@@ -11,9 +11,11 @@ DegNorm: Normalizing RNA degradation in RNA-Seq experiments
    :scale: 50 %
    :align: center
 
-Visit the DegNorm homepage
+Visit the DegNorm homepage and Genome Biology article
 -----------------------------------------------------------
 Please visit the `DegNorm homepage <https://nustatbioinfo.github.io/DegNorm/>`_ for docs, install guide, and tutorials.
+
+Read the 2019 DegNorm paper in Genome Biology: `DegNorm: normalization of generalized transcript degradation improves accuracy in RNA-seq analysis <https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1682-7>`_
 
 License
 -----------------------------------------------------------

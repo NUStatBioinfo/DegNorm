@@ -48,7 +48,8 @@ class CoverageLoader(object):
         self.genes = genes
 
         # read in required data: exon positioning data and sample ID's (saved in DI score data).
-        self.exon_df = read_csv(os.path.join(self.data_dir, 'gene_exon_metadata.csv'))
+        self.exon_df = read_csv(os.path.join(self.data_dir, 'gene_exon_metadata.csv')
+                                , low_memory=False)
         with open(os.path.join(self.data_dir, 'degradation_index_scores.csv'), 'r') as di:
             self.sample_ids = di.readline().strip().split(',')[2:]
 
@@ -77,8 +78,8 @@ class CoverageLoader(object):
         # iterate over unique chromosomes corresponding to genes requested.
         for chrom in self.exon_df.chr.unique():
 
-            raw_file = os.path.join(self.data_dir, chrom, 'coverage_matrices_{0}.pkl'.format(chrom))
-            ests_file = os.path.join(self.data_dir, chrom, 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
+            raw_file = os.path.join(self.data_dir, str(chrom), 'coverage_matrices_{0}.pkl'.format(chrom))
+            ests_file = os.path.join(self.data_dir, str(chrom), 'estimated_coverage_matrices_{0}.pkl'.format(chrom))
 
             # load the payload: gene dictionaries with coverage curve numpy arrays.
             with open(raw_file, 'rb') as raw, open(ests_file, 'rb') as est:
@@ -227,7 +228,7 @@ def get_coverage_data(genes, degnorm_dir, save_dir=None):
         if save_dir:
 
             # extract gene's chromosome name.
-            chrom = cov_ldr.exon_df[cov_ldr.exon_df.gene == this_gene].chr.iloc[0]
+            chrom = str(cov_ldr.exon_df[cov_ldr.exon_df.gene == this_gene].chr.iloc[0])
 
             # ensure writability of coverage data: create missing directories.
             if not os.path.isdir(os.path.join(save_dir, chrom)):

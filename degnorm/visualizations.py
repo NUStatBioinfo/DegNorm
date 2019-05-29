@@ -181,10 +181,10 @@ def plot_gene_coverage(ke, f, x_exon, gene
         return fig
 
     else:
-        if not os.path.isdir(os.path.join(save_dir, chrom)):
-            os.makedirs(os.path.join(save_dir, chrom))
+        if not os.path.isdir(os.path.join(save_dir, str(chrom))):
+            os.makedirs(os.path.join(save_dir, str(chrom)))
 
-        fig_path = os.path.abspath(os.path.join(save_dir, chrom, '{0}_coverage.png'.format(gene)))
+        fig_path = os.path.abspath(os.path.join(save_dir, str(chrom), '{0}_coverage.png'.format(gene)))
         fig.savefig(fig_path
                     , dpi=150
                     , bbox_inches='tight')
@@ -228,7 +228,8 @@ def load_di_scores(data_dir, drop_chroms=True, order=False):
     out = check_for_files(data_dir
                           , file_names=di_file)
     rho_df = read_csv(os.path.join(data_dir, di_file)
-                      , index_col='gene')
+                      , index_col='gene'
+                      , low_memory=False)
 
     # organize genes in alphabetical order.
     genes = rho_df.index.values

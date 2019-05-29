@@ -1,6 +1,6 @@
 import pysam
 from degnorm.utils import *
-from pandas import read_table
+from pandas import read_csv
 
 
 class Loader:
@@ -49,7 +49,6 @@ class BamLoader(Loader):
 
         :param to_load: str the realpath to a .bam file.
         """
-
         Loader.__init__(self, '.bam')
         self.get_file(to_load)
 
@@ -128,13 +127,13 @@ class GeneAnnotationLoader(Loader):
         """
         # load file only if there are at least 9 columns.
         try:
-            df = read_table(self.filename
-                            , sep='\t'
-                            , header=None
-                            , usecols=list(range(9)))
-        except ValueError as e:
-            raise ValueError('file {0} must have the 9 mandatory .gtf columns.'
-                             'Read more at https://useast.ensembl.org/info/website/upload/gff.html')
+            df = read_csv(self.filename
+                          , sep='\t'
+                          , header=None
+                          , usecols=list(range(9))
+                          , low_memory=False)
+        except ValueError:
+            raise ValueError('File {0} must have the 9 mandatory .gtf columns.\nRead more at https://useast.ensembl.org/info/website/upload/gff.html'.format(self.filename))
 
         cols = ['chr', 'source', 'feature', 'start',
                 'end', 'score', 'strand', 'frame', 'attribute']

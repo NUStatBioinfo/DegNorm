@@ -51,7 +51,6 @@ def main():
         read_count_df = load_dat['read_count_df']
         genes_df = load_dat['genes_df']
         sample_ids = load_dat['sample_ids']
-        genes = list(gene_cov_dict.keys())
 
     # ---------------------------------------------------------------------------- #
     # Path 2: .bam file preprocessing path.

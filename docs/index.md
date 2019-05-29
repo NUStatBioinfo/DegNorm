@@ -1,6 +1,8 @@
 # DegNorm Home
 
-DegNorm source code on [GitHub](https://github.com/NUStatBioinfo/DegNorm)
+- Visit the DegNorm source code on [GitHub](https://github.com/NUStatBioinfo/DegNorm)
+
+- Read the 2019 DegNorm paper in Genome Biology: [DegNorm: normalization of generalized transcript degradation improves accuracy in RNA-seq analysis](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1682-7)
 
 ![degnorm_logo](img/degnorm_logo.png)
 

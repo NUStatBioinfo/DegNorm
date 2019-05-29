@@ -35,8 +35,10 @@ def load_from_previous(degnorm_dir, new_dir):
         shutil.copy(exon_file, os.path.join(new_dir, 'gene_exon_metadata.csv'))
         shutil.copy(read_count_file, os.path.join(new_dir, 'read_counts.csv'))
 
-        exon_df = read_csv(exon_file)
-        read_count_df = read_csv(read_count_file)
+        exon_df = read_csv(exon_file
+                           , low_memory=False)
+        read_count_df = read_csv(read_count_file
+                                 , low_memory=False)
 
     except FileNotFoundError as e:
         raise e
@@ -102,4 +104,3 @@ def load_from_previous(degnorm_dir, new_dir):
     output['sample_ids'] = sample_ids
 
     return output
-
