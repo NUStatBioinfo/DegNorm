@@ -1,7 +1,14 @@
 # Release Notes
 
+## Current hotfixes in development
+- Added logic in `reads.chromosome_coverage_read_counts` method to search for requisite coverage and read count files
+before attempting to compute. This lets users who had DegNorm runs that died in the middle of coverage/read count
+computations start from where they left off. This is *not* the same as using a warm-start directory, which 
+begins a DegNorm run beginning from the point after every (sample, chromosome) coverage/read counts have been computed.
+This hotfix attempts to address issue #30.
+
 ## ``v0.1.4`` (April 2019)
-- DegNorm accepted to Genome Biology!
+- DegNorm accepted to Genome Biology! [Read the paper](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1682-7).
 - Accounting bug fixes: correctly use pysam-loaded .bam files as 0-indexed.
 - Separate read counting for genes with mutual overlap vs. isolated genes.
 - In `coverage_read_counts` save parsed counts, coverage to disk instead of returning complex file tree dict.
