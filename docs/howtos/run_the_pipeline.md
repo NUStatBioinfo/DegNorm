@@ -60,6 +60,7 @@ chr1 |unknown | exon | 324439	| 326938 |	. |	+ |	. |	gene_id "LOC100133331"; gen
 
 
 Specifically, the `attribute` field must, at a minimum, contain either a `gene_name` or `gene_id` attribute so that we can pair exons to uniquely-identified genes.
+Also, .gtf records will be filtered down to those whose `feature` = "exon".
 
 
 ## Using a warm start directory
