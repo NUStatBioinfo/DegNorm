@@ -319,9 +319,19 @@ class BamReadsProcessor:
         The cigar scores from single and paired reads are parsed according to cigar_segment_bounds.
 
         1. Saves compressed coverage array to self.save_dir with file name 'sample_[sample_id]_[chrom].npz' for
-        genes with no overlap with any other gene.
-        2. Saves gene coverage arrays (only their exonic regions) to serialized pickle files.
-        3. Saves read counts to self.save_dir with file name 'read_counts_[sample_id]_[chrom].csv'
+         genes with no overlap with any other gene (a.k.a. "isolated genes") with filename
+         'chrom_coverage_[sample_id]_[chrom].npz'
+        2. Saves a dictionary of {gene_name: 1-d numpy gene coverage arrays (concatenated exonic regions)}
+         to a serialized pickle file for all genes that exonic have overlap with other genes (a.k.a. "overlap genes")
+         with filename 'overlap_coverage_[sample_id]_[chrom].pkl'
+        3. Saves read counts to self.save_dir with filename 'read_counts_[sample_id]_[chrom].csv'
+
+        NOTE: if the required chromosome coverage files and read count file *already* exist prior to any coverage/read count
+        calculations, Degnorm will default to using those files. This will only happen if a user either moves
+        coverage and read count files from a prior Degnorm pipeline run to the appropriate chromosome directories
+        of the target output directory, or if they re-use a Degnorm pipeline run's output directory. This is *NOT*
+        the same as using a warm-start directory. A warm-start skips coverage/read count calculations entirely,
+        assuming a prior Degnorm run successfully parse all coverage/read counts.
 
         :param chrom_gene_df: pandas.DataFrame with `chr`, `gene`, `gene_start`, and `gene_end` columns
         that delineate the start and end position of a gene's transcript on a chromosome, must be
@@ -353,6 +363,27 @@ class BamReadsProcessor:
 
         if n_isolated_genes + n_overlap_genes != n_genes:
             raise ValueError('number of genes contained in gene_overlap_dat does not match that of chrom_gene_df.')
+
+        # create filepaths to non-overlapping read coverage, overlapping read coverage, read count files.
+        chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + str(chrom) + '.npz')
+        ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + str(chrom) + '.pkl')
+        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + str(chrom) + '.csv')
+
+        # if all required coverage, read count files are present, e.g. created from a previous run attempt,
+        # then skip all calculations and default to the existing files. Addresses issue #30.
+        if ((n_isolated_genes > 0 and os.path.isfile(chrom_cov_file)) or n_isolated_genes == 0) \
+            and ((n_overlap_genes > 0 and os.path.isfile(ol_cov_file)) or n_overlap_genes == 0) \
+            and (os.path.isfile(count_file)):
+
+            if self.verbose:
+                logging.info("""SAMPLE {0}, CHR {1} -- WARNING... All coverage and read count files already present:
+                {0}
+                {1}
+                {2}
+                Defaulting to these files; skipping coverage and read count calculations."""\
+                             .format(chrom_cov_file, ol_cov_file, count_file))
+
+            return None
 
         # initialize read counts.
         read_count_dict = {gene: 0 for gene in chrom_gene_df.gene}
@@ -522,7 +553,7 @@ class BamReadsProcessor:
 
                 ol_gene_starts = list()
                 gene_exon_bounds = list()
-                transcript_idx = list()
+                transcript_idx = list()  # list of 1-d np.arrays, each holding one overlapping gene's exon positioning.
 
                 # obtain exon regions for each gene in overlap group.
                 # Exon starts/ends are 1-indexed, change them to be 0-indexed.
@@ -616,7 +647,6 @@ class BamReadsProcessor:
             # Step 3.5: save overlapping genes' coverage vectors.
             # overlapping gene coverage vector dict ->> pkl file.
             # ---------------------------------------------------------------------- #
-            ol_cov_file = os.path.join(self.save_dir, 'overlap_coverage_' + self.sample_id + '_' + str(chrom) + '.pkl')
             if self.verbose:
                 logging.info('SAMPLE {0}, CHR {1} -- saving overlapping gene coverage vectors.'
                              .format(self.sample_id, chrom))
@@ -701,7 +731,7 @@ class BamReadsProcessor:
                     reads_df['gene'] = chrom_gene_df.loc[reads_df.pos].gene.values
 
                 # if there remains at least one read that doesn't land within a gene span,
-                # try another sweep to remove reads not within gene regions. (TODO: diagnose why this happens)
+                # try another sweep to remove reads not within gene regions.
                 except KeyError:
 
                     # outline valid read start positions along transcript.
@@ -747,8 +777,6 @@ class BamReadsProcessor:
                 # Step 4.5.2: save chromosome coverage vector.
                 # chromosome overage vector ->> compressed csr numpy array
                 # ---------------------------------------------------------------------- #
-                chrom_cov_file = os.path.join(self.save_dir, 'chrom_coverage_' + self.sample_id + '_' + str(chrom) + '.npz')
-
                 if self.verbose:
                     logging.info('SAMPLE {0}, CHR {1} -- saving csr-compressed chrom coverage array.'
                                  .format(self.sample_id, chrom))
@@ -772,8 +800,6 @@ class BamReadsProcessor:
         # Step 5. Save read counts.
         # chromosome read counts ->> .csv file
         # ---------------------------------------------------------------------- #
-        count_file = os.path.join(self.save_dir, 'read_counts_' + self.sample_id + '_' + str(chrom) + '.csv')
-
         # construct read count DataFrame from read count dictionary.
         read_count_df = DataFrame({'gene': list(read_count_dict.keys())
                                    , self.sample_id: list(read_count_dict.values())})

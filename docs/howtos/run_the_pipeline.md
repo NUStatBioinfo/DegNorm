@@ -9,7 +9,7 @@ distributed version is `degnorm_mpi`.
 ## Inputs
 You only need two types of files to supply `degnorm` - .bam files (0-indexed) and a .gtf file (1-indexed) if you have `samtools` in your `$PATH`. If you do not have `samtools`, you will also need [bam index files]([bam index files](https://www.biostars.org/p/15847/)) to accompany your .bam files.
 
-#### 1. (Optional) index files (.bai)
+### 1. (Optional) index files (.bai)
 Before running DegNorm, you will need to sort (and optionally, index) them with `samtools sort`. This command just re-orders reads
 by chromosome and starting index, so that they can be more useful to DegNorm later on.
 
@@ -24,9 +24,9 @@ first, DegNorm will run `samtools index` to create an index file for each input 
     # create alignment index files
     samtools index S1_sorted.bam S1_sorted.bai
 
-Within the .bam files **reads are assumed 0-indexed**.
+Within the .bam files **reads must be 0-indexed**.
 
-#### 3. Paired or single-end aligned and sorted reads (.bam)
+### 2. Paired or single-end aligned and sorted reads (.bam)
 At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
 RNA-Seq sample. We refer to the total number of samples as `p`.
 
@@ -43,12 +43,24 @@ Argument    | Required? |    Meaning
 `--bai-files` | If `samtools` is not in the `$PATH` and neither `--warm-start-dir` nor `--bam-dir` are specified | Set of individual .bai files. If specified, they must be in the order corresponding to `--bam-files`.
 `--bam-dir`   | If neither `--warm-start-dir` nor `--bam-files` are specified | Directory containing .bam and .bai files for a pipeline run. It is assumed the .bai files have the same name as the .bam files, just with a different extension.
 
-#### 2. Genome annotation file (.gtf)
-DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-index and that the file abides by the standard [.gtf conventions](https://useast.ensembl.org/info/website/upload/gff.html).
+### 3. Genome annotation file (.gtf)
+DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-indexed and that the file abides by the standard [.gtf conventions](https://useast.ensembl.org/info/website/upload/gff.html).
 
 Argument    | Required? |    Meaning
 ----------- | --------- | ------------
 `-g`, `--genome-annotation` | Yes | .gtf file for relevant genome.
+
+**Start and end positions with the .gtf file must be 1-indexed**. Additionally, the .gtf file must have the 9 standard .gtf fields. Here is an example of a .gtf file we use to test `degnorm`:
+
+seqname | source | feature | start | end | score | strand | frame | attribute
+------- | ------ | ------- | ----- | --- | ----- | ------ | ----- | ----------
+chr1 |	unknown	| exon |	323892 | 324060	| . |	+	| . |	gene_id "LOC100133331"; gene_name "LOC100133331"; transcript_id "NR_028327_1"; tss_id "TSS14025";
+chr1 | unknown	| exon | 324288 | 324345 | . | + | . | gene_id "LOC100133331"; gene_name "LOC100133331"; transcript_id "NR_028327_1"; tss_id "TSS14025";
+chr1 |unknown | exon | 324439	| 326938 |	. |	+ |	. |	gene_id "LOC100133331"; gene_name "LOC100133331"; transcript_id "NR_028327_1"; tss_id "TSS14025";
+
+
+Specifically, the `attribute` field must, at a minimum, contain either a `gene_name` or `gene_id` attribute so that we can pair exons to uniquely-identified genes.
+Also, .gtf records will be filtered down to those whose `feature` = "exon".
 
 
 ## Using a warm start directory
@@ -178,20 +190,11 @@ it will be converted to a .pdf.
     ├── gene_exon_metadata.csv  # chromosome, gene, exon relationship data
     ├── read_counts.csv  # raw read counts
     ├── adjusted_read_counts.csv  # degradation normalized read counts
-    ├── <SAMPLE_1>
-    │   ├── sample_SAMPLE_1_chr1.npz  # full chrom coverage for sample 1 in compressed matrix.
-    │   ├── sample_SAMPLE_1_chr2.npz
-    │   ├── <more sample chromosome coverage .npz files>
-    ├── <SAMPLE_2>
-    │   ├── sample_SAMPLE_2_chr1.npz
-    │   ├── sample_SAMPLE_2_chr2.npz
-    │   ├── <more per-sample chromosome coverage .npz files>
-    ├── <more sample directories with chromosome coverage>
     ├── chr1
     │   ├── GAPDH_coverage.png
     │   ├── <more coverage plots>
-    │   ├── coverage_matrices_chr1.pkl  # (gene, raw coverage matrix) pairs in serialized python object.
-    │   └── estimated_coverage_matrices_chr1.pkl # (gene, estimated coverage matrix) pairs in serialized python object.
+    │   ├── coverage_matrices_chr1.pkl  # (gene, raw coverage matrix) pairs in serialized python dictionary.
+    │   └── estimated_coverage_matrices_chr1.pkl # (gene, estimated coverage matrix) pairs in serialized python dictionary.
     ├── chr2
     │   ├── coverage_matrices_chr2.pkl
     │   └── estimated_coverage_matrices_chr2.pkl

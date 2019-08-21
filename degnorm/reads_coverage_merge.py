@@ -288,9 +288,10 @@ def merge_chrom_coverage(data_dir, sample_ids,
         sub_genes = genes[gene_splits[i]:gene_splits[i + 1]].tolist()
         sub_chrom_exon_df = chrom_exon_df[chrom_exon_df.gene.isin(sub_genes)]
 
-        # determine gene span: we only need a subset of the chromosome's coverage for gene subset.
+        # determine gene span: we only need a subset of the chromosome's coverage for current gene subset,
+        # so grab the gene subset's starting and ending position on the transcript (0-indexed).
         start_pos = int(sub_chrom_exon_df.gene_start.min() - 1)
-        end_pos = int(sub_chrom_exon_df.gene_end.max() + 1)
+        end_pos = int(sub_chrom_exon_df.gene_end.max())
 
         # load up gene span's coverage matrix.
         idx = 0
