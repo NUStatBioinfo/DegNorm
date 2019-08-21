@@ -159,8 +159,8 @@
             <li class="second-level"><a href="#inputs">Inputs</a></li>
                 
                 <li class="third-level"><a href="#1-optional-index-files-bai">1. (Optional) index files (.bai)</a></li>
-                <li class="third-level"><a href="#3-paired-or-single-end-aligned-and-sorted-reads-bam">3. Paired or single-end aligned and sorted reads (.bam)</a></li>
-                <li class="third-level"><a href="#2-genome-annotation-file-gtf">2. Genome annotation file (.gtf)</a></li>
+                <li class="third-level"><a href="#2-paired-or-single-end-aligned-and-sorted-reads-bam">2. Paired or single-end aligned and sorted reads (.bam)</a></li>
+                <li class="third-level"><a href="#3-genome-annotation-file-gtf">3. Genome annotation file (.gtf)</a></li>
             <li class="second-level"><a href="#using-a-warm-start-directory">Using a warm start directory</a></li>
                 
             <li class="second-level"><a href="#runtime-and-algorithmic-parameters">Runtime and algorithmic parameters</a></li>
@@ -186,7 +186,7 @@ distributed version is <code>degnorm_mpi</code>.</p>
 <hr />
 <h2 id="inputs">Inputs</h2>
 <p>You only need two types of files to supply <code>degnorm</code> - .bam files (0-indexed) and a .gtf file (1-indexed) if you have <code>samtools</code> in your <code>$PATH</code>. If you do not have <code>samtools</code>, you will also need <a href="[bam index files](https://www.biostars.org/p/15847/)">bam index files</a> to accompany your .bam files.</p>
-<h4 id="1-optional-index-files-bai">1. (Optional) index files (.bai)</h4>
+<h3 id="1-optional-index-files-bai">1. (Optional) index files (.bai)</h3>
 <p>Before running DegNorm, you will need to sort (and optionally, index) them with <code>samtools sort</code>. This command just re-orders reads
 by chromosome and starting index, so that they can be more useful to DegNorm later on.</p>
 <p>To <a href="https://davetang.org/wiki/tiki-index.php?page=SAMTools#Sorting_a_BAM_file">sort</a> an alignment file, suppose it's called <code>S1.bam</code>, you can sort it with the following command:</p>
@@ -198,8 +198,8 @@ first, DegNorm will run <code>samtools index</code> to create an index file for 
 <pre><code># create alignment index files
 samtools index S1_sorted.bam S1_sorted.bai
 </code></pre>
-<p>Within the .bam files <strong>reads are assumed 0-indexed</strong>.</p>
-<h4 id="3-paired-or-single-end-aligned-and-sorted-reads-bam">3. Paired or single-end aligned and sorted reads (.bam)</h4>
+<p>Within the .bam files <strong>reads must be 0-indexed</strong>.</p>
+<h3 id="2-paired-or-single-end-aligned-and-sorted-reads-bam">2. Paired or single-end aligned and sorted reads (.bam)</h3>
 <p>At least two alignment files (.bam) must be specified, as inter-sample degradation normalization cannot happen on a standalone 
 RNA-Seq sample. We refer to the total number of samples as <code>p</code>.</p>
 <p>If .bai files are not submitted, <code>degnorm</code> will look for .bai files named after the .bam files only with the ".bai" extension.
@@ -233,8 +233,8 @@ Instead of specifying individual .bam and .bai files, you can just specify <code
 </tr>
 </tbody>
 </table>
-<h4 id="2-genome-annotation-file-gtf">2. Genome annotation file (.gtf)</h4>
-<p>DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-index and that the file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">.gtf conventions</a>.</p>
+<h3 id="3-genome-annotation-file-gtf">3. Genome annotation file (.gtf)</h3>
+<p>DegNorm needs a .gtf file in order to construct the total transcript and compute all per-gene coverage score curves. It is assumed that the positions in the .gtf file are 1-indexed and that the file abides by the standard <a href="https://useast.ensembl.org/info/website/upload/gff.html">.gtf conventions</a>.</p>
 <table>
 <thead>
 <tr>
@@ -251,6 +251,59 @@ Instead of specifying individual .bam and .bai files, you can just specify <code
 </tr>
 </tbody>
 </table>
+<p><strong>Start and end positions with the .gtf file must be 1-indexed</strong>. Additionally, the .gtf file must have the 9 standard .gtf fields. Here is an example of a .gtf file we use to test <code>degnorm</code>:</p>
+<table>
+<thead>
+<tr>
+<th>seqname</th>
+<th>source</th>
+<th>feature</th>
+<th>start</th>
+<th>end</th>
+<th>score</th>
+<th>strand</th>
+<th>frame</th>
+<th>attribute</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>chr1</td>
+<td>unknown</td>
+<td>exon</td>
+<td>323892</td>
+<td>324060</td>
+<td>.</td>
+<td>+</td>
+<td>.</td>
+<td>gene_id "LOC100133331"; gene_name "LOC100133331"; transcript_id "NR_028327_1"; tss_id "TSS14025";</td>
+</tr>
+<tr>
+<td>chr1</td>
+<td>unknown</td>
+<td>exon</td>
+<td>324288</td>
+<td>324345</td>
+<td>.</td>
+<td>+</td>
+<td>.</td>
+<td>gene_id "LOC100133331"; gene_name "LOC100133331"; transcript_id "NR_028327_1"; tss_id "TSS14025";</td>
+</tr>
+<tr>
+<td>chr1</td>
+<td>unknown</td>
+<td>exon</td>
+<td>324439</td>
+<td>326938</td>
+<td>.</td>
+<td>+</td>
+<td>.</td>
+<td>gene_id "LOC100133331"; gene_name "LOC100133331"; transcript_id "NR_028327_1"; tss_id "TSS14025";</td>
+</tr>
+</tbody>
+</table>
+<p>Specifically, the <code>attribute</code> field must, at a minimum, contain either a <code>gene_name</code> or <code>gene_id</code> attribute so that we can pair exons to uniquely-identified genes.
+Also, .gtf records will be filtered down to those whose <code>feature</code> = "exon".</p>
 <h2 id="using-a-warm-start-directory">Using a warm start directory</h2>
 <p>Loading multiple .bam files, parsing a .gtf file, and computing per-gene cross-sample coverage matrices and read counts, can take some time, but this is a one-time
  preprocessing cost given a specific set of RNA-Seq samples. If you run the <code>degnorm</code> pipeline once, you can leverage
@@ -410,20 +463,11 @@ it will be converted to a .pdf.</p>
 ├── gene_exon_metadata.csv  # chromosome, gene, exon relationship data
 ├── read_counts.csv  # raw read counts
 ├── adjusted_read_counts.csv  # degradation normalized read counts
-├── &lt;SAMPLE_1&gt;
-│   ├── sample_SAMPLE_1_chr1.npz  # full chrom coverage for sample 1 in compressed matrix.
-│   ├── sample_SAMPLE_1_chr2.npz
-│   ├── &lt;more sample chromosome coverage .npz files&gt;
-├── &lt;SAMPLE_2&gt;
-│   ├── sample_SAMPLE_2_chr1.npz
-│   ├── sample_SAMPLE_2_chr2.npz
-│   ├── &lt;more per-sample chromosome coverage .npz files&gt;
-├── &lt;more sample directories with chromosome coverage&gt;
 ├── chr1
 │   ├── GAPDH_coverage.png
 │   ├── &lt;more coverage plots&gt;
-│   ├── coverage_matrices_chr1.pkl  # (gene, raw coverage matrix) pairs in serialized python object.
-│   └── estimated_coverage_matrices_chr1.pkl # (gene, estimated coverage matrix) pairs in serialized python object.
+│   ├── coverage_matrices_chr1.pkl  # (gene, raw coverage matrix) pairs in serialized python dictionary.
+│   └── estimated_coverage_matrices_chr1.pkl # (gene, estimated coverage matrix) pairs in serialized python dictionary.
 ├── chr2
 │   ├── coverage_matrices_chr2.pkl
 │   └── estimated_coverage_matrices_chr2.pkl
