@@ -291,7 +291,8 @@ def merge_chrom_coverage(data_dir, sample_ids,
         # determine gene span: we only need a subset of the chromosome's coverage for current gene subset,
         # so grab the gene subset's starting and ending position on the transcript (0-indexed).
         start_pos = int(sub_chrom_exon_df.gene_start.min() - 1)
-        end_pos = int(sub_chrom_exon_df.gene_end.max())
+        end_pos = int(sub_chrom_exon_df.gene_end.max() - 1)
+        # end_pos = int(sub_chrom_exon_df.gene_end.max())
 
         # load up gene span's coverage matrix.
         idx = 0
@@ -343,11 +344,24 @@ def merge_chrom_coverage(data_dir, sample_ids,
             # shift starts and ends based on the start position of the current gene span.
             # Coverage vectors are 0-indexed so take off 1 from 1-indexed gene positions,
             # but remembering to include exon end positions.
-            e_starts, e_ends = single_gene_df.start.values - start_pos - 1, single_gene_df.end.values - start_pos
+            strt = single_gene_df.start.values.min()
+            e_starts = single_gene_df.start.values - strt
+            e_ends = single_gene_df.end.values - strt
+            # e_starts, e_ends = single_gene_df.start.values - start_pos - 1, single_gene_df.end.values - start_pos
             slicing = [np.arange(e_starts[j], e_ends[j]) for j in range(len(e_starts))]
 
             # in case exons are overlapping, take union of their covered regions.
             slicing = np.unique(flatten_2d(slicing))
+
+            # print('start_pos = ', str(start_pos))
+            # print('end_pos = ', str(end_pos))
+            # print('end_pos - start_pos = ', str(end_pos - start_pos))
+            # print('e_starts = ', ', '.join([str(x) for x in e_starts.tolist()]))
+            # print('e_ends = ', ', '.join([str(x) for x in e_ends.tolist()]))
+            # print('min(slicing) = ', str(min(slicing)))
+            # print('max(slicing) = ', str(max(slicing)))
+            # print('max_slicing - min_slicing = ', max(slicing) - min(slicing))
+            # print('cov_mat.shape = ', cov_mat.shape)
 
             # Save transposed coverage matrix so that shape is p x Li.
             gene_cov_dict[gene] = np.array(cov_mat[slicing, :].T).astype(np.float_)

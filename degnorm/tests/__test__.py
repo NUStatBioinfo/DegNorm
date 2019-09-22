@@ -32,7 +32,7 @@ def main():
     # run existing unit tests.
     print('RUNNING DegNorm TESTS...')
     tests_dir = pkg_resources.resource_filename('degnorm', 'tests')
-    pytest.main(['-x', tests_dir])
+    pytest.main(['-x', '-s', tests_dir])
 
 
 if __name__ == '__main__':
