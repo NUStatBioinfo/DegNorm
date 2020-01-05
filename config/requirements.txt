@@ -5,7 +5,7 @@ matplotlib==2.1.0
 networkx==2.2
 numpy==1.13.3
 HTSeq==0.11.0
-Jinja2==2.9.6
+Jinja2>=2.10.1
 joblib==0.12.2
 pytest==3.2.1
 seaborn==0.9.0
