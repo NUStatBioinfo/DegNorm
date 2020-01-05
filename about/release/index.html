@@ -155,8 +155,8 @@
         
         <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
     <ul class="nav bs-sidenav">
-        <li class="first-level active"><a href="#release-notes">Release Notes</a></li>
-            <li class="second-level"><a href="#current-hotfixes-in-development">Current hotfixes in development</a></li>
+        <li class="first-level active"><a href="#release-notes-updates">Release Notes, Updates</a></li>
+            <li class="second-level"><a href="#recent-developments">Recent developments</a></li>
                 
             <li class="second-level"><a href="#v014-april-2019">v0.1.4 (April 2019)</a></li>
                 
@@ -170,14 +170,17 @@
 </div></div>
         <div class="col-md-9" role="main">
 
-<h1 id="release-notes">Release Notes</h1>
-<h2 id="current-hotfixes-in-development">Current hotfixes in development</h2>
+<h1 id="release-notes-updates">Release Notes, Updates</h1>
+<h2 id="recent-developments">Recent developments</h2>
 <ul>
+<li>DegNorm <code>R</code> package is out: <a href="http://bioinfo.stats.northwestern.edu/~jzwang/DegNorm/DegNorm.html">http://bioinfo.stats.northwestern.edu/~jzwang/DegNorm/DegNorm.html</a></li>
 <li>Added logic in <code>reads.chromosome_coverage_read_counts</code> method to search for requisite coverage and read count files
 before attempting to compute. This lets users who had DegNorm runs that died in the middle of coverage/read count
 computations start from where they left off. This is <em>not</em> the same as using a warm-start directory, which 
 begins a DegNorm run beginning from the point after every (sample, chromosome) coverage/read counts have been computed.
-This hotfix attempts to address issue #30.</li>
+This fix addresses issue #30.</li>
+<li>Added explicit checks that <code>gene_id</code> or <code>gene_name</code> tags appear in .gtf attributes. If a gene is found
+to have a missing required tag, pipeline gives more clear error message.</li>
 </ul>
 <h2 id="v014-april-2019"><code>v0.1.4</code> (April 2019)</h2>
 <ul>

@@ -167,16 +167,20 @@
 <h1 id="degnorm-home">DegNorm Home</h1>
 <ul>
 <li>
-<p>Visit the DegNorm source code on <a href="https://github.com/NUStatBioinfo/DegNorm">GitHub</a></p>
+<p>Visit the DegNorm source code at <a href="https://github.com/NUStatBioinfo/DegNorm">GitHub</a></p>
 </li>
 <li>
 <p>Read the 2019 DegNorm paper in Genome Biology: <a href="https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1682-7">DegNorm: normalization of generalized transcript degradation improves accuracy in RNA-seq analysis</a></p>
+</li>
+<li>
+<p>Check out the DegNorm <a href="http://bioinfo.stats.northwestern.edu/~jzwang/DegNorm/DegNorm.html">R package</a></p>
 </li>
 </ul>
 <p><img alt="degnorm_logo" src="img/degnorm_logo.png" /></p>
 <h2 id="what-is-degnorm">What is DegNorm?</h2>
 <p>DegNorm, short for <strong>deg</strong>radation <strong>norm</strong>alization, is a bioinformatics pipeline designed to 
-correct for bias due to the heterogeneous patterns of transcript degradation in RNA-seq data. DegNorm helps improve the accuracy of the differential expression analysis by accounting for this degradation.</p>
+correct for bias due to the heterogeneous patterns of transcript degradation in RNA-seq data. DegNorm helps improve the accuracy of the differential expression analysis by accounting for this degradation.
+We've supplied a <code>degnorm</code> command line interface and Python package to run this pipeline from start (beginning with .bam files) to finish.</p>
 <p>In practice, RNA samples are often more-or-less degraded, and the degradation severity is not only sample-specific, but gene-specific as well. It is known that longer genes tend to degrade faster than shorter ones. 
 As such, commonplace global degradation normalization approaches that impose a single normalization factor on all genes within a sample can be ineffective in correcting for RNA degradation bias.</p>
 <p>DegNorm is a data-driven approach for RNA-Seq normalization resulting in the adjusted read count matrix. This adjustment applies to each gene within each sample, accounting for sample- and gene-specific degradation bias while simultaneously controlling for the sequencing depth.
@@ -265,5 +269,5 @@ The DI score can be used to account for read count loss due to degradation.</p>
 
 <!--
 MkDocs version : 1.0.4
-Build Date UTC : 2019-08-21 03:53:03
+Build Date UTC : 2020-01-05 18:23:19
 -->
