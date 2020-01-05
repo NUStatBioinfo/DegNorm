@@ -142,9 +142,27 @@ class GeneAnnotationLoader(Loader):
         # subset annotation to just exons.
         df = df[df.feature.apply(lambda x: x.lower()) == 'exon']
 
+        # check that all .gtf attribute strings contain at least 'gene_name' or 'gene_id' identifiers.
+        missing_gene_id_ct = df.attribute.apply(lambda x: re.search(r'gene_id|gene_name', x) is None).sum()
+        if missing_gene_id_ct:
+            raise ValueError('Found .gtf records with attributes missing a required gene_id or gene_name identifier tag.')
+
         # parse out gene identifiers from attribute strings.
         find_me = [re.compile('gene_name'), re.compile('gene_id')]
         df['gene'] = df.attribute.apply(lambda x: self._attribute_to_gene(x, exprs=find_me))
 
         # subset to the data we'll actually need, turning data into a .bed file format.
-        return df[['chr', 'start', 'end', 'gene']].drop_duplicates().reset_index(drop=True)
+        df = df[['chr', 'start', 'end', 'gene']].drop_duplicates().reset_index(drop=True)
+
+        # ensure that gene metadata coming in with intended datatypes.
+        try:
+            df = df.astype({'chr': str
+                               , 'start': int
+                               , 'end': int
+                               , 'gene': str})
+        except Exception:
+            logging.exception('.gtf file does not have intended data types. ' + \
+                              'Please ensure that your .gtf data is formatted correctly. ' + \
+                              'See https://nustatbioinfo.github.io/DegNorm/howtos/run_the_pipeline/#3-genome-annotation-file-gtf')
+
+        return df

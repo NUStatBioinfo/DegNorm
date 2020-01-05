@@ -1,8 +1,10 @@
 # DegNorm Home
 
-- Visit the DegNorm source code on [GitHub](https://github.com/NUStatBioinfo/DegNorm)
+- Visit the DegNorm source code at [GitHub](https://github.com/NUStatBioinfo/DegNorm)
 
 - Read the 2019 DegNorm paper in Genome Biology: [DegNorm: normalization of generalized transcript degradation improves accuracy in RNA-seq analysis](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1682-7)
+
+- Check out the DegNorm [R package](http://bioinfo.stats.northwestern.edu/~jzwang/DegNorm/DegNorm.html)
 
 ![degnorm_logo](img/degnorm_logo.png)
 
@@ -12,6 +14,7 @@
 
 DegNorm, short for **deg**radation **norm**alization, is a bioinformatics pipeline designed to 
 correct for bias due to the heterogeneous patterns of transcript degradation in RNA-seq data. DegNorm helps improve the accuracy of the differential expression analysis by accounting for this degradation.
+We've supplied a `degnorm` command line interface and Python package to run this pipeline from start (beginning with .bam files) to finish.
 
 In practice, RNA samples are often more-or-less degraded, and the degradation severity is not only sample-specific, but gene-specific as well. It is known that longer genes tend to degrade faster than shorter ones. 
 As such, commonplace global degradation normalization approaches that impose a single normalization factor on all genes within a sample can be ineffective in correcting for RNA degradation bias.
